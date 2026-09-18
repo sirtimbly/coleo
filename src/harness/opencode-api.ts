@@ -18,6 +18,7 @@ import { OpenCodeEventStream, truncateLargeFields, shouldPersistEvent, type Open
 import { eventStore } from "../nats/jetstream";
 import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part, type Todo } from "@opencode-ai/sdk";
 import { resolveModel } from "./model-resolver";
+import { stopFailedOpenCodeProcess, waitForOpenCodeServer, withStartupTimeout } from "./opencode-startup";
 import { buildHarnessPromptParts } from "./prompt-parts";
 import { selectSessionForRecovery, shouldPruneSession } from "./session-lifecycle";
 import { getProjectRuntimeEnvironment } from "../project-scope";
@@ -28,6 +29,9 @@ import { resolveApiUrl } from "../network-config";
  * SDK errors can be objects with name/data properties or plain strings
  */
 function formatSdkError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
   if (typeof error === 'string') {
     return error;
   }
@@ -95,30 +99,7 @@ export class OpenCodeApiHarness implements AgentHarness {
   private nextPort = 19300; // Start port for OpenCode servers
   private eventCallbacks: Set<ArmEventCallback> = new Set();
   private static readonly SESSION_CREATE_TIMEOUT_MS = 15000;
-
-  /**
-   * Race an async SDK call with a timeout so spawn never hangs indefinitely.
-   */
-  private async withTimeout<T>(
-    promise: Promise<T>,
-    timeoutMs: number,
-    label: string,
-  ): Promise<T> {
-    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-    const timeoutPromise = new Promise<T>((_, reject) => {
-      timeoutHandle = setTimeout(() => {
-        reject(new Error(`${label} timed out after ${timeoutMs}ms`));
-      }, timeoutMs);
-    });
-
-    try {
-      return await Promise.race([promise, timeoutPromise]);
-    } finally {
-      if (timeoutHandle) {
-        clearTimeout(timeoutHandle);
-      }
-    }
-  }
+  private static readonly SESSION_PRUNE_TIMEOUT_MS = 5000;
 
   private createSessionTitle(armId: string, reason: "spawn" | "recover" | "reset"): string {
     const iso = new Date().toISOString();
@@ -143,23 +124,24 @@ export class OpenCodeApiHarness implements AgentHarness {
     keepSessionId: string,
   ): Promise<void> {
     try {
-      const sessionsResponse = await client.session.list();
-      const sessions = sessionsResponse.data || [];
-      for (const existing of sessions) {
-        if (!shouldPruneSession(existing, armId, keepSessionId)) {
-          continue;
+      await withStartupTimeout(async (signal) => {
+        const sessionsResponse = await client.session.list({ signal });
+        for (const existing of sessionsResponse.data || []) {
+          signal.throwIfAborted();
+          if (!shouldPruneSession(existing, armId, keepSessionId)) continue;
+          try {
+            await client.session.delete({ path: { id: existing.id }, signal });
+            console.log(`[harness-api] Deleted stale session ${existing.id} for ${armId}`);
+          } catch (err) {
+            signal.throwIfAborted();
+            console.warn(
+              `[harness-api] Failed deleting stale session ${existing.id} for ${armId}: ${formatSdkError(err)}`
+            );
+          }
         }
-        try {
-          await client.session.delete({ path: { id: existing.id } });
-          console.log(`[harness-api] Deleted stale session ${existing.id} for ${armId}`);
-        } catch (err) {
-          console.warn(
-            `[harness-api] Failed deleting stale session ${existing.id} for ${armId}: ${formatSdkError(err)}`
-          );
-        }
-      }
+      }, OpenCodeApiHarness.SESSION_PRUNE_TIMEOUT_MS, `OpenCode session pruning for ${armId}`);
     } catch (err) {
-      console.warn(`[harness-api] Failed listing sessions for ${armId}: ${formatSdkError(err)}`);
+      console.warn(`[harness-api] Failed pruning sessions for ${armId}: ${formatSdkError(err)}`);
     }
   }
 
@@ -356,9 +338,13 @@ export class OpenCodeApiHarness implements AgentHarness {
 
     console.log(`[harness-api] Spawned OpenCode process PID: ${serverProcess.pid}`);
 
+    let apiSession: ApiHarnessSession | undefined;
+    const logReaders: ReadableStreamDefaultReader[] = [];
+
     // Stream output for debugging and logging
     const streamLog = async (stream: ReadableStream, type: "stdout" | "stderr") => {
       const reader = stream.getReader();
+      logReaders.push(reader);
       const decoder = new TextDecoder();
       try {
         while (true) {
@@ -376,146 +362,141 @@ export class OpenCodeApiHarness implements AgentHarness {
         }
       } catch {
         // Ignore stream errors
+      } finally {
+        reader.releaseLock();
       }
     };
 
-    streamLog(serverProcess.stdout, "stdout");
-    streamLog(serverProcess.stderr, "stderr");
+    const logStreams = [
+      streamLog(serverProcess.stdout, "stdout"),
+      streamLog(serverProcess.stderr, "stderr"),
+    ];
 
-    const serverUrl = `http://127.0.0.1:${port}`;
+    try {
+      const serverUrl = `http://127.0.0.1:${port}`;
 
-    // Wait for server to be ready
-    await this.waitForServer(serverUrl, 30000, serverProcess);
+      // Wait for server to be ready
+      await this.waitForServer(serverUrl, 30000, serverProcess);
 
-    // Create SDK client for type-safe API calls
-    const client = createOpencodeClient({ baseUrl: serverUrl });
+      // Create SDK client for type-safe API calls
+      const client = createOpencodeClient({ baseUrl: serverUrl });
 
-    console.log(`[harness-api] Creating OpenCode session for ${armId} on ${serverUrl}...`);
-    // Create a new session using SDK (access .data to get the actual session)
-    const sessionResponse = await this.withTimeout(
-      client.session.create({
-        body: { title: this.createSessionTitle(armId, "spawn") },
-      }),
-      OpenCodeApiHarness.SESSION_CREATE_TIMEOUT_MS,
-      `OpenCode session.create for ${armId}`,
-    );
-    const session = sessionResponse.data;
+      console.log(`[harness-api] Creating OpenCode session for ${armId} on ${serverUrl}...`);
+      // Create a new session using SDK (access .data to get the actual session)
+      const sessionResponse = await withStartupTimeout(
+        (signal) => client.session.create({
+          body: { title: this.createSessionTitle(armId, "spawn") },
+          signal,
+        }),
+        OpenCodeApiHarness.SESSION_CREATE_TIMEOUT_MS,
+        `OpenCode session.create for ${armId}`,
+      );
+      const session = sessionResponse.data;
 
-    if (!session?.id) {
-      throw new Error("Failed to create session: no session ID returned");
-    }
-    console.log(`[harness-api] Created OpenCode session ${session.id} for ${armId}`);
-    await this.pruneOtherSessions(client, armId, session.id);
+      if (!session?.id) {
+        throw new Error("Failed to create session: no session ID returned");
+      }
+      console.log(`[harness-api] Created OpenCode session ${session.id} for ${armId}`);
+      await this.pruneOtherSessions(client, armId, session.id);
 
-    // Create a dummy PTY session for compatibility
-    const ptySession: PTYSession = {
-      pty: null as any, // No actual PTY
-      buffer: "",
-      lineBuffer: [],
-      lastActivity: new Date(),
-    };
+      // Create a dummy PTY session for compatibility
+      const ptySession: PTYSession = {
+        pty: null as any, // No actual PTY
+        buffer: "",
+        lineBuffer: [],
+        lastActivity: new Date(),
+      };
 
-    const apiSession: ApiHarnessSession = {
-      id: sessionId,
-      pty: ptySession,
-      harnessName: this.name,
-      spawnedAt: new Date(),
-      lastHeartbeat: new Date(),
-      armId,
-      serverUrl,
-      serverProcess,
-      sessionId: session.id,
-      port,
-      client,
-      provider: resolvedProvider,
-      model: resolvedModel,
-    };
-
-    // Start event stream subscription
-    if (this.eventCallbacks.size > 0) {
-      const eventStream = new OpenCodeEventStream({
-        serverUrl,
+      apiSession = {
+        id: sessionId,
+        pty: ptySession,
+        harnessName: this.name,
+        spawnedAt: new Date(),
+        lastHeartbeat: new Date(),
         armId,
+        serverUrl,
+        serverProcess,
         sessionId: session.id,
-        onEvent: async (event: OpenCodeEvent) => {
-          // Truncate large fields to prevent MAX_PAYLOAD_EXCEEDED
-          const truncatedProps = truncateLargeFields(event.properties || {}) as Record<string, unknown>;
-          
-          // Check if this event should be persisted to JetStream
-          const persistCheck = shouldPersistEvent(event);
-          
-          // Publish to JetStream for persistence (only meaningful events)
-          if (persistCheck.shouldPersist && eventStore.isInitialized()) {
-            try {
-              const subject = `coleo.events.arm.${armId}.${event.type}`;
-              await eventStore.publishEvent(subject, {
-                type: event.type,
-                armId,
-                sessionId: event.properties?.sessionID as string,
-                data: truncatedProps,
-                timestamp: new Date().toISOString(),
-                // Include extracted data for monitoring
-                ...(persistCheck.tokenData && { tokenData: persistCheck.tokenData }),
-                ...(persistCheck.fileChanges && { fileChanges: persistCheck.fileChanges }),
-                ...(persistCheck.messageData && { messageData: persistCheck.messageData }),
-              });
-            } catch (err) {
-              console.error(`[harness-api] Failed to publish event to JetStream: ${err}`);
+        port,
+        client,
+        provider: resolvedProvider,
+        model: resolvedModel,
+      };
+
+      // Start event stream subscription
+      if (this.eventCallbacks.size > 0) {
+        const eventStream = new OpenCodeEventStream({
+          serverUrl,
+          armId,
+          sessionId: session.id,
+          onEvent: async (event: OpenCodeEvent) => {
+            // Truncate large fields to prevent MAX_PAYLOAD_EXCEEDED
+            const truncatedProps = truncateLargeFields(event.properties || {}) as Record<string, unknown>;
+
+            // Check if this event should be persisted to JetStream
+            const persistCheck = shouldPersistEvent(event);
+
+            // Publish to JetStream for persistence (only meaningful events)
+            if (persistCheck.shouldPersist && eventStore.isInitialized()) {
+              try {
+                const subject = `coleo.events.arm.${armId}.${event.type}`;
+                await eventStore.publishEvent(subject, {
+                  type: event.type,
+                  armId,
+                  sessionId: event.properties?.sessionID as string,
+                  data: truncatedProps,
+                  timestamp: new Date().toISOString(),
+                  // Include extracted data for monitoring
+                  ...(persistCheck.tokenData && { tokenData: persistCheck.tokenData }),
+                  ...(persistCheck.fileChanges && { fileChanges: persistCheck.fileChanges }),
+                  ...(persistCheck.messageData && { messageData: persistCheck.messageData }),
+                });
+              } catch (err) {
+                console.error(`[harness-api] Failed to publish event to JetStream: ${err}`);
+              }
             }
-          }
 
-          // Also emit to legacy callbacks for backward compatibility
-          this.emitEvent(armId, event.type, {
-            ...truncatedProps,
-            _timestamp: new Date().toISOString(),
-          });
-        },
-        onError: (error) => {
-          console.error(`[harness-api] ${armId} event stream error:`, error.message);
-        },
-      });
-      eventStream.start();
-      apiSession.eventStream = eventStream;
-      console.log(`[harness-api] Started event stream for ${armId}`);
+            // Also emit to legacy callbacks for backward compatibility
+            this.emitEvent(armId, event.type, {
+              ...truncatedProps,
+              _timestamp: new Date().toISOString(),
+            });
+          },
+          onError: (error) => {
+            console.error(`[harness-api] ${armId} event stream error:`, error.message);
+          },
+        });
+        eventStream.start();
+        apiSession.eventStream = eventStream;
+        console.log(`[harness-api] Started event stream for ${armId}`);
+      }
+
+      this.sessions.set(sessionId, apiSession);
+
+      console.log(`[harness-api] OpenCode API session ${sessionId} started (server session: ${session.id})`);
+
+      return apiSession;
+    } catch (error) {
+      apiSession?.eventStream?.stop();
+      this.sessions.delete(sessionId);
+      try {
+        await stopFailedOpenCodeProcess(serverProcess);
+        await withStartupTimeout(async () => {
+          await Promise.allSettled(logReaders.map((reader) => reader.cancel()));
+          await Promise.all(logStreams);
+        }, 1000, "OpenCode log cleanup");
+      } catch (cleanupError) {
+        console.warn(`[harness-api] Failed cleaning up OpenCode for ${armId}: ${formatSdkError(cleanupError)}`);
+      }
+      throw error;
     }
-
-    this.sessions.set(sessionId, apiSession);
-
-    console.log(`[harness-api] OpenCode API session ${sessionId} started (server session: ${session.id})`);
-
-    return apiSession;
   }
 
   /**
    * Wait for the OpenCode server to be ready
    */
   private async waitForServer(serverUrl: string, timeoutMs: number, serverProcess?: Subprocess): Promise<void> {
-    const startTime = Date.now();
-    let lastError = "";
-    
-    while (Date.now() - startTime < timeoutMs) {
-      // Check if process died
-      if (serverProcess && serverProcess.exitCode !== null) {
-        throw new Error(`OpenCode server process died with exit code ${serverProcess.exitCode}`);
-      }
-      
-      try {
-        const response = await fetch(`${serverUrl}/global/health`);
-        if (response.ok) {
-          const data = await response.json() as { healthy: boolean; version: string };
-          if (data.healthy) {
-            console.log(`[harness-api] Server ready (version ${data.version})`);
-            return;
-          }
-        }
-      } catch (err) {
-        // Server not ready yet
-        lastError = String(err);
-      }
-      await new Promise(resolve => setTimeout(resolve, 200));
-    }
-
-    throw new Error(`OpenCode server failed to start within ${timeoutMs}ms (last error: ${lastError})`);
+    await waitForOpenCodeServer(serverUrl, timeoutMs, serverProcess);
   }
 
   /**
