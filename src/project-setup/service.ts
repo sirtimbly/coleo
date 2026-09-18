@@ -393,6 +393,10 @@ export async function formatPlanWithConfiguredModel(
 		64_000,
 		Math.max(8_000, Math.ceil(content.length / 3) + 4_000),
 	);
+	// Full-plan rewrites can produce tens of thousands of tokens. Allow for
+	// generation plus provider startup, while retaining a finite request deadline.
+	const timeoutMs = Math.min(900_000, 120_000 + Math.ceil(completionTokenBudget / 50) * 1_000);
+	let requestSignal: AbortSignal | undefined;
 	try {
 		const prompt = await renderPlanEvaluationPrompt(
 			templates || new BrainTemplateManager(getColeoDir(), () => {}),
@@ -401,9 +405,10 @@ export async function formatPlanWithConfiguredModel(
 			guidance,
 			workspaceContext,
 		);
+		requestSignal = AbortSignal.timeout(timeoutMs);
 		const response = await fetch(`${baseUrl}/chat/completions`, {
 			method: "POST",
-			signal: AbortSignal.timeout(120_000),
+			signal: requestSignal,
 			headers: {
 				"Content-Type": "application/json",
 				Authorization: `Bearer ${apiKey}`,
@@ -479,11 +484,16 @@ export async function formatPlanWithConfiguredModel(
 		}
 		return { content: formatted.trimEnd() + "\n", mode: "ai" };
 	} catch (error) {
-		if (guidance?.trim()) throw error;
+		const timedOut = requestSignal?.aborted
+			|| (error instanceof Error && error.name === "TimeoutError");
+		const failure = timedOut
+			? new Error(`Plan formatter timed out while evaluating with ${model} (request deadline: ${Math.round(timeoutMs / 1_000)} seconds). The source plan was preserved. Retry or select a faster Brain model.`, { cause: error })
+			: error;
+		if (guidance?.trim()) throw failure;
 		return {
 			content: formatPlanWithoutModel(content, sourcePath),
 			mode: "structured",
-			formatterError: error instanceof Error ? error.message : String(error),
+			formatterError: failure instanceof Error ? failure.message : String(failure),
 			...(error instanceof BrainModelAccessError
 				? { modelIssue: error.issue }
 				: {}),

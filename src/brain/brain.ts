@@ -163,13 +163,26 @@ function isPlanFormatterNetworkFailure(detail: string): boolean {
 		.test(detail);
 }
 
-function isRetryablePlanFormatterFailure(detail: string): boolean {
+// Match the message as well as local failures: remote workspace errors and
+// persisted planning blockers cross process boundaries.
+function isPlanWriteConflict(detail: string): boolean {
+	return detail.startsWith("Workspace file changed before write: ");
+}
+
+function isRetryablePlanningFailure(detail: string): boolean {
 	return detail.startsWith("Plan formatter ")
 		|| detail.startsWith("Configure a Brain model API key")
-		|| isPlanFormatterNetworkFailure(detail);
+		|| isPlanFormatterNetworkFailure(detail)
+		|| isPlanWriteConflict(detail);
 }
 
 function planningFailureNextStep(detail: string): string {
+	if (isPlanWriteConflict(detail)) {
+		return "The plan changed during evaluation. Coleo will retry automatically using the latest file; no manual plan correction is needed.";
+	}
+	if (detail.startsWith("Plan formatter timed out")) {
+		return "The model did not finish evaluating the plan before the request deadline. Coleo will retry automatically; if this repeats, select a faster Brain model. The plan documents and templates do not need to change for a timeout.";
+	}
 	const formatterStatus = detail.match(/^Plan formatter returned (\d{3})\b/)?.[1];
 	if (formatterStatus) {
 		const status = Number(formatterStatus);
@@ -9250,7 +9263,7 @@ ${conflictList}
 			);
 			if (durablePlanningBlock) {
 				const durableDetail = planningFailureDetailFromBlockedReason(durablePlanningBlock.blockedReason);
-				if (!durableDetail || !isRetryablePlanFormatterFailure(durableDetail)) {
+				if (!durableDetail || !isRetryablePlanningFailure(durableDetail)) {
 					throw new Error(durableDetail || "The project plan is still in the planning-failure state");
 				}
 			}
@@ -9274,7 +9287,7 @@ ${conflictList}
 					if (!evaluated.content.trim()) throw new Error("The plan evaluator returned an empty plan");
 				} catch (error) {
 					const detail = error instanceof Error ? error.message : String(error);
-					if (isRetryablePlanFormatterFailure(detail)) {
+					if (isRetryablePlanningFailure(detail)) {
 						this.planningErrorsByPlanHash.delete(currentPlanHash);
 					} else {
 						this.planningErrorsByPlanHash.set(currentPlanHash, detail);
@@ -9427,6 +9440,14 @@ ${conflictList}
 			return true;
 		} catch (err) {
 			this.log(`Failed to sync plan tasks: ${err}`);
+			const detail = err instanceof Error ? err.message : String(err);
+			if (isPlanWriteConflict(detail)) {
+				// Discard stale evaluation and retry next poll without interrupting arms
+				// or turning a concurrent edit into a durable plan-content failure.
+				this.evaluatedPlanHashes.clear();
+				if (currentPlanHash) this.planningErrorsByPlanHash.delete(currentPlanHash);
+				return false;
+			}
 			const shouldNotify = await this.reportPlanningGate(err);
 			const modelAccessIssue = getBrainModelAccessIssue(err);
 			if (modelAccessIssue && shouldNotify) await this.reportBrainModelAccess(modelAccessIssue);

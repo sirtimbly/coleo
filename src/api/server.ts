@@ -743,6 +743,15 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
         return new Response("WebSocket upgrade failed", { status: 400 });
       }
       
+      // Plan evaluations have their own bounded model-request deadline, which
+      // can exceed Bun's maximum socket idle timeout for large plan rewrites.
+      if (req.method === "POST" && [
+        "/api/project-setup/prepare",
+        "/api/project-setup/regenerate-tasks",
+      ].includes(url.pathname)) {
+        server.timeout(req, 0);
+      }
+
       // Handle regular HTTP requests with Hono
       return app.fetch(req);
     },
