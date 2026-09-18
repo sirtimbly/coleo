@@ -1,3 +1,4 @@
+import { isSessionActive } from './session-heartbeat';
 import { ApiRequestError } from './workspace-startup';
 import type { FleetVersions } from "../../../shared/version-compatibility";
 /**
@@ -197,6 +198,7 @@ class ApiClient {
     options: RequestInit = {}
   ): Promise<T> {
     const headers = new Headers(options.headers);
+    if (isSessionActive()) headers.set("X-Reef-User-Active", "1");
     if (!(options.body instanceof FormData) && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json');
     }

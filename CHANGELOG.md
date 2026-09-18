@@ -1,5 +1,71 @@
 # Changelog
 
+## [0.14.3](https://github.com/sirtimbly/coleo/compare/coleo-v0.14.2...coleo-v0.14.3) (2026-09-18)
+
+
+### Bug Fixes
+
+* **harness:** bound OpenCode startup and reap failed processes ([ce6cf83](https://github.com/sirtimbly/coleo/commit/ce6cf83a8ac909f0ac32ed18bf41e1eb33412764))
+* **harness:** bound OpenCode startup and reap failed processes ([3d06220](https://github.com/sirtimbly/coleo/commit/3d0622047cdf39b34fafc819254fd81719717057))
+
+## [0.14.2](https://github.com/sirtimbly/coleo/compare/coleo-v0.14.1...coleo-v0.14.2) (2026-09-18)
+
+
+### Bug Fixes
+
+* preserve repository files until replacement is confirmed ([394bf9a](https://github.com/sirtimbly/coleo/commit/394bf9a74efaebc0a53646ffcab7a47baa47ad20))
+* preserve repository files until replacement is confirmed ([cc5bfaf](https://github.com/sirtimbly/coleo/commit/cc5bfaf67f933502e8ab75ba7cb6ac3f66f038fb))
+
+## [0.14.1](https://github.com/sirtimbly/coleo/compare/coleo-v0.14.0...coleo-v0.14.1) (2026-09-17)
+
+
+### Bug Fixes
+
+* **web:** keep hosted sessions alive while users work ([cf2786d](https://github.com/sirtimbly/coleo/commit/cf2786db8d9f047ec586ecca25339f720adb1fae))
+* **web:** keep hosted sessions alive while users work ([21bb9bf](https://github.com/sirtimbly/coleo/commit/21bb9bf49fab176d425be82e70fb635c8a418900))
+
+
+### Tests
+
+* wait for Tabulator row drag readiness ([8e3a790](https://github.com/sirtimbly/coleo/commit/8e3a79024f96954cdf84cba896177dc5c3de8c9d))
+
+## [0.14.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.13.1...coleo-v0.14.0) (2026-09-17)
+
+
+### Features
+
+* **web:** guide users through workspace startup and reconnects ([5ba37a0](https://github.com/sirtimbly/coleo/commit/5ba37a00ed03b7ce48c21c0cb784d84f641ce669))
+* **web:** guide users through workspace startup and reconnects ([06b29e0](https://github.com/sirtimbly/coleo/commit/06b29e0183d61994352cb35969a9c6ee6a9428a2))
+
+
+### Bug Fixes
+
+* **web:** replace stalled sockets on manual reconnect ([0433731](https://github.com/sirtimbly/coleo/commit/043373112861c9c3d4eb2047fb1bcdc46bb28fe3))
+
+## [0.13.1](https://github.com/sirtimbly/coleo/compare/coleo-v0.13.0...coleo-v0.13.1) (2026-09-17)
+
+
+### Bug Fixes
+
+* **db:** migrate legacy arm context defaults on upgrade ([71f83e2](https://github.com/sirtimbly/coleo/commit/71f83e2ba8638b52d5255daa0924dacd72053bfc))
+* **db:** migrate legacy arm context defaults on upgrade ([3822bf6](https://github.com/sirtimbly/coleo/commit/3822bf6272b3bf384e06b1f52f3b7fc3e3ff8bf6))
+
+## [0.13.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.12.1...coleo-v0.13.0) (2026-09-16)
+
+
+### Features
+
+* add database schema and version compatibility migrations ([bb416b1](https://github.com/sirtimbly/coleo/commit/bb416b159825fec643c599345d26e74bd22ad932))
+* add infrastructure versioning and refine workbench design ([d47f908](https://github.com/sirtimbly/coleo/commit/d47f908973db141df0a93583ef2354cb7720ad8e))
+* **web:** unify dashboard hierarchy and shared control styling ([ae18c0b](https://github.com/sirtimbly/coleo/commit/ae18c0bbe8dfa93a95040ca04e98976779c0e21c))
+
+
+### Bug Fixes
+
+* **db:** validate schema definitions before baselining ([6973c34](https://github.com/sirtimbly/coleo/commit/6973c34e1c418a257d6f927e104b4142f65eb5d4))
+* **web:** show workspace directory with solid folder icon ([e6efeff](https://github.com/sirtimbly/coleo/commit/e6efeff11b94a2a1e30070f970d25a1128f80aa5))
+* **web:** show workspace directory with solid folder icon ([f855c5e](https://github.com/sirtimbly/coleo/commit/f855c5eea76d615fda2a23860738e1d0de69a91a))
+
 ## [0.12.1](https://github.com/sirtimbly/coleo/compare/coleo-v0.12.0...coleo-v0.12.1) (2026-09-03)
 
 

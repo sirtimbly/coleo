@@ -92,17 +92,29 @@ const discovery = {
 async function dragTabulatorRowAfter(page: Page, source: Locator, target: Locator) {
 	await expect(source).toBeVisible({ timeout: 20_000 });
 	await expect(target).toBeVisible({ timeout: 20_000 });
-	const sourceBox = await source.boundingBox();
-	const targetBox = await target.boundingBox();
+	let sourceBox = await source.boundingBox();
+	let targetBox = await target.boundingBox();
+	// Initial grid redraws can detach cells after the visibility assertions.
+	await expect.poll(async () => {
+		sourceBox = await source.boundingBox();
+		targetBox = await target.boundingBox();
+		return sourceBox !== null && targetBox !== null;
+	}).toBe(true);
 	if (!sourceBox || !targetBox) throw new Error("Tabulator rows are not visible");
 	await page.mouse.move(sourceBox.x + sourceBox.width * 0.72, sourceBox.y + sourceBox.height / 2);
 	await page.mouse.down();
-	await page.mouse.move(
-		targetBox.x + targetBox.width * 0.72,
-		targetBox.y + targetBox.height - 2,
-		{ steps: 10 },
-	);
-	await page.mouse.up();
+	try {
+		// Tabulator starts moving only after its press-and-hold delay. Fast CI
+		// mouse events can otherwise release before a drag has even begun.
+		await expect(page.locator(".tabulator-row.tabulator-moving")).toBeVisible();
+		await page.mouse.move(
+			targetBox.x + targetBox.width * 0.72,
+			targetBox.y + targetBox.height - 2,
+			{ steps: 10 },
+		);
+	} finally {
+		await page.mouse.up();
+	}
 }
 
 test("formats rows and preserves undo and redo across resource sheets", async ({ page }) => {

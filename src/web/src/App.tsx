@@ -1,3 +1,4 @@
+import { HostedSessionNotice } from '@/components/HostedSessionNotice';
 /**
  * Root React composition for the Coleo browser workbench.
  *
@@ -45,6 +46,7 @@ function App() {
             <WorkbenchProfileProvider>
               <ToolbarTemplateProvider>
                 <BrowserRouter>
+                  <HostedSessionNotice />
                   <ProjectOnboardingGate>
                     <WorkspaceConnectionNotice />
                     <InterfaceTypography />
