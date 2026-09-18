@@ -11,7 +11,7 @@ import type { Database, SQLQueryBindings } from "bun:sqlite";
 import { HttpError } from "../middleware";
 import { broadcast, broadcastBrainEvent, broadcastMailEvent } from "../websocket";
 import { getColeoDir } from "../../config";
-import { startService, type ServiceStatus } from "../../daemon";
+import { startService, stopService, type ServiceStatus } from "../../daemon";
 import { join } from "path";
 import { mkdir } from "fs/promises";
 import { randomUUID } from "crypto";
@@ -125,12 +125,19 @@ export type { BrainState } from "../../db/state";
 
 interface BrainRouteOptions {
   startBrain?: () => Promise<ServiceStatus>;
+  stopBrain?: () => Promise<ServiceStatus>;
 }
 
 export function createBrainRoutes(options: BrainRouteOptions = {}) {
   const app = new Hono<BrainContext>();
   const startBrain = options.startBrain ?? (() => startService("brain"));
-  let startingBrain: Promise<ServiceStatus> | null = null;
+  const stopBrain = options.stopBrain ?? (() => stopService("brain"));
+  let brainControl: Promise<void> = Promise.resolve();
+  const serializeBrainControl = <T>(operation: () => Promise<T>): Promise<T> => {
+    const result = brainControl.then(operation);
+    brainControl = result.then(() => {}, () => {});
+    return result;
+  };
 
   const parseSqlRequest = async (c: Context<BrainContext>): Promise<SqlRequestBody> => {
     const body = await c.req.json<{ sql?: unknown; params?: unknown }>();
@@ -330,17 +337,11 @@ export function createBrainRoutes(options: BrainRouteOptions = {}) {
     return c.json({ state });
   });
 
-  app.post("/start", async (c) => {
+  app.post("/start", (c) => serializeBrainControl(async () => {
     const db = c.get("db");
-    // Persisted status is not proof that a coordinator process exists. Share
-    // concurrent start requests and let the service manager check its live PID.
-    const pending = startingBrain ??= startBrain();
-    let service: ServiceStatus;
-    try {
-      service = await pending;
-    } finally {
-      if (startingBrain === pending) startingBrain = null;
-    }
+    // Persisted status is not proof that a coordinator process exists. The
+    // service manager checks its live PID; lifecycle requests run in order.
+    const service = await startBrain();
     if (!service.running) throw new HttpError(503, "Brain process did not start. Check the Brain service logs.");
 
     updateBrainState(db, {
@@ -350,25 +351,19 @@ export function createBrainRoutes(options: BrainRouteOptions = {}) {
     // Only the Brain itself may advance lastPollAt or clear the planning gate.
     broadcastBrainEvent("started", { status: "running" });
     return c.json({ started: true, status: "running", pid: service.pid });
-  });
+  }));
 
-  app.post("/stop", (c) => {
+  app.post("/stop", (c) => serializeBrainControl(async () => {
     const db = c.get("db");
+    // Stop the process even if persisted state already says stopped. A timeout
+    // is a failed stop, not permission to report a still-running Brain as stopped.
+    const service = await stopBrain();
+    if (service.running) throw new HttpError(503, "Brain is still stopping. Check the Brain service logs and retry.");
 
-    const currentState = getBrainState(db);
-    if (currentState.status === "stopped") {
-      throw HttpError.badRequest("Brain is already stopped");
-    }
-
-    updateBrainState(db, {
-      status: "stopped",
-      lastPollAt: new Date().toISOString(),
-    });
-
+    updateBrainState(db, { status: "stopped" });
     broadcastBrainEvent("stopped", { status: "stopped" });
-
     return c.json({ stopped: true, status: "stopped" });
-  });
+  }));
 
   app.post("/pause", (c) => {
     const db = c.get("db");
