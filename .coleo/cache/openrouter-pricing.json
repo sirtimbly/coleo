@@ -1,11 +1,17 @@
 {
-  "fetchedAt": "2026-09-15T10:10:34.899Z",
+  "fetchedAt": "2026-09-18T17:38:47.674Z",
   "models": [
+    {
+      "id": "unbiased/pareto",
+      "canonicalSlug": "unbiased/pareto-20260917",
+      "input": 2.5,
+      "output": 7.5
+    },
     {
       "id": "~deepseek/deepseek-pro-latest",
       "canonicalSlug": "~deepseek/deepseek-pro-latest",
-      "input": 0.66,
-      "output": 1.9800000000000002
+      "input": 0.57816,
+      "output": 1.73448
     },
     {
       "id": "~deepseek/deepseek-flash-latest",
@@ -208,8 +214,8 @@
     {
       "id": "z-ai/glm-5.3-flash",
       "canonicalSlug": "z-ai/glm-5.3-flash-20260826",
-      "input": 0.15,
-      "output": 0.5
+      "input": 0.09,
+      "output": 0.3
     },
     {
       "id": "z-ai/glm-5.3-flash:batch",
@@ -226,8 +232,8 @@
     {
       "id": "deepseek/deepseek-v4-flash-vision-exp",
       "canonicalSlug": "deepseek/deepseek-v4-flash-vision-exp-20260821",
-      "input": 0.22,
-      "output": 0.66
+      "input": 0.21559999999999999,
+      "output": 0.6468
     },
     {
       "id": "deepseek/deepseek-v4-flash-vision-exp:batch",
@@ -250,8 +256,8 @@
     {
       "id": "~z-ai/glm-latest",
       "canonicalSlug": "~z-ai/glm-latest",
-      "input": 0.8775,
-      "output": 2.9699999999999998
+      "input": 0.8987999999999999,
+      "output": 2.8248
     },
     {
       "id": "tencent/hy-mt2-7b",
@@ -262,8 +268,8 @@
     {
       "id": "z-ai/glm-5.3",
       "canonicalSlug": "z-ai/glm-5.3-20260816",
-      "input": 1.4,
-      "output": 4.4
+      "input": 0.9099999999999999,
+      "output": 2.8600000000000003
     },
     {
       "id": "z-ai/glm-5.3:batch",
@@ -276,6 +282,12 @@
       "canonicalSlug": "qwen/qwen3.8-27b-20260814",
       "input": 0.21400000000000002,
       "output": 2.5500000000000003
+    },
+    {
+      "id": "qwen/qwen3.8-27b:free",
+      "canonicalSlug": "qwen/qwen3.8-27b-20260814",
+      "input": 0,
+      "output": 0
     },
     {
       "id": "dots-studio/dots-3-note-preview:free",
@@ -322,8 +334,8 @@
     {
       "id": "deepseek/deepseek-v4-pro-0813",
       "canonicalSlug": "deepseek/deepseek-v4-pro-20260813",
-      "input": 0.9833999999999999,
-      "output": 2.9502
+      "input": 0.57816,
+      "output": 1.73448
     },
     {
       "id": "deepseek/deepseek-v4-pro-0813:batch",
@@ -388,8 +400,8 @@
     {
       "id": "~deepseek/deepseek-v4-flash-latest",
       "canonicalSlug": "~deepseek/deepseek-v4-flash-latest",
-      "input": 0.04,
-      "output": 0.09999999999999999
+      "input": 0.055,
+      "output": 0.165
     },
     {
       "id": "deepseek/deepseek-v4-flash-0731",
@@ -404,15 +416,15 @@
       "output": 0.33
     },
     {
+      "id": "deepseek/deepseek-v4-flash-0731:free",
+      "canonicalSlug": "deepseek/deepseek-v4-flash-20260731",
+      "input": 0,
+      "output": 0
+    },
+    {
       "id": "thinkingmachines/inkling-small",
       "canonicalSlug": "thinkingmachines/inkling-small-20260730",
       "input": 0.44999999999999996,
-      "output": 1.2
-    },
-    {
-      "id": "thinkingmachines/inkling-small:batch",
-      "canonicalSlug": "thinkingmachines/inkling-small-20260730",
-      "input": 0.5,
       "output": 1.2
     },
     {
@@ -508,8 +520,8 @@
     {
       "id": "moonshotai/kimi-k3",
       "canonicalSlug": "moonshotai/kimi-k3-20260715",
-      "input": 2.6481380629999998,
-      "output": 13.282724250000001
+      "input": 2.0999999999999996,
+      "output": 10.950000000000001
     },
     {
       "id": "moonshotai/kimi-k3:batch",
@@ -628,8 +640,8 @@
     {
       "id": "tencent/hy3",
       "canonicalSlug": "tencent/hy3-20260706",
-      "input": 0.13199999999999998,
-      "output": 0.5279999999999999
+      "input": 0.0825,
+      "output": 0.33
     },
     {
       "id": "poolside/laguna-xs-2.1",
@@ -688,8 +700,8 @@
     {
       "id": "z-ai/glm-5.2",
       "canonicalSlug": "z-ai/glm-5.2-20260616",
-      "input": 1.4,
-      "output": 4.4
+      "input": 0.5544,
+      "output": 1.7424
     },
     {
       "id": "z-ai/glm-5.2:batch",
@@ -698,10 +710,16 @@
       "output": 2.2
     },
     {
+      "id": "z-ai/glm-5.2:free",
+      "canonicalSlug": "z-ai/glm-5.2-20260616",
+      "input": 0,
+      "output": 0
+    },
+    {
       "id": "moonshotai/kimi-k2.7-code",
       "canonicalSlug": "moonshotai/kimi-k2.7-code-20260612",
-      "input": 0.71,
-      "output": 3.5
+      "input": 0.7062,
+      "output": 3.21
     },
     {
       "id": "~anthropic/claude-fable-latest",
@@ -736,8 +754,8 @@
     {
       "id": "nvidia/nemotron-3-ultra-550b-a55b",
       "canonicalSlug": "nvidia/nemotron-3-ultra-550b-a55b-20260604",
-      "input": 0.6,
-      "output": 2.4
+      "input": 0.625,
+      "output": 3.125
     },
     {
       "id": "nvidia/nemotron-3-ultra-550b-a55b:free",
@@ -958,8 +976,8 @@
     {
       "id": "deepseek/deepseek-v4-flash",
       "canonicalSlug": "deepseek/deepseek-v4-flash-20260423",
-      "input": 0.088606,
-      "output": 0.177212
+      "input": 0.04956,
+      "output": 0.09912
     },
     {
       "id": "tencent/hy3-preview",
@@ -1032,12 +1050,6 @@
       "canonicalSlug": "google/gemma-4-31b-it-20260402",
       "input": 0.09,
       "output": 0.33999999999999997
-    },
-    {
-      "id": "google/gemma-4-31b-it:batch",
-      "canonicalSlug": "google/gemma-4-31b-it-20260402",
-      "input": 0.39,
-      "output": 0.9700000000000001
     },
     {
       "id": "google/gemma-4-31b-it:free",
@@ -1438,8 +1450,8 @@
     {
       "id": "nvidia/nemotron-3-nano-30b-a3b",
       "canonicalSlug": "nvidia/nemotron-3-nano-30b-a3b",
-      "input": 0.049999999999999996,
-      "output": 0.19999999999999998
+      "input": 0.06,
+      "output": 0.24
     },
     {
       "id": "openai/gpt-5.2-chat",
@@ -1524,12 +1536,6 @@
       "canonicalSlug": "mistralai/ministral-3b-2512",
       "input": 0.09999999999999999,
       "output": 0.09999999999999999
-    },
-    {
-      "id": "mistralai/mistral-large-2512",
-      "canonicalSlug": "mistralai/mistral-large-2512",
-      "input": 0.5,
-      "output": 1.5
     },
     {
       "id": "mistralai/mistral-large-2512:batch",
@@ -1684,8 +1690,8 @@
     {
       "id": "qwen/qwen3-vl-30b-a3b-instruct",
       "canonicalSlug": "qwen/qwen3-vl-30b-a3b-instruct",
-      "input": 0.15,
-      "output": 0.6
+      "input": 0.13,
+      "output": 0.52
     },
     {
       "id": "openai/gpt-5-pro",
@@ -1870,8 +1876,8 @@
     {
       "id": "openai/gpt-oss-120b",
       "canonicalSlug": "openai/gpt-oss-120b",
-      "input": 0.037,
-      "output": 0.16999999999999998
+      "input": 0.15,
+      "output": 0.6
     },
     {
       "id": "openai/gpt-oss-120b:batch",
@@ -1884,12 +1890,6 @@
       "canonicalSlug": "openai/gpt-oss-20b",
       "input": 0.03,
       "output": 0.13
-    },
-    {
-      "id": "openai/gpt-oss-20b:batch",
-      "canonicalSlug": "openai/gpt-oss-20b",
-      "input": 0.049999999999999996,
-      "output": 0.19999999999999998
     },
     {
       "id": "anthropic/claude-opus-4.1",
@@ -2014,13 +2014,13 @@
     {
       "id": "mistralai/mistral-small-3.2-24b-instruct",
       "canonicalSlug": "mistralai/mistral-small-3.2-24b-instruct-2506",
-      "input": 0.075,
-      "output": 0.19999999999999998
+      "input": 0.09375,
+      "output": 0.25
     },
     {
       "id": "minimax/minimax-m1",
       "canonicalSlug": "minimax/minimax-m1",
-      "input": 0.55,
+      "input": 0.39999999999999997,
       "output": 2.2
     },
     {
@@ -2350,8 +2350,8 @@
     {
       "id": "deepseek/deepseek-chat",
       "canonicalSlug": "deepseek/deepseek-chat-v3",
-      "input": 0.2574,
-      "output": 1.0287
+      "input": 0.32,
+      "output": 0.8899999999999999
     },
     {
       "id": "sao10k/l3.3-euryale-70b",
@@ -2620,8 +2620,8 @@
     {
       "id": "gryphe/mythomax-l2-13b",
       "canonicalSlug": "gryphe/mythomax-l2-13b",
-      "input": 0.06,
-      "output": 0.06
+      "input": 0.08,
+      "output": 0.11
     },
     {
       "id": "openai/gpt-3.5-turbo",

@@ -153,6 +153,14 @@ export function upsertAttention(
 export function createWorkbenchAttentionRoutes() {
 	const app = new Hono<AttentionContext>();
 
+	app.get("/:itemKey", (c) => {
+		const db = c.get("db");
+		const profileId = c.req.query("profileId") ?? "local";
+		requireProfile(db, profileId);
+		const row = getAttention(db, profileId, c.req.param("itemKey"));
+		return c.json({ attention: row ? mapAttention(row) : null });
+	});
+
 	app.get("/", (c) => {
 		const db = c.get("db");
 		const profileId = c.req.query("profileId") ?? "local";

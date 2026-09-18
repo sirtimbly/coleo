@@ -55,19 +55,107 @@ function createTestDb(): Database {
 describe("brain status API", () => {
   let db: Database;
   let app: Hono<{ Variables: { db: Database } }>;
+  let startCalls = 0;
+  let startSucceeds = true;
+  let stopCalls = 0;
+  let stopSucceeds = true;
+  let stopError: Error | null = null;
+  let startWait: Promise<void> | undefined;
+  let stopWait: Promise<void> | undefined;
 
   beforeEach(() => {
     db = createTestDb();
+    startCalls = 0;
+    startSucceeds = true;
+    stopCalls = 0;
+    stopSucceeds = true;
+    stopError = null;
+    startWait = undefined;
+    stopWait = undefined;
     app = new Hono<{ Variables: { db: Database } }>();
     app.use("*", async (c, next) => {
       c.set("db", db);
       await next();
     });
-    app.route("/api/brain", createBrainRoutes());
+    app.route("/api/brain", createBrainRoutes({ startBrain: async () => {
+      startCalls += 1;
+      await startWait;
+      return { type: "brain", running: startSucceeds, pid: 1234, startedAt: "2026-09-18T19:00:00.000Z" };
+    }, stopBrain: async () => {
+      stopCalls += 1;
+      await stopWait;
+      if (stopError) throw stopError;
+      return { type: "brain", running: !stopSucceeds, pid: 1234 };
+    } }));
   });
 
   afterEach(() => {
     db.close();
+  });
+
+  it("starts the process even when stored status already says running without inventing a poll", async () => {
+    const response = await app.request("/api/brain/start", { method: "POST" });
+    expect(response.status).toBe(200);
+    expect(startCalls).toBe(1);
+    expect(await response.json()).toEqual({ started: true, status: "running", pid: 1234 });
+    expect(db.query("SELECT last_poll_at FROM brain_state").get()).toEqual({ last_poll_at: null });
+  });
+
+  it("does not report a successful start when the process fails to launch", async () => {
+    startSucceeds = false;
+    db.run("UPDATE brain_state SET status = 'stopped'");
+    app.onError((error, c) => c.json({ error: error.message }, 503));
+    const response = await app.request("/api/brain/start", { method: "POST" });
+    expect(response.status).toBe(503);
+    expect(db.query("SELECT status, last_poll_at FROM brain_state").get()).toEqual({ status: "stopped", last_poll_at: null });
+  });
+
+  it("waits for the managed process to stop before updating state", async () => {
+    let release!: () => void;
+    stopWait = new Promise<void>((resolve) => { release = resolve; });
+    const pending = app.request("/api/brain/stop", { method: "POST" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(stopCalls).toBe(1);
+    expect(db.query("SELECT status FROM brain_state").get()).toEqual({ status: "running" });
+    release();
+    const response = await pending;
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ stopped: true, status: "stopped" });
+    expect(db.query("SELECT status, last_poll_at FROM brain_state").get()).toEqual({ status: "stopped", last_poll_at: null });
+  });
+
+  it("checks the process even when persisted status already says stopped", async () => {
+    db.run("UPDATE brain_state SET status = 'stopped'");
+    expect((await app.request("/api/brain/stop", { method: "POST" })).status).toBe(200);
+    expect(stopCalls).toBe(1);
+  });
+
+  it.each(["timeout", "exception"])("does not report stopped after a service %s", async (failure) => {
+    stopSucceeds = false;
+    if (failure === "exception") stopError = new Error("Unable to signal process");
+    app.onError((error, c) => c.json({ error: error.message }, 503));
+    const response = await app.request("/api/brain/stop", { method: "POST" });
+    expect(response.status).toBe(503);
+    expect(db.query("SELECT status, last_poll_at FROM brain_state").get()).toEqual({ status: "running", last_poll_at: null });
+    stopError = null;
+    stopSucceeds = true;
+    expect((await app.request("/api/brain/stop", { method: "POST" })).status).toBe(200);
+  });
+
+  it("finishes an in-flight start before processing stop", async () => {
+    let release!: () => void;
+    startWait = new Promise<void>((resolve) => { release = resolve; });
+    const start = app.request("/api/brain/start", { method: "POST" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const stop = app.request("/api/brain/stop", { method: "POST" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(startCalls).toBe(1);
+    expect(stopCalls).toBe(0);
+    release();
+    expect((await start).status).toBe(200);
+    expect((await stop).status).toBe(200);
+    expect(stopCalls).toBe(1);
+    expect(db.query("SELECT status FROM brain_state").get()).toEqual({ status: "stopped" });
   });
 
   it("reports blocked, healthy, and pending project plan states", async () => {

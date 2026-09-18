@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { TabulatorFull as Tabulator } from "tabulator-tables";
+import { BoundaryContent, ScreenErrorBoundary } from "@/components/ScreenErrorBoundary";
 
 import { resolveGridFontSize } from "./grid-font-size";
 
@@ -353,7 +354,11 @@ export function ResourceSheet<T extends { id: string }>({
 			if (!resource || !render) return;
 			const existing = mountedRowDetails.get(element);
 			if (existing?.id === data.__resourceId) {
-				existing.root.render(render(resource));
+				existing.root.render(
+					<ScreenErrorBoundary name="this card" resetKey={data.__resourceId}>
+						<BoundaryContent render={() => render(resource)} />
+					</ScreenErrorBoundary>,
+				);
 				updateExpander(row, true);
 				queueMicrotask(() => row.normalizeHeight());
 				return;
@@ -382,7 +387,11 @@ export function ResourceSheet<T extends { id: string }>({
 			};
 			mountedRowDetails.set(element, mounted);
 			mounted.resizeObserver.observe(host);
-			root.render(render(resource));
+			root.render(
+				<ScreenErrorBoundary name="this card" resetKey={data.__resourceId}>
+					<BoundaryContent render={() => render(resource)} />
+				</ScreenErrorBoundary>,
+			);
 			updateExpander(row, true);
 			queueMicrotask(() => row.normalizeHeight());
 		};

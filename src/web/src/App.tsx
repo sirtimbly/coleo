@@ -5,7 +5,8 @@ import { HostedSessionNotice } from '@/components/HostedSessionNotice';
  * Global providers live here so every Golden Layout panel shares the same
  * theme, messages, query cache, and live projection transport.
  */
-import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
+import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
 import { APP_ROUTES } from '@/app/routes';
 import { AppMessageOverlay } from '@/components/AppMessageOverlay';
 import { InterfaceTypography } from '@/components/InterfaceTypography';
@@ -21,6 +22,7 @@ import { ToolbarTemplateProvider } from '@/workbench/toolbar-template-context';
 
 function AppShell() {
   const { layoutMode } = useLayoutMode();
+  const location = useLocation();
 
   if (layoutMode === 'golden') {
     return <GoldenWorkspace />;
@@ -28,7 +30,9 @@ function AppShell() {
 
   return (
     <Layout layoutMode={layoutMode}>
-      <Outlet />
+      <ScreenErrorBoundary name="this screen" resetKey={`${location.pathname}${location.search}`}>
+        <Outlet />
+      </ScreenErrorBoundary>
     </Layout>
   );
 }

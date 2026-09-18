@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -105,6 +105,45 @@ describe("project setup service", () => {
 			else process.env.COLEO_BRAIN_API_KEY = originalApiKey;
 			if (originalBaseUrl === undefined) delete process.env.OPENAI_BASE_URL;
 			else process.env.OPENAI_BASE_URL = originalBaseUrl;
+		}
+	});
+
+	it("gives large plan rewrites a bounded longer deadline and reports timeouts in both formatter modes", async () => {
+		const templateDir = join(root, "src", "brain", "templates");
+		await mkdir(templateDir, { recursive: true });
+		await writeFile(join(templateDir, "plan-evaluation-system-prompt.jinja"), "Format the plan");
+		await writeFile(join(templateDir, "plan-evaluation-user-prompt.jinja"), "{{ project_plan }}");
+		const originalFetch = globalThis.fetch;
+		const originalApiKey = process.env.COLEO_BRAIN_API_KEY;
+		process.env.COLEO_BRAIN_API_KEY = "test-key";
+		const deadlines: number[] = [];
+		const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+			deadlines.push(ms);
+			return new AbortController().signal;
+		});
+		globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+			expect(init?.signal).toBeInstanceOf(AbortSignal);
+			throw new DOMException("The operation timed out.", "TimeoutError");
+		}) as unknown as typeof fetch;
+		const templates = new BrainTemplateManager(root, () => {});
+		const smallPlan = "# Plan\n\n## Phase 1: Foundation\n\n### Tasks\n- [ ] Ship accounts\n";
+		const largePlan = smallPlan + "Preserve this context. ".repeat(5_000);
+		try {
+			const small = await formatPlanWithConfiguredModel(smallPlan, ".project/plan.md", undefined, undefined, templates);
+			const large = await formatPlanWithConfiguredModel(largePlan, ".project/plan.md", undefined, undefined, templates);
+			expect(large.content).toBe(largePlan.trimEnd() + "\n");
+			expect(small.formatterError).toContain("Plan formatter timed out");
+			expect(large.formatterError).toContain("The source plan was preserved");
+			expect(deadlines[0]).toBeGreaterThan(120_000);
+			expect(deadlines[1]).toBeGreaterThan(deadlines[0]!);
+			expect(deadlines[1]).toBeLessThanOrEqual(900_000);
+			await expect(formatPlanWithConfiguredModel(largePlan, ".project/plan.md", "Evaluate the plan", undefined, templates))
+				.rejects.toThrow("Plan formatter timed out");
+		} finally {
+			timeout.mockRestore();
+			globalThis.fetch = originalFetch;
+			if (originalApiKey === undefined) delete process.env.COLEO_BRAIN_API_KEY;
+			else process.env.COLEO_BRAIN_API_KEY = originalApiKey;
 		}
 	});
 

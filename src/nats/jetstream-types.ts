@@ -68,6 +68,7 @@ export interface ArmState {
 }
 
 export interface IEventStore {
+  getEvent(sequence: number): Promise<EventData | null>;
   publishEvent(subject: string, data: EventData): Promise<void>;
   queryEvents(options: QueryOptions): Promise<EventData[]>;
   getArmEvents(armId: string, limit?: number, since?: Date): Promise<EventData[]>;

@@ -29,6 +29,10 @@ export class InMemoryEventStore implements IEventStore {
     });
   }
 
+  async getEvent(sequence: number): Promise<EventData | null> {
+    return this.events.find((entry) => entry.data.sequence === sequence)?.data ?? null;
+  }
+
   async queryEvents(options: QueryOptions): Promise<EventData[]> {
     let results = this.events.map(e => e.data);
     

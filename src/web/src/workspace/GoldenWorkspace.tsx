@@ -27,8 +27,8 @@ import {
 	RotateCcw,
 	Save,
 	Search,
-	SquareStack,
 } from "lucide-react";
+import { WorkspaceRoutePanel } from "./WorkspaceRoutePanel";
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -55,7 +55,6 @@ import { WorkbenchStatusBar } from "@/workbench/WorkbenchStatusBar";
 import type { JsonObject } from "@/lib/api";
 import type { WorkbenchChannel } from "@/workbench/types";
 import {
-	WorkspaceRouteProvider,
 	type WorkspaceOpenMode,
 	type WorkspaceRouteState,
 } from "./route-context";
@@ -195,41 +194,6 @@ function isRoutePanelState(value: unknown): value is RoutePanelState {
 		typeof candidate.pathname === "string" &&
 		typeof candidate.search === "string" &&
 		(candidate.title === undefined || typeof candidate.title === "string")
-	);
-}
-
-function renderRoutePanel(
-	route: RoutePanelState,
-	onRouteChange: (route: WorkspaceRouteState) => void,
-	onOpenRoute: (route: WorkspaceRouteState, mode?: WorkspaceOpenMode) => void,
-	onCloseRoute: () => void,
-) {
-	const matchedRoute = findAppRoute(route.pathname);
-	if (!matchedRoute) {
-		return (
-			<div className="golden-workspace-panel flex items-center justify-center">
-				<div className="text-center space-y-2">
-					<SquareStack className="mx-auto h-10 w-10 text-muted-foreground" />
-					<p className="font-medium">Unknown panel route</p>
-					<p className="text-sm text-muted-foreground">{route.pathname}</p>
-				</div>
-			</div>
-		);
-	}
-
-	const RouteComponent = matchedRoute.component;
-
-	return (
-		<div className="golden-workspace-panel">
-			<WorkspaceRouteProvider
-				route={route}
-				onRouteChange={onRouteChange}
-				onOpenRoute={onOpenRoute}
-				onCloseRoute={onCloseRoute}
-			>
-				<RouteComponent />
-			</WorkspaceRouteProvider>
-		</div>
 	);
 }
 
@@ -1115,14 +1079,15 @@ export function GoldenWorkspace() {
 		() =>
 			Object.values(panelInstances).map((panel) =>
 				createPortal(
-					renderRoutePanel(
-						panel.route,
-						(nextRoute) =>
+					<WorkspaceRoutePanel
+						route={panel.route}
+						onRouteChange={(nextRoute) =>
 							updatePanelRoute(panel.route.panelId, {
 								...nextRoute,
 								panelId: panel.route.panelId,
-							}),
-						(nextRoute, mode = "focus") => {
+							})
+						}
+						onOpenRoute={(nextRoute, mode = "focus") => {
 							if (mode === "split") {
 								splitRouteHorizontally(
 									nextRoute.pathname,
@@ -1147,9 +1112,9 @@ export function GoldenWorkspace() {
 							}
 
 							focusOrOpenRoute(nextRoute.pathname, nextRoute.search);
-						},
-						() => panel.container.close(),
-					),
+						}}
+						onCloseRoute={() => panel.container.close()}
+					/>,
 					panel.hostElement,
 					panel.route.panelId,
 				),

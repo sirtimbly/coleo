@@ -19,7 +19,6 @@ import { Button, ButtonGroup, Dropdown } from "@heroui/react";
 import { generateArmName } from "../../../cli/arm-names";
 import {
 	api,
-	type AgentInfo,
 	type Arm,
 	type ArmTemplateSummary,
 	type OpenCodeProvider,
@@ -29,6 +28,9 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { ToolbarToggleButton } from '@/design-system/toolbar-toggle-button';
 import { NavigationButton } from '@/design-system/navigation-button';
 import { usePageTitle } from '@/hooks/usePageTitle';
+import { SpawnArmHost } from "@/components/spawn-arm-host";
+import { getArmHostHarnesses } from "@/lib/arm-hosts";
+import { useArmHosts } from "@/hooks/use-arm-hosts";
 import { useToast } from "@/hooks/useToast";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import {
@@ -75,18 +77,6 @@ interface OpenCodeCatalogState {
 	message: string | null;
 }
 
-interface OpenCodeProvidersResponse {
-	providers: OpenCodeProvider[];
-	connected: string[];
-	default?: Record<string, string>;
-	error?: string;
-	message?: string;
-	fallback?: boolean;
-	cached?: boolean;
-	cachedAt?: string;
-	source?: "live" | "cache" | "fallback";
-}
-
 interface NewArmModalState {
 	isOpen: boolean;
 	name: string;
@@ -110,13 +100,6 @@ const DEFAULT_OPENCODE_CATALOG_STATE: OpenCodeCatalogState = {
 	message: null,
 };
 
-const EMPTY_OPENCODE_PROVIDERS_RESPONSE: OpenCodeProvidersResponse = {
-	providers: [],
-	connected: [],
-	source: "fallback",
-	message: "Unable to load the cached OpenCode catalog.",
-};
-
 const DEFAULT_SPAWN_MODAL_STATE: NewArmModalState = {
 	isOpen: false,
 	name: "",
@@ -127,16 +110,8 @@ const DEFAULT_SPAWN_MODAL_STATE: NewArmModalState = {
 	agentId: "",
 };
 
-function isDaemonManagedHarness(harness: string): boolean {
-	return harness === "opencode-api" || harness === "opencode";
-}
-
 function usesOpenCodeCatalog(harness: string): boolean {
 	return harness === "opencode-api";
-}
-
-function uniqueStrings(values: string[]): string[] {
-	return [...new Set(values)].sort((a, b) => a.localeCompare(b));
 }
 
 function pickFirstCompatibleTemplate(
@@ -374,9 +349,10 @@ export function ArmsPage() {
 	const isSpawnPage = searchParams.get("spawn") === "1";
 	usePageTitle(isSpawnPage ? 'Coleo Observatory - Spawn Arm' : 'Coleo Observatory - Arms');
 	const [arms, setArms] = useState<Arm[]>([]);
-	const [agents, setAgents] = useState<AgentInfo[]>([]);
+	const hosts = useArmHosts(isSpawnPage);
+	const { agents, refresh: refreshHosts } = hosts;
 	const [armTemplates, setArmTemplates] = useState<ArmTemplateSummary[]>([]);
-	const [openCodeProviders, setOpenCodeProviders] = useState<OpenCodeProvider[]>([]);
+	const [hostProviders, setOpenCodeProviders] = useState<OpenCodeProvider[]>([]);
 	const [openCodeCatalog, setOpenCodeCatalog] = useState<OpenCodeCatalogState>(
 		DEFAULT_OPENCODE_CATALOG_STATE,
 	);
@@ -396,43 +372,26 @@ export function ArmsPage() {
 	);
 	const [providerSetupProviderId, setProviderSetupProviderId] = useState<string | null>(null);
 	const [loadingAgentProviders, setLoadingAgentProviders] = useState(false);
+	const [catalogHostId, setCatalogHostId] = useState<string | null>(null);
+	const [spawnError, setSpawnError] = useState<string | null>(null);
+	const openCodeProviders = useMemo(
+		() => catalogHostId === spawnModal.agentId ? hostProviders : [],
+		[catalogHostId, spawnModal.agentId, hostProviders],
+	);
+	const [providerRefreshVersion, setProviderRefreshVersion] = useState(0);
 	const { showError, showSuccess } = useToast();
 
 	const loadArms = useCallback(async () => {
 		try {
-			const [armsRes, agentsRes, defaultsRes, providersRes, templatesRes] = await Promise.all([
+			const [armsRes, defaultsRes, templatesRes] = await Promise.all([
 				api.listArms(),
-				api.listAgents().catch(() => ({ agents: [] as AgentInfo[] })),
 				api
 					.getDefaults()
 					.catch(() => ({ defaults: { ...DEFAULT_SPAWN_DEFAULTS, contextBudget: 0 } })),
-				api
-					.getOpenCodeProviders()
-					.catch(() => EMPTY_OPENCODE_PROVIDERS_RESPONSE),
 				api.listArmTemplates().catch(() => ({ templates: [] as ArmTemplateSummary[] })),
 			]);
 			setArms(armsRes.arms);
-			setAgents(agentsRes.agents);
 			setArmTemplates(templatesRes.templates);
-			const catalogIsCacheBacked =
-				providersRes.source === "cache" &&
-				providersRes.fallback !== true;
-			setOpenCodeProviders(
-				catalogIsCacheBacked
-					? providersRes.providers.map((provider) => ({
-							...provider,
-							connected: providersRes.connected.includes(provider.id),
-						}))
-					: [],
-			);
-			setOpenCodeCatalog({
-				source: providersRes.source || "unknown",
-				message:
-					catalogIsCacheBacked
-						? providersRes.message || null
-						: providersRes.message ||
-						  "The API has not loaded a cached authenticated OpenCode catalog yet.",
-			});
 			setSpawnDefaults({
 				harness: defaultsRes.defaults.harness,
 				provider: defaultsRes.defaults.provider,
@@ -614,11 +573,6 @@ export function ArmsPage() {
 		[loadArms, showError, showSuccess],
 	);
 
-	const allAgentHarnesses = useMemo(
-		() => uniqueStrings(agents.flatMap((agent) => agent.capabilities)),
-		[agents],
-	);
-
 	const selectedSpawnAgent = useMemo(
 		() => agents.find((agent) => agent.agentId === spawnModal.agentId) || null,
 		[agents, spawnModal.agentId],
@@ -669,7 +623,7 @@ export function ArmsPage() {
 	const isHighCostModel = (modelPricing?.per100k ?? 0) >= 2;
 
 	const availableHarnesses = useMemo(() => {
-		return uniqueStrings(selectedSpawnAgent?.capabilities ?? []);
+		return getArmHostHarnesses(selectedSpawnAgent);
 	}, [selectedSpawnAgent]);
 
 	const compatibleTemplates = useMemo(() => {
@@ -681,12 +635,23 @@ export function ArmsPage() {
 		);
 	}, [armTemplates, availableHarnesses]);
 
-	const hasOpenCodeCatalog =
-		openCodeCatalog.source === "cache" || openCodeCatalog.source === "live";
+	const hasOpenCodeCatalog = catalogHostId === spawnModal.agentId && openCodeCatalog.source === "live";
+	const hostReady = hosts.status === "ready" && selectedSpawnAgent !== null && availableHarnesses.length > 0;
+	const checkingProviders = hostReady && usesOpenCodeCatalog(spawnModal.harness) &&
+		(loadingAgentProviders || catalogHostId !== spawnModal.agentId);
+	const spawnBlocker = hosts.status === "loading" ? "Checking for an arm host…"
+		: hosts.status === "error" ? "Verify the host connection to continue."
+		: !selectedSpawnAgent ? "Connect an arm host to continue."
+		: !availableHarnesses.includes(spawnModal.harness) ? "Choose a supported harness to continue."
+		: checkingProviders ? "Loading providers and models…"
+		: usesOpenCodeCatalog(spawnModal.harness) && selectedOpenCodeProvider?.connected === false ? "Connect the selected provider to continue."
+		: !spawnModal.name.trim() ? "Enter an arm name to continue."
+		: arms.some((arm) => arm.id === spawnModal.name.trim()) ? "Choose a unique arm name to continue."
+		: null;
 
 	const openSpawnModal = useCallback(() => {
 		const initialAgentId = agents[0]?.agentId || "";
-		const initialAgentHarnesses = uniqueStrings(agents[0]?.capabilities ?? allAgentHarnesses);
+		const initialAgentHarnesses = getArmHostHarnesses(agents[0]);
 		const initialTemplate = pickFirstCompatibleTemplate(
 			armTemplates,
 			initialAgentHarnesses,
@@ -706,7 +671,7 @@ export function ArmsPage() {
 			model: initialTemplate?.model || spawnDefaults.model,
 			agentId: initialAgentId,
 		});
-	}, [agents, allAgentHarnesses, armTemplates, arms, spawnDefaults]);
+	}, [agents, armTemplates, arms, spawnDefaults]);
 
 	const openSpawnPanel = useCallback(() => {
 		openWorkspaceRoute(
@@ -742,39 +707,8 @@ export function ArmsPage() {
 		const provider = spawnModal.provider.trim();
 		const model = spawnModal.model.trim();
 		let didSpawn = false;
-
-		if (!name) {
-			showError("Enter a name for the new arm", "Spawn Failed");
-			return;
-		}
-
-		if (arms.some((arm) => arm.id === name)) {
-			showError(`An arm named "${name}" already exists`, "Spawn Failed");
-			return;
-		}
-
-		if (agents.length === 0) {
-			showError(
-				"No connected arm agent hosts are available. Start an arm agent first.",
-				"Spawn Failed",
-			);
-			return;
-		}
-
-		if (!spawnModal.harness) {
-			showError("Choose a harness supported by the selected arm agent host", "Spawn Failed");
-			return;
-		}
-
-		if (!spawnModal.agentId) {
-			showError("Choose an arm agent host", "Spawn Failed");
-			return;
-		}
-
-		if (selectedOpenCodeProvider?.connected === false) {
-			openProviderSetupModal(selectedOpenCodeProvider.id);
-			return;
-		}
+		setSpawnError(null);
+		if (spawnBlocker) return;
 
 		setSpawningArmId(name);
 
@@ -794,6 +728,8 @@ export function ArmsPage() {
 			showSuccess(`Spawned ${name} on ${target}`, "Arm Started");
 			didSpawn = true;
 		} catch (err) {
+			setSpawnError(err instanceof Error ? err.message : "Failed to spawn arm");
+			void refreshHosts();
 			showError(
 				err instanceof Error ? err.message : "Failed to spawn arm",
 				"Spawn Failed",
@@ -805,31 +741,34 @@ export function ArmsPage() {
 			}
 		}
 	}, [
-		agents.length,
-		arms,
+		spawnBlocker,
+		refreshHosts,
 		closeSpawnModal,
 		loadArms,
-		openProviderSetupModal,
-		selectedOpenCodeProvider,
 		showError,
 		showSuccess,
 		spawnModal,
 	]);
 
 	useEffect(() => {
-		if (searchParams.get("spawn") !== "1") {
+		if (searchParams.get("spawn") !== "1" || spawnModal.isOpen || loading) {
 			return;
 		}
 
 		openSpawnModal();
-	}, [openSpawnModal, searchParams]);
+	}, [openSpawnModal, searchParams, spawnModal.isOpen, loading]);
 
 	useEffect(() => {
-		if (!spawnModal.isOpen || !spawnModal.agentId || !usesOpenCodeCatalog(spawnModal.harness)) {
+		setProviderSetupProviderId(null);
+		if (!spawnModal.isOpen || !hostReady || !spawnModal.agentId || !usesOpenCodeCatalog(spawnModal.harness)) {
+			setLoadingAgentProviders(false);
 			return;
 		}
 
 		let cancelled = false;
+		setCatalogHostId(spawnModal.agentId);
+		setOpenCodeProviders([]);
+		setOpenCodeCatalog(DEFAULT_OPENCODE_CATALOG_STATE);
 		setLoadingAgentProviders(true);
 		void api.getAgentOpenCodeProviders(spawnModal.agentId)
 			.then((response) => {
@@ -839,6 +778,7 @@ export function ArmsPage() {
 			})
 			.catch((err: unknown) => {
 				if (cancelled) return;
+				void refreshHosts();
 				setOpenCodeCatalog((current) => ({
 					...current,
 					message: err instanceof Error ? err.message : "Unable to load providers from the arm host",
@@ -851,7 +791,7 @@ export function ArmsPage() {
 		return () => {
 			cancelled = true;
 		};
-	}, [spawnModal.agentId, spawnModal.harness, spawnModal.isOpen]);
+	}, [hostReady, spawnModal.agentId, spawnModal.harness, spawnModal.isOpen, providerRefreshVersion, refreshHosts]);
 
 	useEffect(() => {
 		if (!spawnModal.isOpen) {
@@ -859,12 +799,11 @@ export function ArmsPage() {
 		}
 
 		setSpawnModal((current) => {
-			const nextAgentId = agents.some((agent) => agent.agentId === current.agentId)
-				? current.agentId
-				: agents[0]?.agentId || "";
+			const nextAgentId = current.agentId || agents[0]?.agentId || "";
 			const nextAgent =
 				agents.find((agent) => agent.agentId === nextAgentId) || null;
-			const nextAvailableHarnesses = uniqueStrings(nextAgent?.capabilities ?? []);
+			if (!nextAgent) return current;
+			const nextAvailableHarnesses = getArmHostHarnesses(nextAgent);
 			const nextCompatibleTemplates =
 				nextAvailableHarnesses.length === 0
 					? armTemplates
@@ -951,6 +890,7 @@ export function ArmsPage() {
 		spawnDefaults.model,
 		spawnDefaults.provider,
 		spawnModal.isOpen,
+		spawnModal.agentId,
 	]);
 
 	const armScopeOptions = useMemo(() => {
@@ -1141,12 +1081,12 @@ export function ArmsPage() {
 
 			{isSpawnPage && spawnModal.isOpen ? (
 				<div className="flex min-h-full w-full items-start justify-center">
-					<div className="spawn-arm-panel flex min-h-[min(44rem,100%)] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-border bg-overlay text-foreground shadow-xl">
+					<div className="spawn-arm-panel flex w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-border bg-overlay text-foreground shadow-xl">
 							<div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
 								<div>
 									<h2 className="text-lg font-semibold text-foreground">Spawn New Arm</h2>
 									<p className="text-sm text-muted-foreground">
-										Create a new arm record and start it on a connected arm agent host.
+										Connect an arm host, then choose how your arm will run.
 									</p>
 								</div>
 								<button
@@ -1160,13 +1100,21 @@ export function ArmsPage() {
 							</div>
 
 							<div className="min-h-0 space-y-5 overflow-y-auto p-4">
-								<div className="rounded-lg border border-accent/40 bg-accent/10 p-3 text-sm text-foreground">
-									The API server is the control plane. Spawn sends a command to a connected
-									arm agent. If that agent is running on another host, the arm will start on
-									that host rather than on the API server machine.
-								</div>
+								<SpawnArmHost
+									agents={agents}
+									selectedId={spawnModal.agentId}
+									status={hosts.status}
+									refreshing={hosts.refreshing}
+									error={hosts.error}
+									disabled={spawningArmId !== null}
+									onRefresh={() => void refreshHosts()}
+									onSelect={(agentId) => setSpawnModal((current) => ({ ...current, agentId }))}
+								/>
 
-								<div className="spawn-arm-panel__identity grid gap-4">
+								{hostReady && (
+								<fieldset disabled={spawningArmId !== null} className="min-w-0 space-y-5">
+								<legend className="sr-only">Arm configuration</legend>
+								<div className="spawn-arm-panel__identity grid items-end gap-4">
 									<div>
 										<div className="mb-2 flex items-center justify-between gap-3">
 											<label className="text-sm font-medium text-foreground" htmlFor="spawn-arm-name">
@@ -1197,14 +1145,15 @@ export function ArmsPage() {
 												}))
 											}
 											placeholder="e.g. explorer-2"
-											className="w-full rounded-lg border border-border bg-surface-secondary px-3 py-2 text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+											className="h-10 w-full rounded-lg border border-border bg-surface-secondary px-3 py-2 text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
 										/>
 									</div>
 									<div>
-										<label className="mb-2 block text-sm font-medium text-foreground">
+										<label className="mb-2 block text-sm font-medium text-foreground" htmlFor="spawn-arm-template">
 											Template
 										</label>
 										<select
+											id="spawn-arm-template"
 											value={spawnModal.templateId}
 											onChange={(e) =>
 												setSpawnModal((current) => {
@@ -1222,7 +1171,7 @@ export function ArmsPage() {
 													};
 												})
 											}
-											className="w-full rounded-lg border border-border bg-surface-secondary px-3 py-2 text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+											className="h-10 w-full rounded-lg border border-border bg-surface-secondary px-3 py-2 text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
 										>
 											<option value="">Custom arm (no template)</option>
 											{compatibleTemplates.map((template) => (
@@ -1241,12 +1190,39 @@ export function ArmsPage() {
 									</p>
 								)}
 
+								{usesOpenCodeCatalog(spawnModal.harness) &&
+									(checkingProviders || openCodeCatalog.message || !hasOpenCodeCatalog || openCodeProviders.length === 0 || selectedOpenCodeModels.length === 0) && (
+									<div className="space-y-3 rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm text-foreground">
+										<p role="status" aria-label="Provider status">
+											{checkingProviders
+												? "Loading providers and models from the selected arm host…"
+												: openCodeCatalog.message || "No providers or models are available for this selection yet."}
+										</p>
+										{!checkingProviders && <p>Refresh from the selected arm host, or enter provider and model names manually.</p>}
+										<Button
+											variant="secondary"
+											size="sm"
+											isDisabled={checkingProviders || !spawnModal.agentId}
+											onPress={() => setProviderRefreshVersion((version) => version + 1)}
+											className="gap-1.5"
+										>
+											{loadingAgentProviders ? (
+												<LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+											) : (
+												<RefreshCw className="h-3.5 w-3.5" />
+											)}
+											Refresh providers and models
+										</Button>
+									</div>
+								)}
+
 								<div className="spawn-arm-panel__runtime grid gap-4">
 									<div>
-										<label className="mb-2 block text-sm font-medium text-foreground">
+										<label className="mb-2 block text-sm font-medium text-foreground" htmlFor="spawn-arm-harness">
 											Harness
 										</label>
 										<select
+											id="spawn-arm-harness"
 											value={spawnModal.harness}
 											onChange={(e) =>
 												setSpawnModal((current) => ({
@@ -1269,13 +1245,15 @@ export function ArmsPage() {
 										</select>
 									</div>
 									<div>
-										<label className="mb-2 block text-sm font-medium text-foreground">
+										<label className="mb-2 block text-sm font-medium text-foreground" htmlFor="spawn-arm-provider">
 											Provider
 										</label>
 										{usesOpenCodeCatalog(spawnModal.harness) &&
 										hasOpenCodeCatalog &&
 										openCodeProviders.length > 0 ? (
 											<select
+												disabled={checkingProviders}
+												id="spawn-arm-provider"
 												value={spawnModal.provider}
 												onChange={(e) =>
 													setSpawnModal((current) => {
@@ -1301,6 +1279,8 @@ export function ArmsPage() {
 											</select>
 										) : (
 											<input
+												disabled={checkingProviders}
+												id="spawn-arm-provider"
 												value={spawnModal.provider}
 												onChange={(e) =>
 													setSpawnModal((current) => ({
@@ -1314,13 +1294,15 @@ export function ArmsPage() {
 										)}
 									</div>
 									<div>
-										<label className="mb-2 block text-sm font-medium text-foreground">
+										<label className="mb-2 block text-sm font-medium text-foreground" htmlFor="spawn-arm-model">
 											Model
 										</label>
 										{usesOpenCodeCatalog(spawnModal.harness) &&
 										hasOpenCodeCatalog &&
 										selectedOpenCodeModels.length > 0 ? (
 											<select
+												disabled={checkingProviders}
+												id="spawn-arm-model"
 												value={spawnModal.model}
 												onChange={(e) =>
 													setSpawnModal((current) => ({
@@ -1338,6 +1320,8 @@ export function ArmsPage() {
 											</select>
 										) : (
 											<input
+												disabled={checkingProviders}
+												id="spawn-arm-model"
 												value={spawnModal.model}
 												onChange={(e) =>
 													setSpawnModal((current) => ({
@@ -1358,7 +1342,7 @@ export function ArmsPage() {
 									</p>
 								)}
 
-								{selectedOpenCodeModel ? (
+								{usesOpenCodeCatalog(spawnModal.harness) && selectedOpenCodeModel ? (
 									<div className="rounded-lg border border-border bg-surface-secondary/45 p-3 text-sm text-muted-foreground">
 										<div className="flex flex-wrap items-center justify-between gap-2">
 											<span className="font-medium text-foreground">Model estimate*</span>
@@ -1398,13 +1382,13 @@ export function ArmsPage() {
 									</div>
 								) : null}
 
-								{contextBudgetWarning ? (
+								{usesOpenCodeCatalog(spawnModal.harness) && contextBudgetWarning ? (
 									<div className="rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm text-foreground">
 										This template requests {selectedTemplate?.contextBudget.toLocaleString()} context tokens, but the selected model supports only {selectedOpenCodeModel?.limit?.context?.toLocaleString()}. Choose a larger-context model or a different template.
 									</div>
 								) : null}
 
-								{isHighCostModel ? (
+								{usesOpenCodeCatalog(spawnModal.harness) && isHighCostModel ? (
 									<div className="rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm text-foreground">
 										This is a high-cost model. Its estimated balanced 100k-token run is ${modelPricing?.per100k.toFixed(2)}; choose a lower-cost model if this arm will run frequently.
 									</div>
@@ -1427,12 +1411,6 @@ export function ArmsPage() {
 									</div>
 								)}
 
-								{usesOpenCodeCatalog(spawnModal.harness) && !hasOpenCodeCatalog && (
-									<div className="rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm text-foreground">
-										{loadingAgentProviders ? "Loading providers from the selected arm host…" : openCodeCatalog.message ||
-											"No cached authenticated OpenCode catalog is available yet. Spawn one OpenCode arm after restarting the API server, or enter provider/model manually for now."}
-									</div>
-								)}
 
 								{spawnModal.name.trim() && arms.some((arm) => arm.id === spawnModal.name.trim()) && (
 									<div className="rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm text-foreground">
@@ -1442,66 +1420,14 @@ export function ArmsPage() {
 									</div>
 								)}
 
-								<div>
-									<label className="mb-2 block text-sm font-medium text-foreground">
-										Arm agent host
-									</label>
-									<select
-										value={spawnModal.agentId}
-										onChange={(e) =>
-											setSpawnModal((current) => ({
-												...current,
-												agentId: e.target.value,
-											}))
-										}
-										disabled={agents.length === 0}
-										className="w-full rounded-lg border border-border bg-surface-secondary px-3 py-2 text-foreground disabled:opacity-50 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-									>
-										{agents.length === 0 ? (
-											<option value="">No arm agents connected</option>
-										) : (
-											agents.map((agent) => (
-												<option key={agent.agentId} value={agent.agentId}>
-													{agent.hostname} · {agent.agentId}
-												</option>
-											))
-										)}
-									</select>
-									<p className="mt-2 text-sm text-muted-foreground">
-										This defaults to the first connected arm agent host.
-									</p>
-								</div>
-
-								{spawnModal.harness && isDaemonManagedHarness(spawnModal.harness) && (
-									<div className="rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm text-foreground">
-										<div className="flex items-start gap-2">
-											<Server className="mt-0.5 h-4 w-4 shrink-0" />
-											<p>
-												<code>{spawnModal.harness}</code> is daemon-managed. A connected arm
-												agent host is required for this spawn flow.
-											</p>
-										</div>
-									</div>
+								</fieldset>
 								)}
-
-								{agents.length === 0 && (
-									<div className="rounded-lg border border-danger/50 bg-danger/10 p-3 text-sm text-danger">
-										No arm agents are currently connected. Start <code>coleo agent start</code>{" "}
-										on a host you want to run arms on, then reopen this panel.
-									</div>
-								)}
-
-								{selectedSpawnAgent && (
-									<p className="text-sm text-muted-foreground">
-										Selected host capabilities: {selectedSpawnAgent.capabilities.join(", ")}
-									</p>
-								)}
+								{spawnError && <p role="alert" className="rounded-lg border border-danger/50 bg-danger/10 p-3 text-sm text-danger">Could not spawn arm: {spawnError}</p>}
 							</div>
 
-							<div className="flex shrink-0 items-center justify-between border-t border-border bg-surface-secondary/60 px-4 py-3">
+							<div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border bg-surface-secondary/60 px-4 py-3">
 								<span className="text-xs text-muted-foreground">
-									The runtime host is chosen from the connected arm agents and returned by
-									the API after spawn.
+									{spawningArmId !== null ? `Starting ${spawnModal.name}…` : spawnBlocker || `Ready to spawn on ${selectedSpawnAgent?.hostname}.`}
 								</span>
 								<div className="flex gap-2">
 									<Button variant="ghost" onPress={closeSpawnModal}>
@@ -1510,14 +1436,7 @@ export function ArmsPage() {
 									<Button
 										variant="primary"
 										onPress={submitSpawnModal}
-										isDisabled={
-											!spawnModal.name.trim() ||
-											!spawnModal.harness ||
-											agents.length === 0 ||
-											selectedOpenCodeProvider?.connected === false ||
-											spawningArmId !== null ||
-											arms.some((arm) => arm.id === spawnModal.name.trim())
-										}
+										isDisabled={spawnBlocker !== null || spawningArmId !== null}
 										className="gap-2"
 									>
 										{spawningArmId !== null ? (

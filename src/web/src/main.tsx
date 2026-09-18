@@ -6,23 +6,26 @@ import { Toast } from '@heroui/react'
 import './index.css'
 import './adaptive-cards/adaptive-cards.css'
 import App from './App.tsx'
+import { ScreenErrorBoundary } from './components/ScreenErrorBoundary'
 import { queryClient, persister, isLocalhost } from '@/lib/queryClient'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <PersistQueryClientProvider 
-      client={queryClient} 
-      persistOptions={{
-        persister,
-        buster: '2026-07-query-cache-v2',
-        dehydrateOptions: {
-          shouldDehydrateQuery: (query) => query.queryKey[0] !== 'tasks',
-        },
-      }}
-    >
-      <App />
-      <Toast.Provider placement="bottom end" />
-      {isLocalhost && <ReactQueryDevtools initialIsOpen={false} />}
-    </PersistQueryClientProvider>
+    <ScreenErrorBoundary name="the workspace">
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={{
+          persister,
+          buster: '2026-07-query-cache-v2',
+          dehydrateOptions: {
+            shouldDehydrateQuery: (query) => query.queryKey[0] !== 'tasks',
+          },
+        }}
+      >
+        <App />
+        <Toast.Provider placement="bottom end" />
+        {isLocalhost && <ReactQueryDevtools initialIsOpen={false} />}
+      </PersistQueryClientProvider>
+    </ScreenErrorBoundary>
   </StrictMode>,
 )

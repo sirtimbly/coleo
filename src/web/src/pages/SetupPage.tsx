@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Check, FilePlus2, Info, LoaderCircle, RefreshCw, TriangleAlert, X } from 'lucide-react';
 
 import { SetupFileTree } from '@/components/SetupFileTree';
+import { PrepareTasksModal } from '@/components/PrepareTasksModal';
 import { RegenerateTasksModal } from '@/components/RegenerateTasksModal';
 import { SetupWorkspaceToolbar } from '@/components/SetupWorkspaceToolbar';
 import {
@@ -133,6 +134,7 @@ export function SetupPage() {
   const [editorLoading, setEditorLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [preparing, setPreparing] = useState(false);
+  const [prepareOpen, setPrepareOpen] = useState(false);
   const [regenerateOpen, setRegenerateOpen] = useState(false);
   const [showRegeneratedTasksBanner, setShowRegeneratedTasksBanner] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -368,7 +370,8 @@ export function SetupPage() {
   };
 
   const prepare = async () => {
-    if (!editor) return;
+    if (!editor || preparing) return;
+    setPrepareOpen(true);
     setPreparing(true);
     setError(null);
     setResult(null);
@@ -460,7 +463,7 @@ export function SetupPage() {
         onRegenerate={() => void openRegeneration()}
         onHelp={() => setHelpOpen(true)}
         onSave={() => void save()}
-        onPrepare={() => void prepare()}
+        onPrepare={() => { setError(null); setResult(null); setPrepareOpen(true); }}
         onPreviewChange={() => setPreviewOpen((current) => !current)}
       />
 
@@ -583,7 +586,7 @@ export function SetupPage() {
                       </p>
                     </>
                   ) : (
-                    <p className="mt-1 text-foreground/80">The Brain will analyze this file and create the tasks during its next poll.</p>
+                    <p className="mt-1 text-foreground/80">On its next poll, the Brain evaluates the saved plan and its linked plan documents, then adds or updates tasks in the database.</p>
                   )}
                   {status.taskCount > 0 ? (
                     <button
@@ -615,6 +618,13 @@ export function SetupPage() {
           ) : null}
         </section>
       </div>
+      {prepareOpen ? <PrepareTasksModal sourcePath={editor.path} running={preparing} error={error} result={result} onConfirm={() => void prepare()} onOpenInstructions={(template) => {
+        if (selectPath(`.coleo/src/brain/templates/plan-evaluation-${template}-prompt.jinja`)) {
+          setFileScope('coleo');
+          setPreviewOpen(false);
+          setPrepareOpen(false);
+        }
+      }} onClose={() => setPrepareOpen(false)} /> : null}
       <RegenerateTasksModal
         isOpen={regenerateOpen}
         onClose={() => setRegenerateOpen(false)}

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, LoaderCircle, RefreshCw, X } from 'lucide-react';
-import { Button, Modal } from '@heroui/react';
+import { AlertTriangle, LoaderCircle, RefreshCw } from 'lucide-react';
+import { Button } from '@heroui/react';
 
 import { api } from '@/lib';
+import { PlanTasksDialog } from './PlanTasksDialog';
 
 interface RegenerateTasksResult {
   deletedCount: number;
@@ -51,32 +52,30 @@ export function RegenerateTasksModal({ isOpen, onClose, onRegenerated }: Regener
   };
 
   return (
-    <Modal.Backdrop
+    <PlanTasksDialog
       isOpen={isOpen}
-      onOpenChange={(open) => { if (!open && !isRegenerating) onClose(); }}
-      isDismissable={!isRegenerating}
-      isKeyboardDismissDisabled={isRegenerating}
-      variant="blur"
+      busy={isRegenerating}
+      title="Regenerate All Tasks"
+      description="Rebuild the active task queue from the saved project plan."
+      onClose={onClose}
+      footer={<>
+          {result ? (
+            <Button variant="primary" onPress={onClose}>Done</Button>
+          ) : (
+            <>
+              <Button variant="secondary" onPress={onClose} isDisabled={isRegenerating}>Cancel</Button>
+              <Button
+                variant="primary"
+                onPress={regenerate}
+                isDisabled={isRegenerating || !explanation.trim()}
+              >
+                {isRegenerating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                {isRegenerating ? 'Regenerating…' : 'Regenerate All Tasks'}
+              </Button>
+            </>
+          )}
+      </>}
     >
-      <Modal.Container size="lg" placement="center">
-        <Modal.Dialog className="overflow-hidden border border-border bg-surface p-0">
-          <Modal.Header className="flex-row items-center justify-between border-b border-border px-5 py-4">
-          <div>
-            <Modal.Heading className="text-lg font-semibold">Regenerate All Tasks</Modal.Heading>
-            <p className="mt-1 text-xs text-muted-foreground">Rebuild the active task queue from the saved project plan.</p>
-          </div>
-          <button
-            type="button"
-            aria-label="Close"
-            disabled={isRegenerating}
-            onClick={onClose}
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-surface-secondary hover:text-foreground disabled:opacity-50"
-          >
-            <X className="h-4 w-4" />
-          </button>
-          </Modal.Header>
-
-          <Modal.Body className="space-y-4 p-5">
           {result ? (
             <div role="status" className="rounded-lg border border-success/30 bg-success/10 p-4 text-sm">
               <p className="font-medium text-success">Task regeneration complete</p>
@@ -116,27 +115,6 @@ export function RegenerateTasksModal({ isOpen, onClose, onRegenerated }: Regener
           )}
 
           {error ? <p role="alert" className="rounded-md bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p> : null}
-          </Modal.Body>
-
-          <Modal.Footer className="flex justify-end gap-2 border-t border-border px-5 py-4">
-          {result ? (
-            <Button variant="primary" onPress={onClose}>Done</Button>
-          ) : (
-            <>
-              <Button variant="secondary" onPress={onClose} isDisabled={isRegenerating}>Cancel</Button>
-              <Button
-                variant="primary"
-                onPress={regenerate}
-                isDisabled={isRegenerating || !explanation.trim()}
-              >
-                {isRegenerating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                {isRegenerating ? 'Regenerating…' : 'Regenerate All Tasks'}
-              </Button>
-            </>
-          )}
-          </Modal.Footer>
-        </Modal.Dialog>
-      </Modal.Container>
-    </Modal.Backdrop>
+    </PlanTasksDialog>
   );
 }

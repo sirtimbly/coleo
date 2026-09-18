@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "fs/promises";
+import { createHash } from "crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -217,11 +218,15 @@ Choose the stack before feature implementation.
 		expect(notifications[0]?.body).toContain("retry the unchanged plan automatically");
 	});
 
-	it("retries an unchanged plan when formatter output omits source context", async () => {
+	it.each([
+		"Plan formatter omitted source context",
+		"Plan formatter timed out while evaluating with a model (request deadline: 900 seconds)",
+		"The operation timed out.",
+	])("retries an unchanged plan after %s", async (failure) => {
 		let formatterCalls = 0;
 		const { brain, syncPlanTasks, task } = await createPlanSyncFixture(async (content) => {
 			formatterCalls += 1;
-			if (formatterCalls === 1) throw new Error("Plan formatter omitted source context");
+			if (formatterCalls === 1) throw new Error(failure);
 			return { content, mode: "ai" };
 		});
 		let storedTask = task;
@@ -238,6 +243,78 @@ Choose the stack before feature implementation.
 		expect(await syncPlanTasks()).toBe(false);
 		expect(await syncPlanTasks()).toBe(true);
 		expect(formatterCalls).toBe(2);
+	});
+
+	it("retries a real concurrent plan edit without blocking work or overwriting the edit", async () => {
+		let planPath = "";
+		let calls = 0;
+		let latestContent = "";
+		const { brain, syncPlanTasks, task } = await createPlanSyncFixture(async (content) => {
+			calls += 1;
+			if (calls === 1) {
+				latestContent = content + "\nUser decision: preserve this constraint.\n";
+				await writeFile(planPath, latestContent);
+				return { content: content + "\nStale evaluation.\n", mode: "ai" };
+			}
+			expect(content).toBe(latestContent);
+			return { content, mode: "ai" };
+		});
+		planPath = join((brain as unknown as { projectRoot: string }).projectRoot, ".project/plan.md");
+		const events: string[] = [];
+		setPlanSyncApi(brain, {
+			databaseInstanceId: async () => "database-one",
+			listTasks: async () => [task],
+			createTask: async () => task,
+			patchTask: async (_id, patch) => {
+				events.push("task");
+				return { ...task, ...patch };
+			},
+			sendToHuman: async () => { events.push("mail"); },
+			listArms: async () => [{ id: "arm-1", status: "busy" }],
+			patchArm: async () => { events.push("arm"); return true; },
+			sendPromptToArm: async () => { events.push("interrupt"); return true; },
+		});
+		(brain as unknown as { reportPlanningGate: () => Promise<boolean> }).reportPlanningGate =
+			async () => { events.push("gate"); return true; };
+
+		expect(await syncPlanTasks()).toBe(false);
+		expect(events).toEqual([]);
+		expect(await readFile(planPath, "utf-8")).toBe(latestContent);
+		expect(await syncPlanTasks()).toBe(true);
+		expect(calls).toBe(2);
+		expect(await readFile(planPath, "utf-8")).toContain("User decision: preserve this constraint.");
+	});
+
+	it("recovers a persisted write-conflict blocker without requiring another plan edit", async () => {
+		const { brain, syncPlanTasks, task } = await createPlanSyncFixture();
+		const planPath = join((brain as unknown as { projectRoot: string }).projectRoot, ".project/plan.md");
+		const contentHash = createHash("sha256").update(await readFile(planPath)).digest("hex");
+		const stateHash = createHash("sha256").update(planPath + "\0" + contentHash).digest("hex");
+		let storedTask: Task = {
+			...task,
+			status: "blocked",
+			blockedCategory: "planning",
+			blockedReason: "Project planning must succeed before work can resume: Workspace file changed before write: .project/plan.md [planning-state:" + stateHash + "]",
+		};
+		let armResumed = false;
+		setPlanSyncApi(brain, {
+			databaseInstanceId: async () => "database-one",
+			listTasks: async () => [storedTask],
+			createTask: async () => storedTask,
+			patchTask: async (_id, patch) => {
+				storedTask = { ...storedTask, ...patch };
+				return storedTask;
+			},
+			listArms: async () => [{ id: "arm-1", status: "planning_blocked" }],
+			patchArm: async (_id, patch) => {
+				armResumed = patch.status === "idle" && patch.planningBlocked === false;
+				return true;
+			},
+		});
+
+		expect(await syncPlanTasks()).toBe(true);
+		expect(storedTask.status).toBe("pending");
+		expect(armResumed).toBe(true);
 	});
 
 	it("resumes only system-owned planning blockers with a planning-state marker", async () => {
