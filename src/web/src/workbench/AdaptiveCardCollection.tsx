@@ -19,7 +19,8 @@ export function AdaptiveCardCollection<T>({
 	renderCard,
 	className,
 }: {
-	items: T[];
+	// Callers own filtering and sorting; this component only renders their projection.
+	items: readonly T[];
 	columns: CardColumnCount;
 	presentation: CardPresentationMode;
 	getKey: (item: T) => string;

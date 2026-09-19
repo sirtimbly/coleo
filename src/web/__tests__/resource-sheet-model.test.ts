@@ -10,6 +10,7 @@ import { describe, expect, it } from "bun:test";
 
 import {
 	areProjectedResourceRowsEqual,
+	projectResourceCollection,
 	projectResourceRows,
 	resolveResourceColumns,
 	resolveResourceRowMove,
@@ -92,6 +93,17 @@ describe("resource sheet model", () => {
 			previousRow: source[2],
 			nextRow: source[3],
 		});
+	});
+
+	it("projects card collections in React without mutating source order", () => {
+		const source = rows(5);
+		const collection = projectResourceCollection(source, COLUMNS, {
+			filters: [{ field: "status", operator: "equals", value: "pending" }],
+			sort: [{ field: "progress", direction: "desc" }],
+		});
+
+		expect(collection.map((row) => row.id)).toEqual(["row-4", "row-3", "row-2", "row-1"]);
+		expect(source.map((row) => row.id)).toEqual(["row-0", "row-1", "row-2", "row-3", "row-4"]);
 	});
 
 	it("skips identical live reconciliations but detects changed cells", () => {
