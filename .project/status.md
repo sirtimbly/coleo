@@ -84,7 +84,7 @@ not inferred from filenames.
   SQLite (WAL + migrations), NATS transport, header API-key auth —
   implementation modules inspected; see `.project/reports/runtime-stack-validation-2026-09-22.md`
   (commit `30d0449`) for the detailed validation.
-- **Architecture decisions current:** ADR-001 through ADR-025 accepted,
+- **Architecture decisions current:** ADR-001 through ADR-027 accepted,
   including ADR-004 workbench revision (HeroUI v3), ADR-014
   branch-centered lifecycle, ADR-015 Brain API boundary, ADR-016
   source-of-truth boundaries, ADR-017 task-file/output tracking, ADR-018
@@ -106,27 +106,51 @@ not inferred from filenames.
 - JetStream event-sourcing migration approved
   (`.project/jetstream-migration-plan.md`) but Phase 11 execution pending;
   JetStream is transport + short-retention events, not authoritative state.
-- ADR-003 still documents `OCTOPAI_API_KEY`; code resolves
-  `COLEO_API_KEY`/`COLEO_API_TOKEN` (human approved the terminology update;
-  amendment pending).
+- ADR-003 renamed the documented variable to `COLEO_API_KEY` /
+  `COLEO_API_TOKEN` (2026-09-22, matching `resolveApiKey()`); closed.
+- No retention policy exists for evaluation audit tables
+  (`brain_swarm_*` grow unbounded with private source text) — policy
+  decision required before retention tests (ADR-023 §7; ADR-025 notes).
 - Swarm, evaluation, onboarding, migration-catalog, and many UI/API paths
   present in the tree are **unvalidated** — inventory only.
 
+## Evaluation Evidence (2026-09-22)
+
+All results are advisory evidence (ADR-023); none have been applied to
+production behavior (ADR-025). Operational use requires the apply gate
+and, where policy-significant, governance consensus.
+
+| Evaluation | Dataset / version | Command | Model / provider | Result artifact | Known limitations | Operational suitability |
+|---|---|---|---|---|---|---|
+| Classification bake-off | `synthetic-v1` (20 arm + 24 human cases, author-labeled; SHA-256 `2afb06…57b3f`) | `bun run bakeoff:classification` | Current: `gpt-5.6-luna`; JEV requested `jev-latest`, served `jev-1.13.0` (TypeSafe SDK 0.6.0) | `src/scripts/classification-bakeoff/RESULTS.md`; raw run under ignored `test-results/classification-bakeoff/` | Small author-labeled challenge set, not a production accuracy estimate; repeats are stability evidence, not independent examples; JEV arm-channel false positives on completed-action narration (2 cases, both repetitions); timings compare unequal outputs (current generates prose, JEV classifies only); no threshold tuned — holdout set required before any tuning claim | Human classification: candidate for a **shadow trial** (matching accuracy, ~5.1x lower median latency). Arm classification: **keep current classifier** pending further experiments. No production change made |
+| Historical classification | 59 unique Maildir messages (development labels, not ground truth) | historical-classification suite (`bun test src/scripts/__tests__/historical-classification.test.ts`) | Configured brain model | Report `.project/reports/historical-classification-verification-2026-09-22.md` | Read-only diagnostic over historical mail; labels are development-grade; no superiority claims; no actions executed | **Diagnostic only** — not suitable for operational decisions |
+| Swarm persistence/audit | Live `brain_swarm_*` tables (migrations 070/071) | `bun test src/api/__tests__/brain-swarm.test.ts` (+ swarm-evaluation suite) | `jev-latest` evaluator (swarm stage) | Report `.project/reports/swarm-persistence-verification-2026-09-22.md` | **No retention policy** — tables grow unbounded with private source text (tracked for Phase 12/ops); snapshot envelope lacks `capturedAt`/source revision until ADR-026 follow-ups land | Durable, restart-safe audit; execute-mode effects remain **grandfathered interim** (ADR-025 §5) |
+| Evaluation lock | Concurrent plan-evaluation processes | `bun test src/project-setup/__tests__/evaluation-lock.test.ts` | n/a | Report `.project/reports/evaluation-lock-verification-2026-09-22.md` | PID-reuse race is fail-closed but documented; no lock renewal/expiry by design | Concurrency guard only — grants no lifecycle authority (ADR-023 §12) |
+
+Verification suites: bakeoff + historical-classification 16/16; swarm
+suites 45/45 (incl. auth/failure/duplicate/retention-characterization
+tests added 2026-09-22); evaluation-lock 4/4.
+
 ## Blockers
 
-- None blocking Phase 0 planning work. Human/architecture decisions
-  outstanding: ADR-003 terminology amendment (approved, not yet applied).
+- None blocking Phase 0 planning work. Outstanding: evaluation retention
+  policy (decision record required before retention implementation/tests,
+  ADR-023 §7); snapshot `capturedAt`/source-revision capture (ADR-026
+  follow-up); ADR-026 numbering collision (two files, coordination needed).
 
 ## Links
 
 - Plan: `.project/plan.md`
-- Decisions: `.project/decisions/001`–`025`
+- Decisions: `.project/decisions/001`–`027`
 - Acceptance: `.project/acceptance/phase-1.md`
 - Architecture: `docs/architecture/overview.md`, `docs/architecture/brain-api-boundary.md`
 - Migration plans: `.project/jetstream-migration-plan.md`,
   `.project/plans/brain-api-boundary-execution-plan.md`
 - Validation reports: `.project/reports/runtime-stack-validation-2026-09-22.md`,
-  `.project/reports/evaluation-lock-verification-2026-09-22.md`
+  `.project/reports/evaluation-lock-verification-2026-09-22.md`,
+  `.project/reports/bakeoff-verification-2026-09-22.md`,
+  `.project/reports/historical-classification-verification-2026-09-22.md`,
+  `.project/reports/swarm-persistence-verification-2026-09-22.md`
 - Gates: `.project/execution-dependency-map.md`
 
 ## Validation Evidence
