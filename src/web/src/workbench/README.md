@@ -1,5 +1,9 @@
 # Workbench frontend infrastructure
 
+See [ADR-004](../../../../.project/decisions/004-shadcn-components.md) for the
+current architecture and [the workbench guide](../../../../docs/workbench/README.md)
+for the migration record. This document covers adapter implementation rules.
+
 This folder owns reusable application-shell behavior:
 
 - stable resource and projection contracts;
@@ -10,6 +14,15 @@ This folder owns reusable application-shell behavior:
 
 Domain pages should use these services instead of creating their own WebSocket
 connections or saving configuration directly to browser storage.
+
+## Adaptive card collections
+
+`AdaptiveCardCollection` is a presentation-only boundary. Domain pages must
+apply saved-view filters and sorting in React, typically with
+`projectResourceCollection()`, before passing `projectedItems` to the collection. The
+collection preserves that input order in the DOM and only supplies CSS Grid
+layout and card presentation; layout or animation code must not become a second
+source of collection projection.
 
 ## Resource details
 

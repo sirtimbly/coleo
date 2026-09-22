@@ -53,6 +53,19 @@ Enforce a strict persistence boundary:
 - Internal SQL proxy endpoints may be used as a migration bridge, but domain routes are preferred long term.
 - PR review checklist should reject new direct `bun:sqlite` imports in `src/brain/**` and `src/mcp/**` runtime code.
 
+## Workbench application (2026-09-21)
+
+The browser workbench follows the same service boundary. Profiles, saved views,
+workspace layouts, durable attention state, persisted card instances, and card
+mutations use authenticated API routes. Toolbar overrides live in profile
+preferences. The browser does not access SQLite or JetStream directly, and
+rendering a card does not grant permission to execute its actions.
+
+Browser-local theme/shell preferences and client caches are not authoritative
+domain storage. A single-record viewer uses targeted resource/event and attention
+APIs rather than loading a collection to locate one record. See
+[ADR-004](./004-shadcn-components.md) for the UI ownership and lifecycle rules.
+
 ## Related
 
 - ADR-010: Layered Communication Model

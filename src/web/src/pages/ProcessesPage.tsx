@@ -149,7 +149,7 @@ export function ProcessesPage() {
 					</Suspense>
 				) : (
 					<AdaptiveCardCollection
-						items={visible}
+						projectedItems={visible}
 						columns={display.cardColumns}
 						presentation={display.cardPresentation}
 						getKey={(run) => run.id}

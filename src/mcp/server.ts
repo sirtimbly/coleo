@@ -2015,7 +2015,7 @@ export function createMcpServer(): McpServer {
 
 				const result = await generateTaskDetermination(
 					ctx,
-					buildTaskDeterminationOptionsForArm(),
+					{ ...buildTaskDeterminationOptionsForArm(), armId: ARM_ID },
 				);
 				updateCompletionExclusionAfterDetermination(result);
 				const formatted = formatTaskDetermination(result);
@@ -2139,7 +2139,7 @@ export function createMcpServer(): McpServer {
 				// Step 1: Get task determination
 				const determination = await generateTaskDetermination(
 					ctx,
-					buildTaskDeterminationOptionsForArm(),
+					{ ...buildTaskDeterminationOptionsForArm(), armId: ARM_ID },
 				);
 				updateCompletionExclusionAfterDetermination(determination);
 				const determinationFormatted = formatTaskDetermination(determination);

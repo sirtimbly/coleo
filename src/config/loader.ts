@@ -9,6 +9,8 @@
  * Priority: Environment > Database > TOML > Defaults
  */
 
+import { assertSupportedHarness } from "../harness/supported";
+import { validateResponsibilitySettings } from "../brain/responsibilities";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -25,6 +27,10 @@ interface TomlConfig {
 		poll_interval_ms?: number;
 		max_arms?: number;
 		arm_grace_period_minutes?: number;
+		swarm_evaluation_mode?: "off" | "shadow" | "execute";
+		swarm_window_polls?: number;
+		responsibility_enabled?: ColeoConfig["brain"]["responsibilityEnabled"];
+		swarm_action_modes?: ColeoConfig["brain"]["swarmActionModes"];
 		provider?: string;
 		model?: string;
 		api_key?: string;
@@ -141,6 +147,7 @@ export async function writeTomlConfig(
   config: TomlConfig,
   coleoDir?: string
 ): Promise<void> {
+  if (config.defaults?.harness !== undefined) assertSupportedHarness(config.defaults.harness);
   const configPath = getConfigPath(coleoDir);
   const header = `# Coleo Configuration
 # Updated: ${new Date().toISOString()}
@@ -162,6 +169,10 @@ function tomlToConfig(toml: TomlConfig, coleoDir: string): Partial<ColeoConfig> 
 	if (toml.brain) {
 		config.brain = {
 			pollIntervalMs: toml.brain.poll_interval_ms ?? DEFAULT_CONFIG.brain.pollIntervalMs,
+			swarmEvaluationMode: toml.brain.swarm_evaluation_mode,
+			swarmWindowPolls: toml.brain.swarm_window_polls,
+			responsibilityEnabled: toml.brain.responsibility_enabled,
+			swarmActionModes: toml.brain.swarm_action_modes,
 			maxArms: toml.brain.max_arms ?? DEFAULT_CONFIG.brain.maxArms,
 			armGracePeriodMinutes: toml.brain.arm_grace_period_minutes ?? DEFAULT_CONFIG.brain.armGracePeriodMinutes,
 			provider: toml.brain.provider ?? DEFAULT_CONFIG.brain.provider,
@@ -292,6 +303,10 @@ export function configToToml(config: Partial<ColeoConfig>): TomlConfig {
 		toml.brain = {
 			poll_interval_ms: config.brain.pollIntervalMs,
 			max_arms: config.brain.maxArms,
+			swarm_evaluation_mode: config.brain.swarmEvaluationMode,
+			swarm_window_polls: config.brain.swarmWindowPolls,
+			responsibility_enabled: config.brain.responsibilityEnabled,
+			swarm_action_modes: config.brain.swarmActionModes,
 			arm_grace_period_minutes: config.brain.armGracePeriodMinutes,
 			provider: config.brain.provider,
 			model: config.brain.model,
@@ -533,16 +548,22 @@ export async function updateConfig(
 ): Promise<ColeoConfig> {
   const dir = coleoDir || getColeoDir();
   
+  if (updates.defaults?.harness !== undefined) assertSupportedHarness(updates.defaults.harness);
+
   // Load current config
   const current = await loadConfig(dir);
 
   const { gitea, automations, maintenance, compression, ...rest } = updates;
   
   // Merge updates
+  if (updates.brain) validateResponsibilitySettings(updates.brain);
   const updated: ColeoConfig = {
     ...current,
     ...rest,
-    brain: updates.brain ? { ...current.brain, ...updates.brain } : current.brain,
+    brain: updates.brain ? { ...current.brain, ...updates.brain,
+      responsibilityEnabled: { ...current.brain.responsibilityEnabled, ...updates.brain.responsibilityEnabled },
+      swarmActionModes: { ...current.brain.swarmActionModes, ...updates.brain.swarmActionModes },
+    } : current.brain,
     mail: updates.mail ? { ...current.mail, ...updates.mail } : current.mail,
     terminal: updates.terminal ? { ...current.terminal, ...updates.terminal } : current.terminal,
     docs: updates.docs ? { ...current.docs, ...updates.docs } : current.docs,

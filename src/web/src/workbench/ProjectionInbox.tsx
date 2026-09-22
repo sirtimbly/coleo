@@ -207,7 +207,7 @@ export function ProjectionInbox({
 					/>
 				) : display.mode === "cards" ? (
 					<AdaptiveCardCollection
-						items={filtered}
+						projectedItems={filtered}
 						columns={display.cardColumns}
 						presentation={display.cardPresentation}
 						getKey={(item) => item.id}

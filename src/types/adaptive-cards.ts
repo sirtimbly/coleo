@@ -110,7 +110,7 @@ export interface WorkbenchAttention {
 
 export interface WorkbenchInboxRecord {
 	itemKey: string;
-	source: "planning-gate" | "status-report" | "task" | "bug";
+	source: "planning-gate" | "status-report" | "task" | "bug" | "swarm-recommendation";
 	kind: "brain" | "status" | "task" | "bug";
 	title: string;
 	summary: string;

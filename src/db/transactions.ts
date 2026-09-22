@@ -9,6 +9,7 @@
  */
 
 import { Database } from "bun:sqlite";
+import { subjectToken } from "../nats/subject-token";
 import { eventStore } from "../nats/jetstream";
 
 /**
@@ -214,7 +215,7 @@ export async function updateArmStatusWithActivity(
 
     // Log activity to JetStream (fire-and-forget, don't block the transaction)
     if (eventStore.isInitialized()) {
-      const subject = `coleo.events.arm.${armId}.${activityDetails.action}`;
+      const subject = `coleo.events.arm.${subjectToken(armId)}.${activityDetails.action}`;
       eventStore.publishEvent(subject, {
         type: activityDetails.action,
         armId,
@@ -385,7 +386,7 @@ export async function assignTaskToArm(
 
     // Log the assignment to JetStream
     if (eventStore.isInitialized()) {
-      eventStore.publishEvent(`coleo.events.task.${taskId}.assigned`, {
+      eventStore.publishEvent(`coleo.events.task.${subjectToken(taskId)}.assigned`, {
         type: "task_assigned",
         data: { armId, role },
         timestamp: now,
@@ -400,7 +401,7 @@ export async function assignTaskToArm(
       if (watchersResult.success && watchersResult.data) {
         // Log watcher assignments to JetStream
         if (eventStore.isInitialized()) {
-          eventStore.publishEvent(`coleo.events.task.${taskId}.watchers_assigned`, {
+          eventStore.publishEvent(`coleo.events.task.${subjectToken(taskId)}.watchers_assigned`, {
             type: "auto_assigned_watchers",
             data: { watchers: watchersResult.data.watchersAssigned },
             timestamp: now,

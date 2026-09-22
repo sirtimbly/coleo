@@ -26,6 +26,7 @@ import { promisify } from "util";
 import { randomBytes } from "crypto";
 import { join } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
+import { subjectToken } from "../nats/subject-token";
 import { getColeoDir } from "../config";
 import { getCliEntrypoint } from "../cli/entrypoint";
 import { OpenCodeEventStream, filterEvent, truncateLargeFields, shouldPersistEvent, type OpenCodeEvent } from "./event-stream";
@@ -542,6 +543,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
       COLEO_ARM_ID: armId,
       COLEO_DIR: coleoDir,
       OPENCODE_CONFIG: opencodeConfigPath,
+      OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeConfig),
       NODE_TLS_REJECT_UNAUTHORIZED: "0",
       PATH: `${join(process.env.HOME || "", ".bun", "bin")}:${process.env.PATH || ""}`,
       HOME: process.env.HOME || "",
@@ -656,7 +658,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
           // Publish to JetStream for persistence (only meaningful events)
           if (persistCheck.shouldPersist && eventStore.isInitialized()) {
             try {
-              const subject = `coleo.events.arm.${armId}.${event.type}`;
+              const subject = `coleo.events.arm.${subjectToken(armId)}.${event.type}`;
               await eventStore.publishEvent(subject, {
                 type: event.type,
                 armId,
@@ -884,7 +886,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
             // Publish to JetStream for persistence (only meaningful events)
             if (persistCheck.shouldPersist && eventStore.isInitialized()) {
               try {
-                const subject = `coleo.events.arm.${tuiSession.armId}.${event.type}`;
+                const subject = `coleo.events.arm.${subjectToken(tuiSession.armId)}.${event.type}`;
                 await eventStore.publishEvent(subject, {
                   type: event.type,
                   armId: tuiSession.armId,
@@ -1585,7 +1587,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
           // Publish to JetStream for persistence (only filtered events, and only if NATS is initialized)
           if (persistCheck.shouldPersist && eventStore.isInitialized()) {
             try {
-              const subject = `coleo.events.arm.${armId}.${event.type}`;
+              const subject = `coleo.events.arm.${subjectToken(armId)}.${event.type}`;
               await eventStore.publishEvent(subject, {
                 type: event.type,
                 armId,

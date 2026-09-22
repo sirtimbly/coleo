@@ -1,3 +1,4 @@
+import { acquirePlanEvaluation } from "../../project-setup/evaluation-lock";
 import { afterEach, describe, expect, it } from "bun:test";
 import { createHash } from "crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "fs/promises";
@@ -317,6 +318,29 @@ Choose the stack before feature implementation.
 		expect(armResumed).toBe(true);
 	});
 
+	it("defers to interactive preparation without blocking tasks, then retries", async () => {
+		let calls = 0;
+		const { brain, syncPlanTasks, task } = await createPlanSyncFixture(async (content) => {
+			calls += 1;
+			return { content, mode: "ai" };
+		});
+		const projectRoot = (brain as unknown as { projectRoot: string }).projectRoot;
+		setPlanSyncApi(brain, {
+			databaseInstanceId: async () => "database-one", listTasks: async () => [task], createTask: async () => task,
+			patchTask: async (_id, patch) => {
+				expect(patch.status).not.toBe("blocked");
+				return { ...task, ...patch };
+			},
+		});
+		const release = await acquirePlanEvaluation(join(projectRoot, ".coleo"));
+		try {
+			expect(await syncPlanTasks()).toBe(false);
+			expect(calls).toBe(0);
+		} finally { release?.(); }
+		expect(await syncPlanTasks()).toBe(true);
+		expect(calls).toBe(1);
+	});
+
 	it("resumes only system-owned planning blockers with a planning-state marker", async () => {
 		const { brain, task } = await createPlanSyncFixture();
 		const patched: string[] = [];
@@ -406,6 +430,9 @@ Choose the stack before feature implementation.
 
 		expect(prompts).toEqual(["System identity\n\n---\n\nCommon instructions"]);
 		expect(configs).toEqual([{ preserved: true }]);
+		expect(privateBrain.arms.get("arm-1")?.status).toBe("busy");
+		await privateBrain.assignInitialTasks();
+		expect(prompts).toHaveLength(1);
 	});
 });
 

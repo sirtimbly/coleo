@@ -1,3 +1,4 @@
+import { getSwarmInboxRecord } from "../swarm-inbox";
 import { HttpError } from "../middleware";
 import type { Database } from "bun:sqlite";
 import type { WorkbenchInboxRecord } from "../../types/adaptive-cards";
@@ -5,6 +6,11 @@ import type { WorkbenchInboxRecord } from "../../types/adaptive-cards";
 // Detail identity is independent of inbox eligibility, sorting and pagination.
 export function getWorkbenchInboxRecord(db: Database, itemKey: string): WorkbenchInboxRecord {
 	const id = itemKey.slice(itemKey.indexOf(":") + 1);
+	if (itemKey.startsWith("swarm:")) {
+		const item = getSwarmInboxRecord(db, id);
+		if (!item) throw HttpError.notFound("Swarm recommendation not found");
+		return item;
+	}
 	if (itemKey.startsWith("task:")) {
 		const row = db.query(`SELECT id, subject, description, status, updated_at AS timestamp
 			FROM tasks WHERE id = ?`).get(id) as {

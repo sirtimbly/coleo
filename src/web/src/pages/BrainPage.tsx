@@ -7,6 +7,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { AlertTriangle, Edit2, ExternalLink, Inbox, Play, RefreshCw, Save, Square, X } from 'lucide-react';
 import { api } from '@/lib';
+import { BrainResponsibilities } from './BrainResponsibilities';
+import { BrainSwarmControls } from './BrainSwarmControls';
 import type { BrainConfigResponse, BrainModel } from '@/lib';
 import { Button } from '@heroui/react';
 import { DenseRowSkeleton } from '@/components';
@@ -467,6 +469,7 @@ export function BrainPage() {
       />
 
       <div data-testid="brain-content" className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
+        <BrainResponsibilities config={config} onSaved={setConfig}>
         {status?.modelAccess ? <ModelAccessAlert modelAccess={status.modelAccess} /> : null}
         {status ? <PlanningGateAlert plan={status.plan} onNavigate={navigate} /> : null}
 
@@ -479,12 +482,15 @@ export function BrainPage() {
           onNavigate={navigate}
         />
 
+        <BrainSwarmControls config={config} pollIntervalMs={status?.pollIntervalMs ?? config?.pollIntervalMs ?? 30000} onSaved={setConfig} />
+
         <BrainConfigSection
           config={config}
           models={brainModels}
           modelsError={brainModelsError}
           onUpdate={loadData}
         />
+        </BrainResponsibilities>
       </div>
     </div>
   );

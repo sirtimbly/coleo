@@ -11,6 +11,8 @@ export interface BrainOptions {
 	projectRoot?: string;
 	workspace?: WorkspaceAccess;
 	planFormatter?: PlanFormatter;
+	swarmEvaluationMode?: "off" | "shadow" | "execute";
+	swarmWindowPolls?: number;
 }
 
 export interface TaskClaimContext {

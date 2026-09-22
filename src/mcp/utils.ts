@@ -7,6 +7,7 @@
 import { randomBytes } from "crypto";
 import { writeFile, mkdir, readdir, readFile } from "fs/promises";
 import { join } from "path";
+import { subjectToken } from "../nats/subject-token";
 import { getColeoDir } from "../config";
 import { createApiDatabase } from "./api-db";
 import type { Task, Note, QueueMessage } from "../types";
@@ -211,7 +212,7 @@ export function logActivity(
 
 	// Always publish to the arm stream for the actor (correct arm attribution)
 	eventStore
-		.publishEvent(`coleo.events.arm.${actor}.${eventType}`, {
+		.publishEvent(`coleo.events.arm.${subjectToken(actor)}.${eventType}`, {
 			type: eventType,
 			armId: actor,
 			data,
@@ -224,7 +225,7 @@ export function logActivity(
 	// If this is a task-related action with a target, also publish to task stream
 	if (target && TASK_ACTION_EVENT_TYPES[action]) {
 		eventStore
-			.publishEvent(`coleo.events.task.${target}.${eventType}`, {
+			.publishEvent(`coleo.events.task.${subjectToken(target)}.${eventType}`, {
 				type: eventType,
 				armId: actor,
 				data,

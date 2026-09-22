@@ -7,6 +7,7 @@
  * Successful Arm claims also notify live workbench projections immediately.
  */
 import { Hono, type Context } from "hono";
+import { createBrainSwarmRoutes } from "./brain-swarm";
 import type { Database, SQLQueryBindings } from "bun:sqlite";
 import { HttpError } from "../middleware";
 import { broadcast, broadcastBrainEvent, broadcastMailEvent } from "../websocket";
@@ -130,6 +131,7 @@ interface BrainRouteOptions {
 
 export function createBrainRoutes(options: BrainRouteOptions = {}) {
   const app = new Hono<BrainContext>();
+  app.route("/internal/swarm", createBrainSwarmRoutes());
   const startBrain = options.startBrain ?? (() => startService("brain"));
   const stopBrain = options.stopBrain ?? (() => stopService("brain"));
   let brainControl: Promise<void> = Promise.resolve();

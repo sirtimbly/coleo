@@ -19,6 +19,7 @@ function createTestDb(): Database {
       priority TEXT NOT NULL,
       domain TEXT,
       phase TEXT,
+      assigned_to TEXT,
       assigned_arms TEXT DEFAULT '[]',
       consensus_status TEXT,
       dependency_blocked INTEGER DEFAULT 0,
@@ -202,6 +203,31 @@ describe("prompt-generator dependencies", () => {
     db.close();
   });
 
+  it("recommends the global claim queue head even when another phase dominates", async () => {
+    const db = createTestDb();
+    const brainDb = createSqliteBrainDb(db);
+    insertTask(db, { id: "queue-head", subject: "First dependency-ordered task", phase: "Phase 1", order_key: "a" });
+    for (let i = 0; i < 3; i++) {
+      insertTask(db, { id: `later-${i}`, subject: "Later phase task", phase: "Phase 19", order_key: `z${i}` });
+    }
+    const result = await generateTaskDetermination({ projectRoot: process.cwd(), coleoDir: process.cwd(), db: brainDb });
+    expect(result.task?.id).toBe("queue-head");
+    db.close();
+  });
+
+  it("does not recommend another Arm's active task to a new Arm", async () => {
+    const db = createTestDb();
+    const brainDb = createSqliteBrainDb(db);
+    insertTask(db, { id: "owned", subject: "Already claimed", status: "in_progress", phase: "Phase 1" });
+    db.run("UPDATE tasks SET assigned_to = 'other-arm' WHERE id = 'owned'");
+    insertTask(db, { id: "available", subject: "Next task", phase: "Phase 1", order_key: "a" });
+    const result = await generateTaskDetermination({ projectRoot: process.cwd(), coleoDir: process.cwd(), db: brainDb }, { armId: "new-arm" });
+    expect(result.task?.id).toBe("available");
+    const ownerResult = await generateTaskDetermination({ projectRoot: process.cwd(), coleoDir: process.cwd(), db: brainDb }, { armId: "other-arm" });
+    expect(ownerResult.task?.id).toBe("owned");
+    db.close();
+  });
+
   it("selects validation follow-ups instead of unassigned completing work", async () => {
     const db = createTestDb();
     const brainDb = createSqliteBrainDb(db);
@@ -291,7 +317,7 @@ describe("prompt-generator dependencies", () => {
     });
 
     expect(result.task?.id).toBe("phase-fresh-pending");
-    expect(result.reasoning).toContain("outside dominant phase Phase stale");
+    expect(result.reasoning).toContain("Returning next pending task from database");
 
     db.close();
   });

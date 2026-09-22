@@ -3,7 +3,44 @@
 This directory records the architecture and migration decisions for Coleo's
 browser workbench. It is intentionally kept beside the product documentation
 so future changes to the UI can be reviewed against the same small set of
-domain rules.
+domain rules. The current decision is **ADR-004: Workbench UI Architecture and
+Component System** (`.project/decisions/004-shadcn-components.md`). This guide
+explains its implementation; the dated entries below preserve migration history.
+
+## Current architecture (2026-09-21)
+
+The workbench refactor covers the application shell and the shared presentation
+of domain screens. React 19, HeroUI v3, and Tailwind v4 provide the control and
+styling foundation. Golden Layout is the default shell; classic mode uses the
+same route registry. Tabulator, Adaptive Cards, custom charts, and the Garden's
+3D renderer remain specialized adapters inside that shared architecture.
+
+- **Collections:** Tasks, Bugs, Inbox, Project Mail, and Processes support shared
+  grid/card display preferences. Domain code owns card filtering and sorting;
+  `AdaptiveCardCollection` preserves the supplied order.
+- **Controls:** Profile-backed toolbar templates arrange allowlisted widgets in
+  two rows with configurable order, visibility, and row size. Shared shape,
+  typography, status-color, and theme tokens apply across library boundaries.
+- **Panels:** A route-backed detail view owns its record. An Inbox item viewer
+  uses a seeded per-item cache and targeted record/attention requests, rather
+  than mounting the collection and fetching the entire Inbox. Message details
+  retain the thread context they need.
+- **Continuity:** Live refreshes preserve active editors, expanded cards, and
+  unchanged SDK DOM. Opening the first side panel reparents the existing stack
+  instead of rebuilding the workspace. Per-tab and per-card error boundaries
+  contain rendering failures and preserve healthy siblings.
+- **Persistence:** Profiles, views, layouts, and toolbar overrides use the API.
+  Theme, shell mode, and some presentation/cache settings remain browser-local.
+  The default theme follows the system preference.
+- **Navigation:** Project Mail is a separate visible `/mail` projection. Activity,
+  History, and Proposals retain compatibility routes into Inbox. Viewer opens
+  with a selected Arm rather than appearing as a standalone destination.
+
+Use the [Adaptive Cards guide](./adaptive-cards.md),
+[sheet performance gates](./tabulator-benchmark.md), and
+[theme guide](../THEME_SYSTEM.md) for the detailed contracts. Source-level
+guidance lives in `src/web/src/design-system/README.md` and
+`src/web/src/workbench/README.md`.
 
 ## Product model
 
@@ -32,12 +69,14 @@ The workbench uses these concepts:
 
 ## Runtime data flow
 
-1. Existing APIs and JetStream remain authoritative for domain data and events.
+1. The API remains the browser's boundary for authoritative domain data and
+   event history; JetStream is a service-side implementation detail.
 2. Existing Arm metric history and message metric tables remain authoritative
    for sampled telemetry.
 3. One browser WebSocket connection fans server messages out to projections.
-4. A projection either applies a small append/update directly or invalidates
-   its React Query cache.
+4. A projection either applies a small append/update directly, invalidates its
+   React Query cache, or reloads its own local collection state. Not every
+   projection has been converted to React Query.
 5. Background changes mark relevant workbench panels as needing attention.
 6. View preferences and complete workspace layouts are persisted through the
    workbench API and may be private or shared.
@@ -52,11 +91,12 @@ The frontend is divided into four layers:
    state, and resource/view contracts.
 3. Domain features supply projection schemas, row renderers, commands, and
    detail components.
-4. Golden Layout hosts registered view instances and persists their placement.
+4. Golden Layout hosts registered view instances and persists their placement;
+   the classic shell hosts the same routes without the pane tree.
 
 Tabulator is the production `ResourceSheet` runtime for Tasks, plan items,
-Bugs, and Discovery. The Inbox also uses Tabulator, but as a separate read-only
-scan table whose rows expand into full Adaptive Cards. Timeline, document,
+Bugs, and Discovery. The Inbox's grid mode also uses Tabulator, but as a separate
+read-only scan table whose rows expand into full Adaptive Cards. Timeline, document,
 process, and dashboard surfaces use the Coleo design system so the application
 shares one compact interaction language.
 
@@ -74,6 +114,7 @@ Saved views contain:
 - filters and sort order;
 - visible, hidden, and ordered columns;
 - column widths and density;
+- grid font size and collection display/card preferences;
 - optional sharing metadata.
 
 Saved layouts contain Golden Layout configuration and a schema version. The
@@ -93,12 +134,13 @@ project-domain data.
 - Start with static registries in the main bundle. Dynamic third-party plugins
   are deliberately outside this migration.
 
-## Current migration map
+## Current surface map
 
 | Existing surface | Workbench destination |
 | --- | --- |
 | `TaskGrid`, `BugGrid` | Tabulator `ResourceSheet` |
-| Mail, activity, history, and proposals | Inbox facets backed by `ProjectionInbox` |
+| Operational activity, history, and proposals | Inbox facets backed by `ProjectionInbox` |
+| Project Mail | Separate mail projection with shared messaging infrastructure |
 | Arm telemetry components | metric-backed dashboard panels |
 | Setup plan editor | retained as the specialized collaborative plan document |
 | Golden Layout local storage | versioned database-backed workspace layout |
@@ -109,6 +151,10 @@ compatibility dependencies for detail pages. No navigation route renders them
 as its list implementation.
 
 ## Implementation record
+
+These dated entries record earlier milestones and their validation at the time.
+The current architecture above supersedes older navigation and presentation
+descriptions, including the earlier treatment of Mail as a compatibility route.
 
 The initial workbench migration was completed on 2026-07-31 in
 `codex/workbench-ui`.

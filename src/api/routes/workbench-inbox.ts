@@ -1,3 +1,4 @@
+import { listSwarmInboxRecords } from "../swarm-inbox";
 import { getInboxEventRecord } from "./inbox-event-record";
 import { sanitizeEventData } from "./events";
 
@@ -116,6 +117,10 @@ export function createWorkbenchInboxRoutes() {
 		const cursor = decodeCursor(c.req.query("cursor"));
 		const sourceLimit = Math.min(limit * 2, 400);
 		const rows: SourceRow[] = [
+			...listSwarmInboxRecords(db, sourceLimit).map((item) => ({
+				...item, resourceKind: item.resource.kind, resourceId: item.resource.id,
+				requiresAction: item.requiresAction ? 1 : 0,
+			})),
 			...(db.query(
 				`SELECT 'brain:planning-gate' AS itemKey, 'planning-gate' AS source,
 				        'brain' AS kind, 'Project planning is blocked' AS title,

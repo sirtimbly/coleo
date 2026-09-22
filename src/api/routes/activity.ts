@@ -8,6 +8,7 @@ import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { basename } from "path";
 import { randomUUID } from "crypto";
+import { subjectToken } from "../../nats/subject-token";
 import { eventMatchesProject, eventStore, type EventData } from "../../nats/jetstream";
 import { getNatsManager } from "../../nats/server";
 import { COMMAND_STREAM_NAME } from "../../nats/command-types";
@@ -475,7 +476,7 @@ export function createActivityRoutes() {
         const perArmResults = await Promise.all(
           effectiveArmIds.map(async (armId) => {
             const events = await eventStore.queryEvents({
-              subject: `coleo.events.arm.${armId}.>`,
+              subject: `coleo.events.arm.${subjectToken(armId)}.>`,
               since: sinceQuery.value,
               until: untilQuery.value,
               limit: scanLimit,
@@ -949,7 +950,7 @@ export function createActivityRoutes() {
     const now = new Date().toISOString();
     const activityId = randomUUID();
     const subject = body.target 
-      ? `coleo.events.arm.${body.target}.${body.action}`
+      ? `coleo.events.arm.${subjectToken(body.target)}.${body.action}`
       : `coleo.events.api.${body.action}`;
 
     try {

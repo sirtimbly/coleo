@@ -4,6 +4,10 @@ Adaptive Cards are a presentation and lightweight interaction boundary for
 Coleo's Inbox, semantic event streams, singleton details, and docked panels.
 They do not replace the task, bug, mail, Arm, event, or layout data models.
 
+This guide implements ADR-004 (`.project/decisions/004-shadcn-components.md`).
+See the [workbench overview](./README.md) for the current shell, projection, and
+persistence boundaries.
+
 ## Architecture
 
 Every rendered card is a `CardEnvelope`. The envelope selects an immutable
@@ -39,7 +43,9 @@ Developers can open `/card-catalog` to preview every trusted template and
 inspect the action payload it produces without executing a mutation. Set
 `VITE_ADAPTIVE_CARDS=false` to exercise the readable fallback path.
 
-Every non-editor card exposes a settings icon in its creator bar. Compact and
+Non-editor cards can expose settings in their creator bar. A collection that
+supplies an explicit presentation mode owns that choice through its toolbar and
+hides the per-card settings. For independently configurable cards, compact and
 full-detail modes can be applied to one card or to all cards. The global choice
 is saved locally; "Use surface defaults" restores compact streams and detailed
 singleton views. Item overrides stay session-local. Editor cards always use
@@ -54,8 +60,9 @@ editors remain specialized Workbench projections.
 
 ## Inbox projection
 
-The Inbox uses Tabulator as a read-only, virtualized scan surface rather than
-rendering every item as a card. Each row shows only the fields needed to triage
+The Inbox's grid mode uses Tabulator as a read-only, virtualized scan surface.
+Its alternative cards mode uses `AdaptiveCardCollection` with saved presentation
+and column-count preferences. Each scan row shows the fields needed to triage
 the queue: state, source, subject and summary, item type, and received time.
 Sorting, facets, search, responsive column hiding, and bulk read state remain
 host-owned behaviors.
@@ -78,6 +85,25 @@ The table is not an editable resource sheet. Inbox cells never mutate domain
 data, and the dedicated `ResourceSheet` column/editor contract is not reused.
 Messages retain their full threaded detail view; operational events retain
 their target navigation and attention actions.
+
+### Single-record loading and stable rendering
+
+`MessagingPage` selects the collection or `InboxItemPage` from the panel route.
+Opening an operational item seeds its per-item React Query entry from the
+already visible projection, then loads that record/event and its attention state
+through targeted APIs. Restored panels and direct links use the same loader
+without depending on an Inbox collection cache. Message viewers load the
+conversation context needed to preserve replies and full-thread behavior.
+
+Collection refreshes reconcile scan rows by stable ID. Expanded cards keep
+their React roots, and semantically unchanged envelopes keep their Adaptive
+Cards DOM. Changed envelopes replace the old rendering only when the new one
+is ready. Card clicks do not toggle the enclosing row. Opening a side panel
+preserves the original workspace stack, its route, filters, and expanded cards.
+
+Each Golden Layout screen and expanded scan-row card has a React error boundary.
+Request, action, and imperative renderer failures still require explicit error
+handling; a React boundary does not catch all asynchronous failures.
 
 ## Task projection
 
@@ -153,7 +179,10 @@ attempting best-effort execution.
 - The web client dynamically imports the renderer so list and sheet routes do
   not load it until a card surface is opened.
 
-## Rollout
+## Implementation stages
+
+These stages describe the migration, not a claim that every surface now uses
+cards or that all UI state is stored in an envelope.
 
 1. Contracts, catalog, host renderer, and Golden Layout card route.
 2. Durable `workbench_attention` endpoints and Inbox state.
@@ -168,7 +197,11 @@ in route or layout JSON. The card's creator bar owns view settings and pop-out
 controls, so the viewer does not repeat the card title and template identity in
 a second panel header.
 
-## Validation baseline
+## Historical validation baseline
+
+The following bundle measurements and viewport observations were recorded
+during the initial card rollout. Re-measure them when changing the runtime;
+they are not a fresh measurement of the current build.
 
 The production build keeps the renderer runtime out of the initial route chunk:
 

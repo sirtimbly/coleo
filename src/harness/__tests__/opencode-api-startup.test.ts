@@ -26,6 +26,7 @@ describe("OpenCode spawn failure cleanup", () => {
     await mkdir(join(directory, "bin"));
     await writeFile(join(directory, "fake-opencode.ts"), `
       await Bun.write(process.env.TEST_PID_FILE!, String(process.pid));
+      await Bun.write(process.env.TEST_PID_FILE! + ".config", process.env.OPENCODE_CONFIG_CONTENT || "{}");
       console.log("fake OpenCode startup output");
       Bun.serve({
         port: Number(process.argv[process.argv.indexOf("--port") + 1]),
@@ -53,7 +54,7 @@ describe("OpenCode spawn failure cleanup", () => {
     constants.SESSION_CREATE_TIMEOUT_MS = 80;
     constants.SESSION_PRUNE_TIMEOUT_MS = 80;
     harness = new OpenCodeApiHarness();
-    internals().waitForServer = (url, _timeout, child) => waitForOpenCodeServer(url, 800, child);
+    internals().waitForServer = (url, _timeout, child) => waitForOpenCodeServer(url, 3000, child);
   });
 
   afterEach(async () => {
@@ -80,7 +81,7 @@ describe("OpenCode spawn failure cleanup", () => {
   });
 
   for (const [mode, error] of [
-    ["health-hang", "failed to start within 800ms"],
+    ["health-hang", "failed to start within 3000ms"],
     ["session-hang", "session.create for startup-test timed out after 80ms"],
     ["missing-session", "no session ID returned"],
   ] as const) {
@@ -92,7 +93,9 @@ describe("OpenCode spawn failure cleanup", () => {
       // The same arm can be started again after the failed process is gone.
       await harness.spawn(config("healthy"));
       expect(internals().sessions.size).toBe(1);
-    });
+      const runtimeConfig = JSON.parse(await readFile(join(directory, "pid.config"), "utf8"));
+      expect(runtimeConfig.mcp.coleo.environment.COLEO_ARM_ID).toBe("startup-test");
+    }, 15000);
   }
 
   it("keeps a successfully created arm usable when stale-session pruning stalls", async () => {

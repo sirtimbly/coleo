@@ -9,6 +9,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { existsSync, statSync } from "fs";
 import { dirname, join, relative, resolve } from "path";
+import { subjectToken } from "../nats/subject-token";
 import { initDatabase, Database, seedDatabase } from "../db";
 import { apiKeyMatches, logger, createAuthMiddleware, REEF_PROXY_API_KEY_HEADER } from "./middleware";
 import { formatErrorResponse } from "./middleware/error";
@@ -454,7 +455,7 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
 
             if (eventStore.isInitialized()) {
               eventStore
-                .publishEvent(`coleo.events.arm.${armId}.${eventType}`, {
+                .publishEvent(`coleo.events.arm.${subjectToken(armId)}.${eventType}`, {
                   type: eventType,
                   armId,
                   data: truncatedData,
@@ -624,7 +625,7 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
 
     if (armExists && eventStore.isInitialized()) {
       eventStore
-        .publishEvent(`coleo.events.arm.${armId}.${event}`, {
+        .publishEvent(`coleo.events.arm.${subjectToken(armId)}.${event}`, {
           type: event,
           armId,
           data: truncatedData,

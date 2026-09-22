@@ -163,7 +163,9 @@ export function workbenchInboxToItem(record: WorkbenchInboxRecord): InboxItemDat
 					pathname: "/bugs",
 					search: `?bug=${encodeURIComponent(record.resource.id)}`,
 				}
-			: undefined;
+			: record.resource.kind === "arm"
+				? { pathname: "/viewer", search: `?arm=${encodeURIComponent(record.resource.id)}` }
+				: undefined;
 	const summary = record.source === "planning-gate"
 		? (() => {
 			try {
@@ -183,12 +185,13 @@ export function workbenchInboxToItem(record: WorkbenchInboxRecord): InboxItemDat
 			title: record.title,
 			summary,
 			timestamp: record.timestamp,
-			source: record.source.replaceAll("-", " "),
+			source: record.source === "swarm-recommendation" ? "Brain · Swarm recommendations" : record.source.replaceAll("-", " "),
 			resourceId: record.resource.id,
 			unread: !record.attention?.readAt,
 			requiresAction: record.requiresAction,
 			severity: record.severity,
 		},
+		brainCategory: record.source === "swarm-recommendation" ? "decisions" : undefined,
 		targetRoute,
 	};
 }

@@ -69,6 +69,17 @@ Example: When adding vector search for status history, the choice was between La
 | Task queue | JSON files | NATS JetStream | **NATS** - already integrated |
 | SQLite | SQLite | PostgreSQL | **SQLite** - sufficient for single-brain, Phase 7 adds Postgres |
 
+## Workbench application (2026-09-21)
+
+The UI application of this policy is recorded in
+[ADR-004](./004-shadcn-components.md). HeroUI provides shared controls; Golden
+Layout, the pinned production Tabulator runtime, and trusted Adaptive Cards
+provide specialized capabilities behind Coleo-owned adapters. Selection must
+account for interaction parity, licensing, lifecycle behavior, and measured
+performance, not just initial integration effort. The earlier temporary grid
+evaluation is not the production choice. Preserve the existing API contracts,
+editing history, and saved preferences when changing these dependencies.
+
 ## Related
 
 - ADR-001: Use Bun (chose production-ready runtime)

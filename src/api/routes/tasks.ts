@@ -5,6 +5,7 @@
  */
 import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
+import { subjectToken } from "../../nats/subject-token";
 import { HttpError } from "../middleware";
 import { broadcast } from "../websocket";
 import { withTransaction } from "../../db/transactions";
@@ -283,7 +284,7 @@ function logActivity(
 ): void {
 	if (eventStore.isInitialized()) {
 		const subject = target
-			? `coleo.events.task.${target}.${action}`
+			? `coleo.events.task.${subjectToken(target)}.${action}`
 			: `coleo.events.api.${action}`;
 
 		eventStore
@@ -1537,10 +1538,13 @@ export function createTasksRoutes() {
 		values.push(now);
 		values.push(id);
 
-		db.run(
-			`UPDATE tasks SET ${updates.join(", ")} WHERE id = ?`,
+		const expectedVersion = c.req.header("X-Coleo-Expected-Version");
+		if (expectedVersion) values.push(expectedVersion);
+		const updateResult = db.run(
+			`UPDATE tasks SET ${updates.join(", ")} WHERE id = ?${expectedVersion ? " AND updated_at = ?" : ""}`,
 			values as (string | number | null)[],
 		);
+		if (expectedVersion && updateResult.changes === 0) throw new HttpError(409, "Task changed since evaluation");
 
 		let planStatusSynced: boolean | null = null;
 		const planStatus = body.status === "pending" || body.status === "completed" || body.status === "cancelled"
@@ -1663,7 +1667,7 @@ export function createTasksRoutes() {
 				};
 
 				eventStore
-					.publishEvent(`coleo.events.task.${id}.${eventType}`, {
+					.publishEvent(`coleo.events.task.${subjectToken(id)}.${eventType}`, {
 						type: eventType,
 						armId: row.assigned_to || existing.assigned_to || undefined,
 						data,
@@ -1676,7 +1680,7 @@ export function createTasksRoutes() {
 				const eventArmId = row.assigned_to || existing.assigned_to;
 				if (eventArmId) {
 					eventStore
-						.publishEvent(`coleo.events.arm.${eventArmId}.${eventType}`, {
+						.publishEvent(`coleo.events.arm.${subjectToken(eventArmId)}.${eventType}`, {
 							type: eventType,
 							armId: eventArmId,
 							data,

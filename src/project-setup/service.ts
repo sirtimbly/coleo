@@ -367,17 +367,18 @@ export async function renderPlanEvaluationPrompt(
 	return { system, user };
 }
 
-export async function formatPlanWithConfiguredModel(
+async function evaluateConfiguredPlan(
 	content: string,
 	sourcePath: string,
 	guidance?: string,
 	workspaceContext?: PlanWorkspaceContext,
 	templates?: BrainTemplateManager,
+	validationOnly = false,
 ): Promise<PlanFormatterResult> {
 	const config = resolveBrainModelConfig((await loadConfig()).brain);
 	const apiKey = config.apiKey.trim();
 	if (!apiKey) {
-		if (guidance?.trim()) {
+		if (validationOnly || guidance?.trim()) {
 			throw new Error("Configure a Brain model API key before regenerating tasks");
 		}
 		return {
@@ -389,13 +390,13 @@ export async function formatPlanWithConfiguredModel(
 
 	const baseUrl = config.baseUrl.replace(/\/$/, "");
 	const model = config.model;
-	const completionTokenBudget = Math.min(
+	const completionTokenBudget = validationOnly ? 4_000 : Math.min(
 		64_000,
 		Math.max(8_000, Math.ceil(content.length / 3) + 4_000),
 	);
 	// Full-plan rewrites can produce tens of thousands of tokens. Allow for
 	// generation plus provider startup, while retaining a finite request deadline.
-	const timeoutMs = Math.min(900_000, 120_000 + Math.ceil(completionTokenBudget / 50) * 1_000);
+	const timeoutMs = validationOnly ? 300_000 : Math.min(900_000, 120_000 + Math.ceil(completionTokenBudget / 50) * 1_000);
 	let requestSignal: AbortSignal | undefined;
 	try {
 		const prompt = await renderPlanEvaluationPrompt(
@@ -405,6 +406,10 @@ export async function formatPlanWithConfiguredModel(
 			guidance,
 			workspaceContext,
 		);
+		if (validationOnly) {
+			prompt.system = await (templates || new BrainTemplateManager(getColeoDir(), () => {}))
+				.renderTemplate("plan-readiness-system-prompt.jinja");
+		}
 		requestSignal = AbortSignal.timeout(timeoutMs);
 		const response = await fetch(`${baseUrl}/chat/completions`, {
 			method: "POST",
@@ -426,6 +431,7 @@ export async function formatPlanWithConfiguredModel(
 					},
 				],
 				max_completion_tokens: completionTokenBudget,
+				...(validationOnly ? { response_format: { type: "json_object" } } : {}),
 			}),
 		});
 		if (!response.ok) {
@@ -476,6 +482,18 @@ export async function formatPlanWithConfiguredModel(
 					: "Plan formatter returned no text",
 			);
 		}
+		if (validationOnly) {
+			let verdict: unknown;
+			try { verdict = JSON.parse(formatted); } catch { throw new Error("Plan evaluator returned invalid JSON"); }
+			if (!verdict || typeof verdict !== "object" || !("ready" in verdict) || !("blockers" in verdict)
+				|| typeof verdict.ready !== "boolean" || !Array.isArray(verdict.blockers)
+				|| !verdict.blockers.every((item: unknown) => typeof item === "string" && item.trim().length > 0)) {
+				throw new Error("Plan evaluator returned an invalid readiness verdict");
+			}
+			if (verdict.ready !== (verdict.blockers.length === 0)) throw new Error("Plan evaluator returned an inconsistent readiness verdict");
+			if (!verdict.ready) throw new Error(`Plan validation failed: ${verdict.blockers.join("; ").slice(0, 2_000)}`);
+			return { content, mode: "ai" };
+		}
 		if (!hasStructuredPlanTasks(formatted)) {
 			throw new Error("Plan formatter returned an unsupported plan structure");
 		}
@@ -489,7 +507,7 @@ export async function formatPlanWithConfiguredModel(
 		const failure = timedOut
 			? new Error(`Plan formatter timed out while evaluating with ${model} (request deadline: ${Math.round(timeoutMs / 1_000)} seconds). The source plan was preserved. Retry or select a faster Brain model.`, { cause: error })
 			: error;
-		if (guidance?.trim()) throw failure;
+		if (validationOnly || guidance?.trim()) throw failure;
 		return {
 			content: formatPlanWithoutModel(content, sourcePath),
 			mode: "structured",
@@ -500,3 +518,11 @@ export async function formatPlanWithConfiguredModel(
 		};
 	}
 }
+
+/** Explicit preparation may rewrite plan files. */
+export const formatPlanWithConfiguredModel: PlanFormatter = (content, sourcePath, guidance, context, templates) =>
+	evaluateConfiguredPlan(content, sourcePath, guidance, context, templates);
+
+/** The dispatch gate reviews the saved plan without generating replacement text. */
+export const validatePlanForExecution: PlanFormatter = (content, sourcePath, _guidance, context, templates) =>
+	evaluateConfiguredPlan(content, sourcePath, "Assess whether the next unfinished work can safely begin. Do not rewrite the plan.", context, templates, true);

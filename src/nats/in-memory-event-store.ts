@@ -1,3 +1,4 @@
+import { subjectToken } from "./subject-token";
 import { VERSION, NATS_SCHEMA_VERSION } from "../version";
 import type { EventData, QueryOptions, StreamMetrics, IEventStore } from './jetstream-types';
 import { getProjectScope } from '../project-scope';
@@ -69,7 +70,7 @@ export class InMemoryEventStore implements IEventStore {
 
   async getArmEvents(armId: string, limit: number = 50, since?: Date): Promise<EventData[]> {
     return this.queryEvents({
-      subject: `coleo.events.arm.${armId}.>`,
+      subject: `coleo.events.arm.${subjectToken(armId)}.>`,
       limit,
       since,
       latest: true,

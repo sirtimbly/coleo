@@ -2,15 +2,19 @@
 
 ## Overview
 
-The Coleo Observatory web UI supports both Light and Dark themes, with automatic system preference detection. The theme system is built using CSS variables and Tailwind CSS v4.
+The Coleo workbench supports Light, Dark, and System themes, with System as the
+default. CSS variables and Tailwind CSS v4 provide the shared tokens used by
+HeroUI controls, Coleo components, and specialized rendering adapters. This
+implements ADR-004 (`.project/decisions/004-shadcn-components.md`); see the
+[workbench overview](./workbench/README.md) for the surrounding architecture.
 
 ## Features
 
 - **Three theme modes**: Light, Dark, and System (follows OS preference)
 - **Instant switching**: Theme changes apply immediately without page reload
-- **Persistent preference**: User preference is stored in localStorage and synced to backend API
+- **Persistent preference**: Theme preference is stored in browser localStorage
 - **Smooth transitions**: CSS transitions provide smooth color changes when switching themes
-- **Accessibility**: All color combinations meet WCAG AA contrast standards
+- **Accessibility**: Check contrast and focus visibility in both themes, including library overlays
 
 ## User Guide
 
@@ -27,12 +31,13 @@ The Coleo Observatory web UI supports both Light and Dark themes, with automatic
 
 - Your theme preference is saved automatically when you make a selection
 - The preference persists across browser sessions using localStorage
-- If you're signed in, the preference is also synced to your user profile
-- On page load, the theme is applied in this priority order:
-  1. Stored user preference (from backend if signed in)
-  2. Client local override (localStorage)
-  3. System preference (prefers-color-scheme)
-  4. Default to Light
+- `ThemeProvider` reads `coleo-theme`; it does not synchronize this preference
+  with a backend profile
+- On page load, a valid stored Light/Dark/System choice wins; otherwise System
+  is selected. System resolves through `prefers-color-scheme` and follows later
+  OS changes. The initial non-browser fallback is Light.
+- Workbench profiles, views, layouts, and toolbar templates have separate
+  API-backed persistence; do not confuse that with theme storage.
 
 ## Developer Guide
 
@@ -44,6 +49,8 @@ The theme system consists of:
 2. **Tailwind Theme Config** (`@theme` directive in CSS): Maps CSS variables to Tailwind classes
 3. **Theme Provider** (`src/web/src/lib/theme.tsx`): React context for theme state management
 4. **Theme Toggle UI** (`src/web/src/pages/SettingsPage.tsx`): User interface for theme selection
+5. **Shared adaptations** (`src/web/src/design-system/shapes.css` and `controls.css`): Consistent geometry and control behavior across libraries
+6. **Projection themes** (`sheet-theme.css`, Adaptive Cards styles, and Golden Layout styles): Specialized surfaces consuming the same application tokens
 
 ### CSS Variables
 
@@ -186,11 +193,19 @@ This project uses Tailwind CSS v4, which has significant differences from v3:
 
 ### HeroUI v3 Integration
 
-The theme system works alongside HeroUI v3 components:
+`index.css` imports Tailwind, HeroUI styles, then the shared shape/control
+adaptations. Keep library adjustments in those shared adapters instead of
+inventing per-page overrides. The same button, field, or menu should retain its
+shape and state cues in toolbars, panels, and portals.
 
-- HeroUI components use their own theming system
-- Our CSS variables complement HeroUI's variables
-- Some components may need custom overrides for perfect dark mode support
+Tabulator editors and menus, Adaptive Cards, and Golden Layout chrome also need
+theme verification. Resource status colors come from
+`design-system/resource-status-styles.ts` so sheet cells and charts agree.
+
+Sizing remains scoped: toolbar row hierarchy, compact/comfortable collection
+density, card presentation, and grid font size are distinct preferences. A grid
+font-size change must not resize the surrounding controls. See
+`src/web/src/design-system/README.md` for the exact shape and typography contract.
 
 ### Performance Considerations
 

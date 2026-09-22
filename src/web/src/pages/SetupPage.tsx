@@ -20,7 +20,7 @@ import {
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { api, type ProjectSetupStatus } from '@/lib';
 import { dismissProjectSetupHelp, hasDismissedProjectSetupHelp, markProjectSetupOpened } from '@/lib/project-setup-visit';
-import { useWorkspaceOpenRoute } from '@/workspace/route-context';
+import { useWorkspaceOpenRoute, useWorkspaceSearchParams } from '@/workspace/route-context';
 
 import { filterSetupFilePaths, setupPathMatchesScope, type SetupFileScope } from './setup-file-scope';
 import type { FileTreeRowDecoration } from '@pierre/trees';
@@ -128,6 +128,10 @@ function MarkdownPreview({ content }: { content: string }) {
 export function SetupPage() {
   usePageTitle('Coleo Observatory - Project Setup');
   const openWorkspaceRoute = useWorkspaceOpenRoute();
+  const [searchParams] = useWorkspaceSearchParams();
+  const requestedFile = searchParams.get("file");
+  const openedLinkRef = useRef<string | null>(null);
+  const initialLinkedFile = useRef(requestedFile);
   const [status, setStatus] = useState<ProjectSetupStatus | null>(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -226,6 +230,17 @@ export function SetupPage() {
       if (requestedPathRef.current === path) setEditorLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (loading || !status || !requestedFile || saving || openedLinkRef.current === requestedFile) return;
+    const initialLink = openedLinkRef.current === null && requestedFile === initialLinkedFile.current;
+    openedLinkRef.current = requestedFile;
+    if (!isOpenableFile(requestedFile)) { setError('This file cannot be edited here.'); return; }
+    if (!initialLink && dirty && !window.confirm('Discard your unsaved edits and open the linked file?')) return;
+    setFileScope('all');
+    setError(null);
+    void loadFileIntoEditor(requestedFile);
+  }, [dirty, loadFileIntoEditor, loading, requestedFile, saving, status]);
 
   const changeFileScope = (nextScope: SetupFileScope) => {
     if (!editor || !status || nextScope === fileScope || saving) return;
@@ -330,7 +345,7 @@ export function SetupPage() {
         path: editor.path,
         content: editor.content,
         expectedHash: editor.expectedHash,
-        kind: 'document',
+        kind: editor.path.startsWith('.coleo/src/brain/templates/') ? 'template' : 'document',
       });
       setEditor((current) => current?.path === targetPath ? {
         ...current,

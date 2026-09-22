@@ -53,12 +53,14 @@ export function AdaptiveCardView({
 		: presentationMode ?? settings.mode;
 	const hasTechnicalDetails = Array.isArray(envelope.data.technicalFacts) && envelope.data.technicalFacts.length > 0;
 	onActionRef.current = onAction;
+	// Equal envelopes arrive on live refreshes; preserve SDK DOM and open menus.
+	const serializedEnvelope = JSON.stringify(envelope);
 
 	useEffect(() => {
+		const envelope = JSON.parse(serializedEnvelope) as CardEnvelope;
 		let cancelled = false;
 		const host = hostRef.current;
 		if (!host) return;
-		host.replaceChildren();
 		setError(null);
 
 		const render = async () => {
@@ -130,9 +132,8 @@ export function AdaptiveCardView({
 		});
 		return () => {
 			cancelled = true;
-			host.replaceChildren();
 		};
-	}, [envelope, mode, technicalDetailsOpen]);
+	}, [serializedEnvelope, mode, technicalDetailsOpen]);
 
 	return (
 		<div

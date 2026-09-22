@@ -1,3 +1,5 @@
+import { validateSwarmTemplate } from "../../brain/swarm/prompts";
+import { acquirePlanEvaluation } from "../../project-setup/evaluation-lock";
 import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
@@ -100,7 +102,7 @@ async function writeSetupTemplateFile(
 	}
 	const existingHash = existing === null ? null : createHash("sha256").update(existing).digest("hex");
 	if (expectedHash !== undefined && expectedHash !== existingHash) {
-		throw new Error("This template changed since you opened it. Reload before saving your edits.");
+		throw new HttpError(409, "This template changed since you opened it. Reload before saving your edits.");
 	}
 	await mkdir(dirname(absolutePath), { recursive: true });
 	await writeFile(absolutePath, content, "utf-8");
@@ -133,6 +135,7 @@ function validateEditableDocumentPath(path: string): string {
 }
 
 function badRequestFrom(error: unknown, fallback: string): HttpError {
+	if (error instanceof HttpError) return error;
 	return HttpError.badRequest(error instanceof Error ? error.message : fallback);
 }
 
@@ -221,6 +224,14 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 		}
 
 		try {
+			if (rawPath.startsWith(".coleo/src/brain/templates/")) {
+        const path = validateEditableTemplatePath(rawPath);
+        await brainTemplates.ensureTemplatesExist();
+        const absolutePath = join(coleoDir, path.replace(/^\.coleo\//, ""));
+        const [content, metadata] = await Promise.all([readFile(absolutePath, "utf8"), stat(absolutePath)]);
+        return c.json({ file: { path, content, contentHash: createHash("sha256").update(content).digest("hex"),
+          size: metadata.size, modifiedAt: metadata.mtime.toISOString() } });
+      }
 			const path = validateEditableDocumentPath(rawPath);
 			const file = await workspace.readText(path);
 			if (!file) throw HttpError.notFound("File not found in the project workspace");
@@ -256,7 +267,8 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 		}
 
 		try {
-			if (body.kind === "template") {
+			if (body.kind === "template" || body.path.startsWith(".coleo/src/brain/templates/")) {
+        validateSwarmTemplate(body.path.split("/").at(-1)!, body.content);
 				const file = await writeSetupTemplateFile(
 					coleoDir,
 					body.path,
@@ -295,9 +307,18 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 			throw HttpError.badRequest("Plan files must be smaller than 512 KiB");
 		}
 
+		const release = await acquirePlanEvaluation(coleoDir);
+		if (!release) throw new HttpError(409, "Another plan evaluation is running. Wait for it to finish, then reopen the latest plan before preparing tasks.");
 		try {
 			const sourcePath = validateEditablePlanPath(body.sourcePath);
 			const sourceExpectedHash = body.expectedHash as string | null | undefined;
+			const source = await workspace.readText(sourcePath);
+			if (sourceExpectedHash !== undefined && (source?.contentHash ?? null) !== sourceExpectedHash) {
+				throw new HttpError(409, "The plan changed since you opened it. Your editor text has not been overwritten. Reopen the latest plan and reapply any unsaved edits before preparing tasks.");
+			}
+			// Capture the destination before the model runs, including imports from another file.
+			const existingCanonical = sourcePath === CANONICAL_PLAN_PATH ? source : await workspace.readText(CANONICAL_PLAN_PATH);
+			const canonicalExpectedHash = existingCanonical?.contentHash ?? null;
 			if (sourcePath !== CANONICAL_PLAN_PATH) {
 				await workspace.writeText(sourcePath, body.content, { expectedHash: sourceExpectedHash });
 			}
@@ -318,10 +339,6 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 			if (!hasStructuredPlanTasks(formatted.content)) {
 				throw new Error("The prepared plan did not contain a phase with deliverable checklist items");
 			}
-			const existingCanonical = await workspace.readText(CANONICAL_PLAN_PATH);
-			const canonicalExpectedHash = sourcePath === CANONICAL_PLAN_PATH
-				? sourceExpectedHash
-				: existingCanonical?.contentHash ?? null;
 			const canonicalPlan = await workspace.writeText(CANONICAL_PLAN_PATH, formatted.content, {
 				expectedHash: canonicalExpectedHash,
 			});
@@ -342,6 +359,8 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 			const issue = getBrainModelAccessIssue(error);
 			if (issue) await recordBrainModelAccess(c.get("db"), issue);
 			throw badRequestFrom(error, "Unable to prepare the project plan");
+		} finally {
+			release();
 		}
 	});
 
@@ -354,6 +373,8 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 			throw HttpError.badRequest("The regeneration explanation must be 4,000 characters or fewer");
 		}
 
+		const release = await acquirePlanEvaluation(coleoDir);
+		if (!release) throw new HttpError(409, "Another plan evaluation is running. Wait for it to finish before regenerating tasks.");
 		try {
 			const result = await regenerateTasksFromPlan({
 				db: c.get("db"),
@@ -371,6 +392,8 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 			const issue = getBrainModelAccessIssue(error);
 			if (issue) await recordBrainModelAccess(c.get("db"), issue);
 			throw badRequestFrom(error, "Unable to regenerate tasks from the project plan");
+		} finally {
+			release();
 		}
 	});
 

@@ -6,6 +6,9 @@
  * Also handles arm config files in ~/.coleo/arms/*.toml
  */
 
+import { BRAIN_TEMPLATE_NAMES, validateResponsibilitySettings } from "../../brain/responsibilities";
+import { BrainTemplateManager } from "../../brain/template-manager";
+import { assertSupportedHarness, UnsupportedHarnessError } from "../../harness/supported";
 import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { HttpError } from "../middleware";
@@ -44,6 +47,8 @@ function brainConfigResponse(config: ColeoConfig) {
   const { apiKey, ...brain } = config.brain;
   return {
     ...brain,
+    swarmEvaluationMode: brain.swarmEvaluationMode ?? "off",
+    swarmWindowPolls: brain.swarmWindowPolls ?? 10,
     apiKeyConfigured: Boolean(apiKey),
   };
 }
@@ -77,6 +82,7 @@ export function createConfigRoutes() {
       const config = await updateConfig(updates);
       return c.json({ config: sanitizeConfig(config) });
     } catch (err) {
+      if (err instanceof UnsupportedHarnessError) throw HttpError.badRequest(err.message);
       const message = err instanceof Error ? err.message : String(err);
       throw HttpError.internal(`Failed to update config: ${message}`);
     }
@@ -112,6 +118,7 @@ export function createConfigRoutes() {
       await writeTomlConfig(body.toml);
       return c.json({ success: true });
     } catch (err) {
+      if (err instanceof UnsupportedHarnessError) throw HttpError.badRequest(err.message);
       if (err instanceof HttpError) throw err;
       const message = err instanceof Error ? err.message : String(err);
       throw HttpError.internal(`Failed to write config: ${message}`);
@@ -142,6 +149,7 @@ export function createConfigRoutes() {
       const config = await updateConfig({ defaults: updates as ColeoConfig["defaults"] });
       return c.json({ defaults: config.defaults });
     } catch (err) {
+      if (err instanceof UnsupportedHarnessError) throw HttpError.badRequest(err.message);
       const message = err instanceof Error ? err.message : String(err);
       throw HttpError.internal(`Failed to update config: ${message}`);
     }
@@ -159,6 +167,15 @@ export function createConfigRoutes() {
       const message = err instanceof Error ? err.message : String(err);
       throw HttpError.internal(`Failed to load config: ${message}`);
     }
+  });
+
+  app.get("/brain/templates/:name", async (c) => {
+    const name = c.req.param("name");
+    if (!BRAIN_TEMPLATE_NAMES.includes(name)) throw HttpError.notFound("Unknown Brain template");
+    const templates = new BrainTemplateManager(await getColeoDir(), () => {});
+    await templates.ensureTemplatesExist();
+    const content = await templates.renderTemplate(name);
+    return c.json({ name, content, path: `.coleo/src/brain/templates/${name}` });
   });
 
   /**
@@ -183,6 +200,14 @@ export function createConfigRoutes() {
   app.patch("/brain", async (c) => {
     try {
       const updates = await c.req.json<Partial<ColeoConfig["brain"]>>();
+      try { validateResponsibilitySettings(updates); } catch (error) { throw HttpError.badRequest(String(error)); }
+      if (updates.swarmEvaluationMode !== undefined && !["off", "shadow", "execute"].includes(updates.swarmEvaluationMode)) {
+        throw HttpError.badRequest("Swarm evaluation mode must be off, shadow, or execute");
+      }
+      if (updates.swarmWindowPolls !== undefined &&
+        (!Number.isInteger(updates.swarmWindowPolls) || updates.swarmWindowPolls < 1 || updates.swarmWindowPolls > 100)) {
+        throw HttpError.badRequest("Swarm window must be an integer from 1 to 100 polls");
+      }
       const config = await updateConfig({ brain: updates as ColeoConfig["brain"] });
       if ("provider" in updates || "model" in updates || "apiKey" in updates) {
         c.get("db").run("DELETE FROM infrastructure_health WHERE component = 'brain_model_api'");
@@ -347,15 +372,18 @@ export function createConfigRoutes() {
         throw HttpError.badRequest("Either 'config' or 'raw' field is required");
       }
 
-      await writeFile(filepath, content, 'utf-8');
-
       const config = parseToml(content) as unknown as ArmConfig;
+      if (config.arm?.harness !== undefined) assertSupportedHarness(config.arm.harness);
+      const flatHarness = (config as unknown as Record<string, unknown>).harness;
+      if (flatHarness !== undefined) assertSupportedHarness(flatHarness);
+      await writeFile(filepath, content, 'utf-8');
       return c.json({ 
         filename, 
         config,
         raw: content,
       });
     } catch (err) {
+      if (err instanceof UnsupportedHarnessError) throw HttpError.badRequest(err.message);
       if (err instanceof HttpError) throw err;
       const message = err instanceof Error ? err.message : String(err);
       throw HttpError.internal(`Failed to update arm config: ${message}`);

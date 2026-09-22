@@ -58,7 +58,11 @@ This document tracks open questions and decisions that need to be made before or
 
 **Question:** Should the web UI support dark mode?
 
-**Decision:** Yes, dark mode default using Shadcn components
+**Decision (updated 2026-09-21):** Support light, dark, and system themes, with
+system as the default. The workbench uses HeroUI and Coleo's shared design tokens
+and adapters; the original shadcn-inspired approach has been superseded by
+ADR-004 (`.project/decisions/004-shadcn-components.md`). See the
+[workbench overview](../workbench/README.md) and [theme guide](../THEME_SYSTEM.md).
 
 **Status:** Resolved
 

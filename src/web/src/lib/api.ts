@@ -391,6 +391,10 @@ class ApiClient {
     });
   }
 
+  async getBrainTemplate(name: string) {
+    return this.request<{ name: string; content: string; path: string }>(`/config/brain/templates/${encodeURIComponent(name)}`);
+  }
+
   async getBrainModelConfig() {
     return this.request<{ brain: BrainConfigResponse }>('/config/brain');
   }

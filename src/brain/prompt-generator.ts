@@ -46,6 +46,7 @@ export interface TaskDeterminationResult {
 }
 
 export interface TaskDeterminationOptions {
+	armId?: string;
 	excludeTaskIds?: string[];
 	excludeVerificationForTaskIds?: string[];
 }
@@ -196,6 +197,7 @@ interface DeterminationStepResult {
 }
 
 interface NormalizedTaskDeterminationOptions {
+	armId?: string;
 	excludedTaskIds: Set<string>;
 	excludeVerificationForTaskIds: Set<string>;
 }
@@ -250,6 +252,7 @@ function pickExistingActiveTask(
 			limit: 200,
 		})
 		.filter((task) => !task.consensusStatus || task.consensusStatus !== "reached")
+		.filter((task) => !options.armId || task.assignedTo === options.armId)
 		.filter((task) => !shouldExcludeTask(task, options))
 		.sort((a, b) => {
 			const rank = (status: string): number => {
@@ -327,18 +330,9 @@ function tryUnblockDependencies(
 
 		if (unmetDeps.length === 0) {
 			db.updateTask(blockedTask.id, { dependencyBlocked: false });
-
-			return {
-				task: {
-					id: blockedTask.id,
-					subject: blockedTask.subject,
-					description: blockedTask.description,
-					classification: blockedTask.domain || "development",
-					priority: blockedTask.priority,
-					domain: blockedTask.domain || undefined,
-				},
-				reasoning: `Dependencies resolved. Unblocked: ${blockedTask.priority} - ${blockedTask.subject}`,
-			};
+			// Re-enter the global queue after unblocking; the newly available task
+			// may still be outside the claim policy's permitted front window.
+			return getNextPendingTask(db, "", options);
 		}
 	}
 
@@ -351,15 +345,16 @@ function tryUnblockDependencies(
  */
 function getNextPendingTask(
 	db: BrainDb,
-	phaseLabel: string,
+	_phaseLabel: string,
 	options: NormalizedTaskDeterminationOptions,
 ): DeterminationStepResult | null {
-	const phaseValue = phaseLabel || "";
 	const task = db
 		.listTasks({
 			statuses: ["pending"],
 			dependencyBlocked: false,
-			phase: phaseValue || undefined,
+			// Claim ranking is global, so a phase preference must not recommend
+			// a task that the same database will reject as outside claim_top_k.
+			unassignedOnly: true,
 			sort: "order_key_asc",
 			limit: 200,
 		})
@@ -472,7 +467,7 @@ function normalizeTaskDeterminationOptions(
 			.map((id) => id.trim())
 			.filter((id) => id.length > 0),
 	);
-	return { excludedTaskIds, excludeVerificationForTaskIds };
+	return { armId: options.armId, excludedTaskIds, excludeVerificationForTaskIds };
 }
 
 function shouldExcludeTask(

@@ -204,7 +204,7 @@ export class ArmClient {
       workDir?: string;
       initialPrompt?: string;
     },
-    timeoutMs = 60000
+    timeoutMs = 210000
   ): Promise<CommandResponse<SpawnResponse>> {
     const command: SpawnArmCommand = {
       type: 'spawn',

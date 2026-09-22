@@ -116,6 +116,9 @@ export class OpenCodeHarness implements AgentHarness {
     
     // Tell OpenCode where to find the config
     env.OPENCODE_CONFIG = opencodeConfigPath;
+    // Project opencode.json overrides OPENCODE_CONFIG. Runtime identity must
+    // win, otherwise a checked-in MCP test identity can impersonate every Arm.
+    env.OPENCODE_CONFIG_CONTENT = JSON.stringify(opencodeConfig);
     console.log(`[harness] Created OpenCode config at ${opencodeConfigPath}${opencodeConfig.model ? ` (model: ${opencodeConfig.model})` : ""}`);
 
     // Spawn OpenCode in PTY
@@ -205,21 +208,10 @@ export class OpenCodeHarness implements AgentHarness {
       console.log(`[harness] Warning: OpenCode prompt not detected, sending anyway`);
     }
 
-    // OpenCode accepts text input followed by Enter
-    // For multi-line prompts, we need to handle them carefully
-    const lines = promptText.split("\n");
-    
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (line !== undefined) {
-        this.ptyManager.write(session.pty, line);
-        if (i < lines.length - 1) {
-          // Use shift+enter for newlines within the prompt (if supported)
-          // For now, just concatenate with space
-          this.ptyManager.write(session.pty, " ");
-        }
-      }
-    }
+    // Explicit paste framing preserves Markdown/newlines and prevents a large
+    // startup prompt from being interpreted as hundreds of keyboard events.
+    // Submit separately so Enter cannot become part of the pasted text.
+    this.ptyManager.write(session.pty, `\x1b[200~${promptText}\x1b[201~`);
 
     // Small delay to ensure text is processed before Enter
     await new Promise(resolve => setTimeout(resolve, 50));

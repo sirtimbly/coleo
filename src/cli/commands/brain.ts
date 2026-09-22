@@ -24,10 +24,19 @@ export function registerBrainCommands(program: Command): void {
     .option("-v, --verbose", "Verbose output", false)
     .option("--once", "Run a single poll cycle and exit")
     .option("--clean", "Kill zombie/stale OpenCode processes before starting")
+    .option("--swarm-evaluation <mode>", "Swarm window evaluation: off, shadow, or execute")
+    .option("--swarm-window-polls <count>", "Activity window in poll intervals (default: 10)")
     .action(async (options) => {
       const coleoDir = getColeoDir();
       const interval = parseInt(options.interval, 10);
       const verbose = options.verbose ?? false;
+      const swarmWindowPolls = options.swarmWindowPolls === undefined ? undefined : Number(options.swarmWindowPolls);
+      if (swarmWindowPolls !== undefined && (!Number.isInteger(swarmWindowPolls) || swarmWindowPolls < 1 || swarmWindowPolls > 100)) {
+        throw new Error("Swarm window polls must be between 1 and 100");
+      }
+      if (options.swarmEvaluation && !["off", "shadow", "execute"].includes(options.swarmEvaluation)) {
+        throw new Error("Swarm evaluation must be off, shadow, or execute");
+      }
 
       if (!Number.isInteger(interval) || interval < 0) {
         throw new Error("Poll interval must be a non-negative integer");
@@ -67,6 +76,8 @@ export function registerBrainCommands(program: Command): void {
         coleoDir,
         pollIntervalMs: interval,
         verbose: verbose || true,
+        swarmEvaluationMode: options.swarmEvaluation,
+        swarmWindowPolls,
       });
 
       await brain.init();

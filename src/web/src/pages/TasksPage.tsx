@@ -779,7 +779,7 @@ export function TasksPage() {
   }, [openWorkspaceRoute, searchParams]);
 	const taskCardCollection = (
 		<AdaptiveCardCollection
-			items={filteredTasks}
+			projectedItems={filteredTasks}
 			columns={display.cardColumns}
 			presentation={display.cardPresentation}
 			getKey={(task) => task.id}

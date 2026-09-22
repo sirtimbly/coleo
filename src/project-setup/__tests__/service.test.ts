@@ -7,6 +7,7 @@ import {
 	discoverProjectPlans,
 	collectPlanWorkspaceContext,
 	formatPlanWithConfiguredModel,
+	validatePlanForExecution,
 	formatPlanWithoutModel,
 	listProjectPlanDocuments,
 	preservesPlanContext,
@@ -144,6 +145,34 @@ describe("project setup service", () => {
 			globalThis.fetch = originalFetch;
 			if (originalApiKey === undefined) delete process.env.COLEO_BRAIN_API_KEY;
 			else process.env.COLEO_BRAIN_API_KEY = originalApiKey;
+		}
+	});
+
+	it.each([
+		{ verdict: '{"ready":true,"blockers":[]}', failure: null },
+		{ verdict: '{"ready":false,"blockers":["Deploy precedes the required persistence decision"]}', failure: 'Plan validation failed: Deploy precedes the required persistence decision' },
+		{ verdict: '{"ready":true,"blockers":["Unresolved prerequisite"]}', failure: 'inconsistent readiness verdict' },
+		{ verdict: 'not JSON', failure: 'invalid JSON' },
+	])("reviews readiness without rewriting the source: $verdict", async ({ verdict, failure }) => {
+		const originalFetch = globalThis.fetch;
+		const originalKey = process.env.COLEO_BRAIN_API_KEY;
+		process.env.COLEO_BRAIN_API_KEY = "test-key";
+		const source = "# Plan\n\n## Phase 1: Decisions\n\n### Tasks\n- [ ] Choose persistence before implementation\n\n" + "Preserve every requirement. ".repeat(1000);
+		globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+			const request = JSON.parse(String(init?.body));
+			expect(request.max_completion_tokens).toBe(4000);
+			expect(request.response_format).toEqual({ type: "json_object" });
+			expect(request.messages[0].content).toContain("read-only dispatch gate");
+			return new Response(JSON.stringify({ choices: [{ message: { content: verdict }, finish_reason: "stop" }] }));
+		}) as unknown as typeof fetch;
+		try {
+			const result = validatePlanForExecution(source, ".project/plan.md", undefined, { gitStatus: "", files: [] }, new BrainTemplateManager(root, () => {}));
+			if (failure) await expect(result).rejects.toThrow(failure);
+			else expect((await result).content).toBe(source);
+		} finally {
+			globalThis.fetch = originalFetch;
+			if (originalKey === undefined) delete process.env.COLEO_BRAIN_API_KEY;
+			else process.env.COLEO_BRAIN_API_KEY = originalKey;
 		}
 	});
 

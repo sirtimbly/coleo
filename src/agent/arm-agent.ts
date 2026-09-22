@@ -36,6 +36,8 @@ import {
   type ArmEventCallback,
 } from '../harness';
 import { truncateLargeFields } from '../harness/event-stream';
+import { verifySpawnModel } from '../harness/model-preflight';
+import { ModelCheckError } from '../harness/model-check-error';
 import { LocalRepositoryOnboarding } from '../onboarding/local';
 import { parseRepositoryOnboardingOperation } from '../onboarding/types';
 import { executeWorkspaceOperation, LocalWorkspaceAccess } from '../workspace';
@@ -205,6 +207,7 @@ export class ArmAgent {
   private debug: boolean;
   
   private managedArms: Map<string, ManagedArm> = new Map();
+  private pendingSpawns = new Set<string>();
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private isRunning = false;
   private startedAt: string;
@@ -374,11 +377,27 @@ export class ArmAgent {
         requestId: command.requestId,
         success: false,
         error: err instanceof Error ? err.message : String(err),
+        ...(err instanceof ModelCheckError ? { errorCode: err.code } : {}),
       };
     }
   }
 
   private async handleSpawn(command: AgentCommand & { type: 'spawn' }): Promise<CommandResponse<SpawnResponse>> {
+    if (this.pendingSpawns.has(command.armId)) {
+      return { requestId: command.requestId, success: false, error: `Arm ${command.armId} is already being checked or started` };
+    }
+    if (this.managedArms.size + this.pendingSpawns.size >= this.maxArms) {
+      return { requestId: command.requestId, success: false, error: `Agent at capacity (${this.maxArms} arms)` };
+    }
+    this.pendingSpawns.add(command.armId);
+    try {
+      return await this.spawnValidatedArm(command);
+    } finally {
+      this.pendingSpawns.delete(command.armId);
+    }
+  }
+
+  private async spawnValidatedArm(command: AgentCommand & { type: 'spawn' }): Promise<CommandResponse<SpawnResponse>> {
     const { armId, name, domain, harness, provider, model, contextBudget, personality, convictions, workDir, initialPrompt } = command;
 
     // Check if arm already exists
@@ -425,6 +444,7 @@ export class ArmAgent {
       model,
     };
 
+    await verifySpawnModel(harness, provider, model);
     const session = await harnessInstance.spawn(spawnConfig);
 
     // Extract port and sessionId from session if available (for API harness)
