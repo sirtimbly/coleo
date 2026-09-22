@@ -25,6 +25,58 @@ function isStatusReportStatus(value: string): value is StatusReport["status"] {
   );
 }
 
+function isStatusReportTestsStatus(
+  value: string,
+): value is NonNullable<StatusReport["testsStatus"]> {
+  return value === "passing" || value === "failing" || value === "not_run";
+}
+
+/**
+ * Validate an incoming status report submission.
+ * Malformed reports are explicit 400 validation failures: they are never
+ * persisted and never mutate task state (see ADR-022).
+ */
+function validateStatusReportBody(body: {
+  taskId?: string;
+  armId?: string;
+  status?: string;
+  summary?: string;
+  issues?: unknown;
+  blockers?: unknown;
+  filesChanged?: unknown;
+  testsStatus?: unknown;
+}): void {
+  if (!body.taskId || typeof body.taskId !== "string") {
+    throw HttpError.badRequest("taskId is required and must be a string");
+  }
+  if (!body.armId || typeof body.armId !== "string") {
+    throw HttpError.badRequest("armId is required and must be a string");
+  }
+  if (!body.status || !isStatusReportStatus(body.status)) {
+    throw HttpError.badRequest(
+      `status is required and must be one of: on_track, blocked, issues_found, needs_review, completed_with_issues`,
+    );
+  }
+  if (typeof body.summary !== "string" || body.summary.trim().length === 0) {
+    throw HttpError.badRequest("summary is required and must be a non-empty string");
+  }
+  for (const [field, value] of [
+    ["issues", body.issues],
+    ["blockers", body.blockers],
+    ["filesChanged", body.filesChanged],
+  ] as const) {
+    if (value !== undefined && !isStringArray(value)) {
+      throw HttpError.badRequest(`${field} must be an array of strings`);
+    }
+  }
+  if (
+    body.testsStatus !== undefined &&
+    (typeof body.testsStatus !== "string" || !isStatusReportTestsStatus(body.testsStatus))
+  ) {
+    throw HttpError.badRequest("testsStatus must be one of: passing, failing, not_run");
+  }
+}
+
 function requireTask(db: Database, taskId: string): void {
   const exists = db.query("SELECT id FROM tasks WHERE id = ?").get(taskId) as { id: string } | null;
   if (!exists) {
@@ -53,9 +105,7 @@ export function createStatusReportsRoutes() {
       testsStatus?: StatusReport["testsStatus"];
     }>();
 
-    if (!body.taskId || !body.armId || !body.status || !body.summary) {
-      throw HttpError.badRequest("taskId, armId, status, and summary are required");
-    }
+    validateStatusReportBody(body);
     requireTask(db, body.taskId);
 
     const id = `${body.taskId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
