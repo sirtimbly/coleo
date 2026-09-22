@@ -23,7 +23,7 @@
 
 | Phase | Prerequisites | Services / migrations | Acceptance evidence | Approvals / rollback |
 |---|---|---|---|---|
-| 0 Planning gate | — (root) | `bun run typecheck`, scripts per ADR-019 | ADRs 001–022, `.project/status.md`, verification reports | Human architecture decisions (open: ADR-003 wording) |
+| 0 Planning gate | — (root) | `bun run typecheck`, scripts per ADR-019 | ADRs 001–024, `.project/status.md`, verification reports | Human architecture decisions (open: ADR-003 wording) |
 | 1 API boundary | Declared: none. Implied: Phase 0 | API 8080, NATS 4222/8222; auto-migrations, epoch checks | Boundary tests, auth/WS/CLI integration tests | Rollback = restore compatible backup |
 | 2 Observatory | Declared: 0, 1, Phase 1 acceptance | Web build (Vite), Playwright (port 4174) | Route/API-contract/browser regression tests | — |
 | 2A Evaluation/swarm | Declared: 0, 1, model config + redaction rules | Evaluation lock (plan ops); bakeoffs offline-only | Fixture provenance, redaction checks | Human-label handling; no state mutation |

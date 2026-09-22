@@ -20,7 +20,7 @@ assigned until Phase 0 preconditions are met.
   web-build not yet run in this pass.
 - **Phase 0 definitions complete:** ADR-016 (sources of truth), ADR-017
   (task-file/outputs), ADR-018 (gates), ADR-019 (commands), ADR-020
-  (isolation), ADR-021 (rollback), ADR-022 (startup contract), ADR-023
+  (isolation), ADR-021 (rollback), ADR-024 (startup contract), ADR-023
   (evaluation boundaries); dependency map; evaluation-lock verification;
   startup failure-path tests (prepare-repository 12/12).
 - **Unresolved decisions:** ADR-003 API-key terminology amendment
@@ -54,12 +54,12 @@ assigned until Phase 0 preconditions are met.
   SQLite (WAL + migrations), NATS transport, header API-key auth —
   implementation modules inspected; see `.project/reports/runtime-stack-validation-2026-09-22.md`
   (commit `30d0449`) for the detailed validation.
-- **Architecture decisions current:** ADR-001 through ADR-023 accepted,
+- **Architecture decisions current:** ADR-001 through ADR-024 accepted,
   including ADR-004 workbench revision (HeroUI v3), ADR-014
   branch-centered lifecycle, ADR-015 Brain API boundary, ADR-016
   source-of-truth boundaries, ADR-017 task-file/output tracking, ADR-018
   assignment/approval gates, ADR-019 validation commands, ADR-020
-  isolation/ownership, ADR-021 rollback safety, ADR-022 startup contract,
+  isolation/ownership, ADR-021 rollback safety, ADR-024 startup contract,
   ADR-023 evaluation boundaries.
 - **Boundaries enforced in code:** no direct SQLite opens in `src/brain`
   runtime; Brain/MCP access persistence via API (ADR-012/015); Maildir
@@ -90,7 +90,7 @@ assigned until Phase 0 preconditions are met.
 ## Links
 
 - Plan: `.project/plan.md`
-- Decisions: `.project/decisions/001`–`023`
+- Decisions: `.project/decisions/001`–`024`
 - Acceptance: `.project/acceptance/phase-1.md`
 - Architecture: `docs/architecture/overview.md`, `docs/architecture/brain-api-boundary.md`
 - Migration plans: `.project/jetstream-migration-plan.md`,

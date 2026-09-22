@@ -1,4 +1,4 @@
-# ADR-022: Workspace-Startup and Repository-Preparation Contract
+# ADR-024: Workspace-Startup and Repository-Preparation Contract
 
 ## Status
 
