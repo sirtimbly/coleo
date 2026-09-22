@@ -95,4 +95,14 @@ describe("repository startup safety", () => {
     expect(run(true, { COLEO_WORKDIR: `${workspace}/` }).status).not.toBe(0);
     expect(readFileSync(join(source, "tracked.txt"), "utf8")).toBe("original");
   });
+  it("fails when COLEO_WORKDIR is missing", () => {
+    writeFileSync(join(workspace, "notes"), "valuable");
+    expect(run(false, { COLEO_WORKDIR: "" }).status).not.toBe(0);
+    expect(readFileSync(join(workspace, "notes"), "utf8")).toBe("valuable");
+  });
+  it("rejects relative workspace paths without touching the filesystem", () => {
+    const before = readdirSync(root).sort();
+    expect(run(false, { COLEO_WORKDIR: "relative/workspace" }).status).not.toBe(0);
+    expect(readdirSync(root).sort()).toEqual(before);
+  });
 });
