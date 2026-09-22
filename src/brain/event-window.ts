@@ -6,7 +6,7 @@
  * and provides convenient transforms for analysis.
  */
 
-import { eventStore, type EventData, type IEventStore } from "../nats/jetstream";
+import type { EventData, IEventStore } from "../nats/jetstream";
 import { KNOWN_EVENT_TYPES, NOISE_EVENT_TYPES } from "./event-window-constants";
 
 export interface EventWindowOptions {
@@ -52,13 +52,13 @@ export class BrainEventWindow {
   // Cache of unknown event types we've already warned about
   private warnedUnknownTypes: Set<string> = new Set();
 
-  constructor(options?: {
-    store?: IEventStore;
+  constructor(options: {
+    store: IEventStore;
     defaultWindowMs?: number;
     defaultLimit?: number;
     log?: (msg: string) => void;
   }) {
-    this.store = options?.store ?? eventStore;
+    this.store = options.store;
     this.defaultWindowMs = options?.defaultWindowMs ?? 10 * 60 * 1000; // 10 minutes
     this.defaultLimit = options?.defaultLimit ?? 200;
     this.logFn = options?.log ?? console.log;
@@ -371,6 +371,3 @@ export class BrainEventWindow {
     this.warnedUnknownTypes.clear();
   }
 }
-
-// Export a default instance
-export const brainEventWindow = new BrainEventWindow();

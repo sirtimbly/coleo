@@ -8,8 +8,10 @@
  *
  * Each decision produces an auditable event back into JetStream.
  */
+import { subjectToken } from "../nats/subject-token";
+import type { EventData } from "../nats/jetstream";
 
-import { eventStore, type EventData } from "../nats/jetstream";
+import type { BrainEventPublisher } from "./brain-api-client";
 
 /**
  * Permission request from an arm
@@ -362,6 +364,7 @@ export class PermissionDecisionEngine {
   
   // Decision history for auditing
   private decisionHistory: PermissionDecision[] = [];
+  private publishEvent?: BrainEventPublisher;
   
   // Pending escalations
   private pendingEscalations: Map<string, {
@@ -373,6 +376,8 @@ export class PermissionDecisionEngine {
   constructor(options?: {
     config?: Partial<PermissionEngineConfig>;
     log?: (msg: string) => void;
+    /** API-boundary event publisher for decision audit events. */
+    publishEvent?: BrainEventPublisher;
   }) {
     this.config = { ...DEFAULT_CONFIG, ...options?.config };
     this.rules = [
@@ -380,6 +385,7 @@ export class PermissionDecisionEngine {
       ...(this.config.customRules || []),
     ].sort((a, b) => b.priority - a.priority);
     this.logFn = options?.log ?? console.log;
+    this.publishEvent = options?.publishEvent;
   }
 
   /**
@@ -508,19 +514,20 @@ export class PermissionDecisionEngine {
   }
 
   /**
-   * Publish decision to JetStream for auditing
+   * Publish decision through the API boundary for auditing.
+   * Best-effort: skipped when no publisher is configured.
    */
   private async publishDecision(
     request: PermissionRequest,
     decision: PermissionDecision
   ): Promise<void> {
-    if (!eventStore.isInitialized()) {
+    if (!this.publishEvent) {
       return;
     }
-    
+
     try {
-      await eventStore.publishEvent(
-        `coleo.events.arm.${request.armId}.permission_decision`,
+      await this.publishEvent(
+        `coleo.events.arm.${subjectToken(request.armId)}.permission_decision`,
         {
           type: "permission_decision",
           armId: request.armId,

@@ -9,6 +9,7 @@
  * 4. Emits intervention events for observability
  */
 
+import { subjectToken } from "../nats/subject-token";
 import { BrainEventWindow, type ArmEventWindow } from "./event-window";
 import {
 	ArmActivityAnalyzer,
@@ -19,7 +20,9 @@ import {
 	PermissionDecisionEngine,
 	type PermissionRequest,
 } from "./permission-engine";
-import { eventStore } from "../nats/jetstream";
+import type { IEventStore } from "../nats/jetstream";
+import { ApiEventStore } from "./api-event-store";
+import type { BrainEventPublisher } from "./brain-api-client";
 
 /**
  * Intervention types the monitor can take
@@ -142,6 +145,7 @@ export class ArmHealthMonitor {
 	private logFn: (msg: string) => void;
 	private lastResult: HealthCheckResult | null = null;
 	private onResult?: (result: HealthCheckResult) => void;
+	private publishEvent?: BrainEventPublisher;
 
 	// Tracking state
 	private armFirstSeen: Map<string, Date> = new Map();
@@ -158,6 +162,10 @@ export class ArmHealthMonitor {
 		options?: {
 			config?: Partial<HealthMonitorConfig>;
 			eventWindow?: BrainEventWindow;
+			/** Backing store when eventWindow is not provided. */
+			eventStore?: IEventStore;
+			/** API-boundary event publisher for health/intervention events. */
+			publishEvent?: BrainEventPublisher;
 			analyzer?: ArmActivityAnalyzer;
 			permissionEngine?: PermissionDecisionEngine;
 			log?: (msg: string) => void;
@@ -166,12 +174,21 @@ export class ArmHealthMonitor {
 	) {
 		this.config = { ...DEFAULT_CONFIG, ...options?.config };
 		this.callbacks = callbacks;
-		this.eventWindow = options?.eventWindow ?? new BrainEventWindow();
+		this.eventWindow =
+			options?.eventWindow ??
+			new BrainEventWindow({
+				store: options?.eventStore ?? new ApiEventStore(),
+			});
 		this.analyzer = options?.analyzer ?? new ArmActivityAnalyzer();
 		this.permissionEngine =
-			options?.permissionEngine ?? new PermissionDecisionEngine();
+			options?.permissionEngine ??
+			new PermissionDecisionEngine({
+				publishEvent: options?.publishEvent,
+				log: options?.log,
+			});
 		this.logFn = options?.log ?? console.log;
 		this.onResult = options?.onResult;
+		this.publishEvent = options?.publishEvent;
 	}
 
 	/**
@@ -631,19 +648,20 @@ export class ArmHealthMonitor {
 	}
 
 	/**
-	 * Publish health check event to JetStream
+	 * Publish health check event through the API boundary.
+	 * Best-effort: skipped when no publisher is configured.
 	 */
 	private async publishHealthCheckEvent(
 		timestamp: Date,
 		summary: HealthCheckResult["summary"],
 		interventions: Intervention[],
 	): Promise<void> {
-		if (!eventStore.isInitialized()) {
+		if (!this.publishEvent) {
 			return;
 		}
 
 		try {
-			await eventStore.publishEvent("coleo.events.brain.health_check", {
+			await this.publishEvent("coleo.events.brain.health_check", {
 				type: "health_check",
 				data: {
 					...summary,
@@ -665,18 +683,18 @@ export class ArmHealthMonitor {
 	}
 
 	/**
-	 * Publish intervention event to JetStream
+	 * Publish intervention event through the API boundary.
 	 */
 	private async publishInterventionEvent(
 		intervention: Intervention,
 	): Promise<void> {
-		if (!eventStore.isInitialized()) {
+		if (!this.publishEvent) {
 			return;
 		}
 
 		try {
-			await eventStore.publishEvent(
-				`coleo.events.arm.${intervention.armId}.intervention`,
+			await this.publishEvent(
+				`coleo.events.arm.${subjectToken(intervention.armId)}.intervention`,
 				{
 					type: "intervention",
 					armId: intervention.armId,

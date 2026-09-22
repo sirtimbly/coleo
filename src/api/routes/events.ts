@@ -9,7 +9,7 @@
 import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { HttpError } from "../middleware";
-import { BrainEventWindow, brainEventWindow } from "../../brain/event-window";
+import { BrainEventWindow } from "../../brain/event-window";
 import { ArmActivityAnalyzer, armActivityAnalyzer } from "../../brain/activity-analyzer";
 import { eventStore } from "../../nats/jetstream";
 import { isRecord } from "../../utils/json";
@@ -198,6 +198,10 @@ export function sanitizeEventData(data: Record<string, unknown>): Record<string,
 export function createEventsRoutes() {
   const app = new Hono<EventsContext>();
 
+  // API-owned event window: the API server (unlike Brain) is allowed to
+  // read JetStream directly. Brain reads events through these routes.
+  const apiEventWindow = new BrainEventWindow({ store: eventStore });
+
   /**
    * Publish an event into JetStream through API auth/type boundaries.
    * POST /api/events/internal/publish
@@ -264,7 +268,7 @@ export function createEventsRoutes() {
     const windowMs = parseInt(c.req.query("windowMs") || "600000", 10);
     const limit = Math.min(parseInt(c.req.query("limit") || "200", 10), 500);
 
-    if (!brainEventWindow.isAvailable()) {
+    if (!apiEventWindow.isAvailable()) {
       return c.json(
         {
           error: "Event store not available",
@@ -276,12 +280,12 @@ export function createEventsRoutes() {
     }
 
     try {
-      const window = await brainEventWindow.getWindowForArm(armId, {
+      const window = await apiEventWindow.getWindowForArm(armId, {
         windowMs,
         limit,
       });
 
-      const summary = brainEventWindow.summarizeWindow(window);
+      const summary = apiEventWindow.summarizeWindow(window);
 
       return c.json({
         armId,
@@ -328,7 +332,7 @@ export function createEventsRoutes() {
       counts: { write: 0, think: 0, tool: 0, complete: 0 },
     }));
 
-    if (!brainEventWindow.isAvailable()) {
+    if (!apiEventWindow.isAvailable()) {
       return c.json({
         armId,
         window: { start: new Date(startMs).toISOString(), end: new Date(endMs).toISOString(), bucketMs },
@@ -338,7 +342,7 @@ export function createEventsRoutes() {
     }
 
     try {
-      const window = await brainEventWindow.getWindowForArm(armId, {
+      const window = await apiEventWindow.getWindowForArm(armId, {
         windowMs,
         limit: 1000,
       });
@@ -446,7 +450,7 @@ export function createEventsRoutes() {
     const armId = c.req.param("armId");
     const windowMs = parseInt(c.req.query("windowMs") || "600000", 10);
 
-    if (!brainEventWindow.isAvailable()) {
+    if (!apiEventWindow.isAvailable()) {
       return c.json(
         {
           error: "Event store not available",
@@ -457,7 +461,7 @@ export function createEventsRoutes() {
     }
 
     try {
-      const window = await brainEventWindow.getWindowForArm(armId, {
+      const window = await apiEventWindow.getWindowForArm(armId, {
         windowMs,
       });
 
@@ -496,7 +500,7 @@ export function createEventsRoutes() {
     const db = c.get("db");
     const windowMs = parseInt(c.req.query("windowMs") || "600000", 10);
 
-    if (!brainEventWindow.isAvailable()) {
+    if (!apiEventWindow.isAvailable()) {
       return c.json(
         {
           error: "Event store not available",
@@ -521,7 +525,7 @@ export function createEventsRoutes() {
       }
 
       // Fetch windows and analyze
-      const windows = await brainEventWindow.getWindowsForAllArms(armIds, {
+      const windows = await apiEventWindow.getWindowsForAllArms(armIds, {
         windowMs,
       });
 

@@ -1,13 +1,36 @@
 # Brain/API Boundary Verification (2026-09-22)
 
-Task: `phase1co-e5d480` — verify the Brain/API boundary refactor.
+Task: `phase1co-e5d480` (verification) → `phase1co-859fb9` (cleanup).
 Contract: ADR-015 (Brain Agent is API-only), ADR-012 (API-owned SQLite),
-`.project/plans/brain-api-boundary-execution-plan.md`.
+`.project/plans/brain-api-boundary-execution-plan.md` Phase 2.
 
 Method: static import/call audit of `src/brain/**` runtime code
 (tests excluded), caller review, and focused test runs.
 
-## Verdict: NOT CONFORMANT — refactor partially implemented
+## Verdict: CONFORMANT (after `phase1co-859fb9` cleanup)
+
+The initial audit found 4 direct JetStream usages; all are migrated:
+
+| Former violation | Resolution |
+|---|---|
+| `event-window.ts` default `?? eventStore` + `brainEventWindow` singleton | Constructor requires explicit `store`; API route owns `new BrainEventWindow({ store: eventStore })`; Brain injects `ApiEventStore` |
+| `agent/tools/dependencies.ts` direct publish | Optional `ToolContext.publishEvent` (API-backed when wired) |
+| `health-monitor.ts` 2 direct publishes + default window | Injected `publishEvent` + `eventStore`; wired in `Brain` to API |
+| `permission-engine.ts` direct publish | Injected `publishEvent`; forwarded through health monitor |
+
+New `src/brain/api-event-store.ts` implements `IEventStore` reads via
+`GET /api/events/arms/:armId/window` and `/api/events/recent`;
+stream-internals methods throw explicitly (no Brain callers).
+`src/brain/__tests__/api-boundary.test.ts` fails on any runtime
+NATS/JetStream/harness/OpenCode import in Brain code.
+
+Incidental fixes in the same pass:
+
+- `brain-api-client.ts` sent `Authorization: Bearer`, which the server
+  never accepts — now sends `X-API-Key` like every other Brain caller.
+- `publishEventViaApi` posted to nonexistent `POST /api/events` — now
+  posts to `POST /api/events/internal/publish` with the subject contract.
+- Duplicate ADR-022 resolved (startup contract → ADR-024).
 
 ### Conformant
 
@@ -23,7 +46,7 @@ Method: static import/call audit of `src/brain/**` runtime code
   enums/arrays/empty summaries return explicit 400s, rejected reports
   never persist (with tests + human ADR-022 status-report-foundations).
 
-### Violations (direct JetStream value imports in Brain runtime)
+### Violations (all resolved — see verdict above)
 
 | File | Line | Usage |
 |---|---|---|
@@ -45,9 +68,19 @@ human numbering stands; the startup contract is now
 `024-workspace-startup-contract.md`, with `status.md` and the
 dependency map updated.
 
+## Validation evidence (`phase1co-859fb9`)
+
+- `bun run typecheck`: pass.
+- New `api-boundary` + `api-event-store` suites: 5/5 pass.
+- Brain suite: 302 pass, 19 todo, 1 unrelated pre-existing failure
+  (`responsibility-settings` JEV template drift, owned elsewhere).
+- API events/telemetry/activity + NATS + status-reports/project-setup
+  suites: all pass.
+- `src/mcp` direct-SQLite path unchanged: still the documented ADR-012
+  migration bridge only.
+
 ## Next steps
 
-Phase 1 cleanup tasks must eliminate the four `eventStore` usages
-above (route through `publishEventViaApi` or new API event routes),
-add regression tests asserting no `nats/jetstream` value imports in
-`src/brain` runtime, then re-run this verification.
+None for the boundary itself. Watch items: wire a production
+`ToolContext.publishEvent` when the agentic Brain tool path goes live;
+extend the boundary test if new integration families appear.

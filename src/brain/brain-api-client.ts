@@ -27,7 +27,9 @@ export async function apiRequest<T>(
 			method,
 			headers: {
 				"Content-Type": "application/json",
-				Authorization: `Bearer ${apiKey}`,
+				// The API server accepts X-API-Key (or X-Coleo-API-Key);
+				// it does not accept Authorization: Bearer.
+				"X-API-Key": apiKey,
 			},
 			body,
 			signal: controller.signal,
@@ -88,23 +90,54 @@ export async function logActivityViaApi(
 	});
 }
 
-export interface EventPublishPayload {
+export interface BrainEventPublish {
+	subject: string;
 	type: string;
-	arm_id?: string;
-	task_id?: string;
+	armId?: string;
 	data: Record<string, unknown>;
+	timestamp?: string;
 }
 
+/**
+ * Publish a Brain event through the authenticated API boundary.
+ * POST /api/events/internal/publish validates subject/type/data and
+ * persists via the API-owned event store. Best-effort callers should
+ * catch failures; the API returns 503 when the store is unavailable.
+ */
 export async function publishEventViaApi(
 	options: ApiClientOptions,
-	event: EventPublishPayload,
+	event: BrainEventPublish,
 ): Promise<void> {
 	await apiRequest({
 		...options,
-		endpoint: "/api/events",
+		endpoint: "/api/events/internal/publish",
 		method: "POST",
-		body: JSON.stringify(event),
+		body: JSON.stringify({
+			...event,
+			timestamp: event.timestamp || new Date().toISOString(),
+		}),
 	});
+}
+
+/** Injectable Brain event publisher (API-backed in production). */
+export type BrainEventPublisher = (
+	subject: string,
+	event: {
+		type: string;
+		armId?: string;
+		data: Record<string, unknown>;
+		timestamp?: string;
+	},
+) => Promise<void>;
+
+/**
+ * Build a BrainEventPublisher that posts through the API boundary.
+ */
+export function createApiEventPublisher(
+	options: ApiClientOptions,
+): BrainEventPublisher {
+	return (subject, event) =>
+		publishEventViaApi(options, { ...event, subject });
 }
 
 export async function queueMessageViaApi(

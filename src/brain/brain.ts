@@ -1,3 +1,6 @@
+import { subjectToken } from "../nats/subject-token";
+import { builtinEnabled, type BuiltinResponsibility } from "./responsibilities";
+import { acquirePlanEvaluation } from "../project-setup/evaluation-lock";
 /**
  * Brain - The central coordinator for Coleo
  *
@@ -36,6 +39,7 @@ import {
 } from "./health-monitor";
 import { BrainTemplateManager } from "./template-manager";
 import { MailProcessor } from "./mail-processor";
+import { createSwarmRunner, type SwarmRunner } from "./swarm/runner";
 import {
 	getBrainModelAccessIssue,
 	serializeBrainModelAccessIssue,
@@ -87,7 +91,7 @@ import { generateInitialKeys } from "../lib/fractional-indexing";
 import {
 	CANONICAL_PLAN_PATH,
 	collectPlanWorkspaceContext,
-	formatPlanWithConfiguredModel,
+	validatePlanForExecution,
 } from "../project-setup/service";
 import {
 	buildCommitTaskSubject,
@@ -111,11 +115,11 @@ export { type BrainOptions } from "./brain-types";
 import {
 	createApiClient,
 	logActivityViaApi,
-	publishEventViaApi,
 	queueMessageViaApi,
 	listPendingMessagesViaApi,
 	markMessageStatusViaApi,
 } from "./brain-api-client";
+import { ApiEventStore } from "./api-event-store";
 import {
 	listTasksFromApi,
 	getTaskFromApi,
@@ -171,6 +175,7 @@ function isPlanWriteConflict(detail: string): boolean {
 
 function isRetryablePlanningFailure(detail: string): boolean {
 	return detail.startsWith("Plan formatter ")
+		|| detail.startsWith("Plan evaluator ")
 		|| detail.startsWith("Configure a Brain model API key")
 		|| isPlanFormatterNetworkFailure(detail)
 		|| isPlanWriteConflict(detail);
@@ -249,6 +254,8 @@ export class Brain {
 	private healthMonitor: ArmHealthMonitor | null = null;
 	private lastHealthCheck: HealthCheckResult | null = null;
 	private dashboard: TerminalDashboard | null = null;
+	private swarmRunner: SwarmRunner | null = null;
+	private swarmRunnerSettings = "";
 
 	private lastStuckState: Map<
 		string,
@@ -726,6 +733,19 @@ export class Brain {
 	 */
 	async init(): Promise<void> {
 		const config = await loadConfig(this.options.coleoDir);
+		// Publish explicit startup settings so the web controls show and can override them.
+		const startupSwarmMode = this.options.swarmEvaluationMode
+			?? (config.brain.swarmEvaluationMode === undefined ? process.env.COLEO_SWARM_EVALUATION : undefined);
+		if (startupSwarmMode !== undefined || this.options.swarmWindowPolls !== undefined) {
+			if (startupSwarmMode !== undefined && !["off", "shadow", "execute"].includes(startupSwarmMode)) {
+				throw new Error("Invalid swarm evaluation mode");
+			}
+			await updateConfig({ brain: { ...config.brain,
+				...(startupSwarmMode === undefined ? {} : { swarmEvaluationMode: startupSwarmMode as "off" | "shadow" | "execute" }),
+				...(this.options.swarmWindowPolls === undefined ? {} : { swarmWindowPolls: this.options.swarmWindowPolls }),
+			} }, this.options.coleoDir);
+		}
+
 		this.refactorFileThresholdLines =
 			config.refactoring.fileSizeThreshold ?? 400;
 		const modelConfigSource = async () => {
@@ -806,6 +826,12 @@ export class Brain {
 
 		this.healthMonitor = new ArmHealthMonitor(healthCallbacks, {
 			log: (msg) => this.log(msg),
+			eventStore: new ApiEventStore({
+				baseUrl: this.apiBaseUrl,
+				apiKey: this.apiKey,
+			}),
+			publishEvent: (subject, event) =>
+				this.publishEventViaApi({ subject, ...event }),
 			config: {
 				checkIntervalMs: 30 * 1000, // 30 seconds
 				eventWindowMs: 10 * 60 * 1000, // 10 minutes
@@ -965,6 +991,11 @@ export class Brain {
 			// Refresh tasks from database before assignment
 			await this.loadTasks();
 
+			// Start waiting Arms as soon as the planning gate is open. Model-based
+			// output review and stuck-loop analysis can take minutes and must not
+			// delay delivery of a newly spawned Arm's first instructions.
+			await this.assignInitialTasks();
+
 			// Step 3.5: Interpret recent assistant output from arms for
 			// brain-side follow-up actions (task/bug/task-update) and reply prompts.
 			await this.processArmAssistantOutputs();
@@ -997,8 +1028,6 @@ export class Brain {
 			// Step 5.5: Check and escalate blocked tasks
 			await this.checkAndEscalateBlockedTasks();
 
-			// Step 6: Assign initial tasks to arms that are still idle
-			await this.assignInitialTasks();
 		} else {
 			this.log("API server unavailable - skipping arm operations");
 		}
@@ -1022,6 +1051,10 @@ export class Brain {
 			await this.promptIdleArms();
 		}
 
+		// Evaluate a common window after the existing handlers have acted, so those
+		// interventions are visible and are not immediately proposed again.
+		await this.evaluateSwarmWindow();
+
 		// Step 10: Save state
 		await this.saveState();
 
@@ -1037,6 +1070,37 @@ export class Brain {
 			activeArms: this.arms.size,
 			completedToday: this.state.completedToday,
 		});
+	}
+
+	private async responsibilityEnabled(id: BuiltinResponsibility): Promise<boolean> {
+		return builtinEnabled((await loadConfig(this.options.coleoDir)).brain, id);
+	}
+
+	private async evaluateSwarmWindow(): Promise<void> {
+		if (this.shuttingDown) return;
+		try {
+			const { brain } = await loadConfig(this.options.coleoDir);
+			const mode = brain.swarmEvaluationMode ?? "off";
+			const windowPolls = brain.swarmWindowPolls ?? 10;
+			if (mode === "off") return;
+			if (mode !== "execute" && mode !== "shadow") throw new Error("Invalid swarm evaluation mode");
+			const settings = JSON.stringify([mode, windowPolls, brain.swarmActionModes ?? {}]);
+			if (settings !== this.swarmRunnerSettings) this.swarmRunner = null;
+			this.swarmRunner ??= createSwarmRunner({ apiBaseUrl: this.apiBaseUrl, apiKey: this.apiKey,
+				mode, windowPolls, actionModes: brain.swarmActionModes, templateManager: this.templates, log: (message) => this.log(message),
+				shouldStop: async () => {
+					if (this.shuttingDown || this.state.status === "paused") return true;
+					const current = (await loadConfig(this.options.coleoDir)).brain;
+					return JSON.stringify([current.swarmEvaluationMode ?? "off", current.swarmWindowPolls ?? 10, current.swarmActionModes ?? {}]) !== settings;
+				},
+				notifyHuman: (subject, body, receiptId) => this.sendToHuman({ subject, body,
+					headers: { "X-Coleo-Type": "swarm-followup", "X-Coleo-Swarm-Action-Id": receiptId } }),
+			});
+			this.swarmRunnerSettings = settings;
+			await this.swarmRunner.poll(this.options.pollIntervalMs);
+		} catch (error) {
+			this.log(`Swarm evaluation skipped: ${error instanceof Error ? error.message : "unknown error"}`);
+		}
 	}
 
 	private async executePollCycle(): Promise<void> {
@@ -1281,6 +1345,7 @@ export class Brain {
 	}
 
 	private async processHumanMail(): Promise<void> {
+		if (!await this.responsibilityEnabled("human-messages")) return;
 		const [inboxMessages, sentMessages] = await Promise.all([
 			this.inbox.list("new"),
 			this.sent.list("new"),
@@ -1994,7 +2059,7 @@ export class Brain {
 		);
 
 		await this.publishEventViaApi({
-			subject: `coleo.events.arm.${armId}.dependency_discovered`,
+			subject: `coleo.events.arm.${subjectToken(armId)}.dependency_discovered`,
 			type: "dependency_discovered",
 			armId,
 			data: {
@@ -2046,7 +2111,7 @@ export class Brain {
 
 			// Publish deletion event for other consumers
 			await this.publishEventViaApi({
-				subject: `coleo.events.task.${taskId}.deleted`,
+				subject: `coleo.events.task.${subjectToken(taskId)}.deleted`,
 				type: "task.deleted",
 				data: {
 					taskId,
@@ -3390,14 +3455,14 @@ export class Brain {
 			artifacts,
 		};
 		await this.publishEventViaApi({
-			subject: `coleo.events.task.${taskId}.task.completed`,
+			subject: `coleo.events.task.${subjectToken(taskId)}.task.completed`,
 			type: "task.completed",
 			armId: workerArmId,
 			data: mirroredEventData,
 		});
 		if (workerArmId) {
 			await this.publishEventViaApi({
-				subject: `coleo.events.arm.${workerArmId}.task.completed`,
+				subject: `coleo.events.arm.${subjectToken(workerArmId)}.task.completed`,
 				type: "task.completed",
 				armId: workerArmId,
 				data: mirroredEventData,
@@ -5900,6 +5965,7 @@ Report findings using bug resolution workflow.`;
 			const success = await this.sendPromptToArm(armId, prompt);
 
 			if (success) {
+				arm.status = "busy";
 				if (deferredPrompt) {
 					const { deferredInitialPrompt: _, ...config } = armExists.config || {};
 					if (!await this.patchArmViaApi(armId, { config })) {
@@ -5956,6 +6022,7 @@ Report findings using bug resolution workflow.`;
 	 * This is called in the poll cycle to keep arms busy
 	 */
 	private async promptIdleArms(): Promise<void> {
+		if (!await this.responsibilityEnabled("idle-work")) return;
 		// Always refresh task cache from API before task operations.
 		await this.loadTasks();
 		const taskSnapshot = await this.listTasksFromApi({
@@ -6472,6 +6539,8 @@ Report findings using bug resolution workflow.`;
 		sourceMessages: Array<{ id: string; timestampMs: number; text: string }>,
 	): Promise<void> {
 		const action = decision.action;
+		const control = action === "log_bug" ? "new-bugs" : action === "update_task" ? "task-state" : action === "no_action" ? "followups" : null;
+		if (control && !await this.responsibilityEnabled(control)) return;
 		const promptText = decision.armPrompt?.trim();
 		if (action === "no_action") {
 			if (!promptText) {
@@ -6659,6 +6728,7 @@ Report findings using bug resolution workflow.`;
 				`I updated task ${task.id} (${task.status}). Continue with the next concrete step and report progress.`;
 		}
 
+		if (!await this.responsibilityEnabled("followups")) return;
 		const prompted = await this.sendPromptToArm(arm.id, followupPrompt);
 		if (!prompted) {
 			this.log(
@@ -6787,6 +6857,9 @@ Report findings using bug resolution workflow.`;
 				if (arm) {
 					this.lastStuckState.delete(arm.id);
 				}
+			} else {
+				const detail = await response.json().catch(() => null) as { error?: unknown } | null;
+				this.log(`Prompt delivery to ${armId} failed (HTTP ${response.status}): ${typeof detail?.error === "string" ? detail.error : response.statusText}`);
 			}
 
 			return response.ok;
@@ -7534,6 +7607,8 @@ Report findings using bug resolution workflow.`;
 				continue;
 			}
 
+			if (!await this.responsibilityEnabled("stalled")) continue;
+
 			// Get current task description for context
 			let currentTaskDescription: string | undefined;
 			if (arm.currentTask) {
@@ -7579,6 +7654,7 @@ Report findings using bug resolution workflow.`;
 		arm: Arm,
 		analysis: StuckAnalysis,
 	): Promise<void> {
+		if (analysis.stuckType !== "silent_completion" && !await this.responsibilityEnabled("stalled")) return;
 		switch (analysis.suggestedAction) {
 			case "answer":
 				// Generate an answer to the arm's question
@@ -7631,6 +7707,7 @@ Report findings using bug resolution workflow.`;
 
 				// Wait a bit then send a nudge to continue
 				setTimeout(async () => {
+					if (this.shuttingDown || !await this.responsibilityEnabled("stalled")) return;
 					const prompt = await this.templates.renderTemplate(
 						"arm-loop-compact-nudge.jinja",
 					);
@@ -7912,6 +7989,7 @@ Report findings using bug resolution workflow.`;
 	 * 4. Repeats indefinitely
 	 */
 	private async checkIdleArmStuckLoops(): Promise<void> {
+		if (!await this.responsibilityEnabled("stalled")) return;
 		const idleArms = Array.from(this.arms.values()).filter(
 			(arm) => arm.status === "idle",
 		);
@@ -8120,6 +8198,7 @@ Report findings using bug resolution workflow.`;
 		},
 		stuckMinutes: number,
 	): Promise<void> {
+		if (!await this.responsibilityEnabled("stalled")) return;
 		// Determine intervention level based on escalation level
 		if (tracker.escalationLevel === 0) {
 			this.log(
@@ -8273,6 +8352,7 @@ Report findings using bug resolution workflow.`;
 	 * Assign due blocked-task reviews to idle arms in persisted queue order.
 	 */
 	private async reviewBlockedTasks(): Promise<void> {
+		if (!await this.responsibilityEnabled("blocked-review")) return;
 		const blockedTasks = await this.listTasksFromApi({
 			status: ["blocked"],
 			limit: 500,
@@ -8547,6 +8627,7 @@ Report findings using bug resolution workflow.`;
 	 * Check for blocked tasks and apply escalation policy
 	 */
 	private async checkAndEscalateBlockedTasks(): Promise<void> {
+		if (!await this.responsibilityEnabled("blocked-review")) return;
 		try {
 			const blockedTasks = this.tasks.filter((t) => t.status === "blocked" && t.blockedAt);
 			if (blockedTasks.length === 0) return;
@@ -8881,6 +8962,13 @@ ${conflictList}
 		});
 
 		// Also send through the configured external mail provider.
+		await this.logActivity("brain", "human_notified",
+			message.headers?.["X-Coleo-Arm-Id"] || message.headers?.["X-Coleo-Task-Id"], {
+				subject: stripTerminalArtifacts(message.subject),
+				body: stripTerminalArtifacts(message.body).slice(0, 2000),
+				swarmActionId: message.headers?.["X-Coleo-Swarm-Action-Id"],
+			});
+
 		if (this.mailConfig?.toAddress) {
 			try {
 				await this.apiRequest("/api/mail/gateway/send", {
@@ -9197,6 +9285,11 @@ ${conflictList}
 	 * Evaluate the full project plan, then synchronize and rank its task queue.
 	 */
 	private async syncPlanTasks(): Promise<boolean> {
+		const release = await acquirePlanEvaluation(this.options.coleoDir);
+		if (!release) {
+			this.log("Plan evaluation already in progress; deferring synchronization until the next poll");
+			return false;
+		}
 		let currentPlanHash: string | undefined;
 		try {
 			const projectRoot = this.projectRoot;
@@ -9276,7 +9369,7 @@ ${conflictList}
 						path: filePath,
 						content: file.content,
 					}));
-					const formatter = this.options.planFormatter || formatPlanWithConfiguredModel;
+					const formatter = this.options.planFormatter || validatePlanForExecution;
 					evaluated = await formatter(
 						canonicalPlan.content,
 						CANONICAL_PLAN_PATH,
@@ -9295,6 +9388,14 @@ ${conflictList}
 					throw error;
 				}
 
+				// Validation is read-only: verify the reviewed snapshot before importing
+				// tasks, including linked plans that may have changed during the request.
+				for (const snapshot of [{ filePath: canonicalPath, file: canonicalPlan }, ...referencedPlans]) {
+					const latest = await this.workspace.readText(snapshot.filePath);
+					if (latest?.contentHash !== snapshot.file.contentHash) {
+						throw new Error(`Workspace file changed before write: ${snapshot.filePath}`);
+					}
+				}
 				let evaluatedPlan = canonicalPlan;
 				if (evaluated.content !== canonicalPlan.content) {
 					evaluatedPlan = await this.workspace.writeText(canonicalPath, evaluated.content, {
@@ -9460,6 +9561,8 @@ ${conflictList}
 			}
 			await this.blockTasksForPlanningFailure(err, currentPlanHash);
 			return false;
+		} finally {
+			release();
 		}
 	}
 
