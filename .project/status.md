@@ -8,9 +8,39 @@
 
 ## Current Phase
 
-**Phase 0: Planning, Architecture, and Execution Preconditions** (in
-progress). Planning-gate work only: no feature implementation may be
-assigned until Phase 0 preconditions are met.
+**Phase 1: Core Infrastructure and API Boundary** (in progress;
+Phase 0 planning-gate definitions ADR-016–025 are complete).
+Foundation verification only: behavior must be inspected and tested,
+not inferred from filenames.
+
+## Phase 1 Boundary Evidence (2026-09-22)
+
+- **Topology (tested):** API startup migrates SQLite (checksums/epochs,
+  fail-closed) and reconciles orphans; Brain is API-only (no NATS/
+  harness/SQLite runtime imports — regression-tested); ArmAgent/
+  harness publishes arm events to JetStream; API command-projector
+  validates/dedups/dead-letters; UI consumes SSE/event routes.
+  Reports: migrations, event-lifecycle, failure-path-state.
+- **Startup paths:** explicit `coleoDir` resolution (env > ancestor
+  discovery > fresh dir); onboarding constraints; entrypoint order
+  repo → init → API → web → brain → agent (ADR-024).
+- **Auth:** `X-Coleo-API-Key` / `X-API-Key` / `?api_key`; health
+  public; single shared key by design; WS upgrade + in-band key auth.
+- **Command evidence:** db 46/46; onboarding+init+config+setup 45/45;
+  bridge+internal-messages+runtime-flows 27/27; cleanup+spawn+claim
+  28/28; tasks+bugs 100/100; ws-auth+status-reports 8/8; CLI 4/4;
+  prepare-repository 12/12; swarm suites 29/29; e2e failure-matrix
+  4/4, error-boundaries 3/3, dashboard 3/3, arm-activity 1/1;
+  typecheck clean.
+- **Known limitations:** MCP direct-DB migration bridge; client
+  failures console-only (no aggregation); message-metrics rows
+  unpruned (7-day prune covers history table); PID-reuse lock race
+  (fail-closed); JEV template test + task-preparation fallback test
+  fail on local env drift (filed, unrelated).
+- **Unresolved gaps:** ADR-003 wording (approved, unapplied);
+  deployment target, vector-search, governance, persistence decisions;
+  durable pass/lease + task-file storage (Phase 6); Phase 11
+  execution.
 
 ## Assignment Handoff (2026-09-22)
 
@@ -54,13 +84,13 @@ assigned until Phase 0 preconditions are met.
   SQLite (WAL + migrations), NATS transport, header API-key auth —
   implementation modules inspected; see `.project/reports/runtime-stack-validation-2026-09-22.md`
   (commit `30d0449`) for the detailed validation.
-- **Architecture decisions current:** ADR-001 through ADR-024 accepted,
+- **Architecture decisions current:** ADR-001 through ADR-025 accepted,
   including ADR-004 workbench revision (HeroUI v3), ADR-014
   branch-centered lifecycle, ADR-015 Brain API boundary, ADR-016
   source-of-truth boundaries, ADR-017 task-file/output tracking, ADR-018
   assignment/approval gates, ADR-019 validation commands, ADR-020
   isolation/ownership, ADR-021 rollback safety, ADR-024 startup contract,
-  ADR-023 evaluation boundaries.
+  ADR-023 evaluation boundaries, ADR-025 arm-metrics contract.
 - **Boundaries enforced in code:** no direct SQLite opens in `src/brain`
   runtime; Brain/MCP access persistence via API (ADR-012/015); Maildir
   implementation with `/api/mail/*` surface (ADR-002).
@@ -90,7 +120,7 @@ assigned until Phase 0 preconditions are met.
 ## Links
 
 - Plan: `.project/plan.md`
-- Decisions: `.project/decisions/001`–`024`
+- Decisions: `.project/decisions/001`–`025`
 - Acceptance: `.project/acceptance/phase-1.md`
 - Architecture: `docs/architecture/overview.md`, `docs/architecture/brain-api-boundary.md`
 - Migration plans: `.project/jetstream-migration-plan.md`,
@@ -105,12 +135,15 @@ assigned until Phase 0 preconditions are met.
 |---|---|---|
 | `bun run typecheck` | pass (no errors) | 2026-09-22 |
 | Runtime-stack validation (report + focused WS auth tests) | pass | 2026-09-22 |
-| Unit / integration / e2e / web build | not run in this pass | — |
+| Brain/API boundary cleanup + regression tests | pass (CONFORMANT) | 2026-09-22 |
+| Contract/failure matrix (api/db/nats/mcp/cli/setup/scripts) | 491 pass, 1 env-dependent fail (filed as bug) | 2026-09-22 |
+| e2e (failure-matrix, error-boundaries, dashboard, activity) | 11/11 pass | 2026-09-22 |
+| Unit / integration / web build | targeted suites pass; full build not run in this pass | — |
 
 ## Workspace Baseline
 
-- HEAD at last update: `56a19f0` (plus `HEAD` may have moved; re-check with
+- HEAD at last update: `74a0cd3` (plus `HEAD` may have moved; re-check with
   `git log` before attributing outputs).
-- Workspace dirty at last update (149 paths, 2026-09-22): task outputs must
+- Workspace dirty at last update (151 paths, 2026-09-22): task outputs must
   be attributed against a per-task `git status --porcelain` baseline per
   ADR-017, not inferred from the dirty tree.
