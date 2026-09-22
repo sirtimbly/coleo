@@ -37,6 +37,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 gitea-data/
 
 # Coleo runtime state (user-specific)
+# Local settings may contain provider credentials. Keep this file out of Git.
+.coleo/config.toml
 # Uncomment if you want to ignore local state
 # ~/.coleo/
 .coleo/mail
