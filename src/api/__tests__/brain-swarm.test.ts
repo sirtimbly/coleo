@@ -204,3 +204,87 @@ describe("Brain swarm API and existing execution adapters", () => {
     await expect(api(`/api/bugs/${bug.id}`, "PATCH", { priority: "critical" }, "stale")).rejects.toThrow("409");
   });
 });
+
+describe("Evaluation API security, failure persistence, and retention", () => {
+  const authHeaders = { "Content-Type": "application/json", "X-API-Key": apiKey };
+
+  it("rejects unauthenticated and wrongly authenticated evaluation requests", async () => {
+    const requests: Array<[string, string, unknown | undefined]> = [
+      ["GET", "/api/brain/internal/swarm/snapshot?pollIntervalMs=30000", undefined],
+      ["POST", "/api/brain/internal/swarm/evaluations", { mode: "shadow", snapshot: {}, result: {} }],
+      ["POST", "/api/brain/internal/swarm/actions", { proposal: {}, execute: false, cooldownMs: 300000 }],
+    ];
+    for (const [method, path, body] of requests) {
+      const missing = await app.request(`http://localhost${path}`, { method: method as "GET" | "POST",
+        headers: { "Content-Type": "application/json" },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+      expect(missing.status).toBe(401);
+    }
+    const wrong = await app.request("http://localhost/api/brain/internal/swarm/evaluations", { method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-Key": "not-the-configured-key" },
+      body: JSON.stringify({ mode: "shadow", snapshot: {}, result: {} }) });
+    expect(wrong.status).toBe(401);
+    expect(db.query("SELECT COUNT(*) AS count FROM brain_swarm_evaluations").get()).toEqual({ count: 0 });
+    expect(db.query("SELECT COUNT(*) AS count FROM brain_swarm_actions").get()).toEqual({ count: 0 });
+  });
+
+  it("rejects malformed evaluation submissions before any audit write", async () => {
+    for (const body of [
+      { mode: "sideways", snapshot: {}, result: {} },
+      { mode: "shadow", snapshot: {} },
+      { mode: "shadow", snapshot: {}, result: { proposals: "not-an-array" } },
+    ]) {
+      const res = await app.request("http://localhost/api/brain/internal/swarm/evaluations", { method: "POST",
+        headers: authHeaders, body: JSON.stringify(body) });
+      expect(res.status).toBe(400);
+    }
+    expect(db.query("SELECT COUNT(*) AS count FROM brain_swarm_evaluations").get()).toEqual({ count: 0 });
+    expect(db.query("SELECT COUNT(*) AS count FROM brain_swarm_recommendations").get()).toEqual({ count: 0 });
+  });
+
+  it("rejects malformed action submissions without reserving a receipt", async () => {
+    const snapshot = await getSnapshot();
+    const proposal = makeProposal("prompt_arm", snapshot);
+    for (const body of [
+      { proposal: { action: "not-a-real-action" }, execute: false, cooldownMs: 300000 },
+      { proposal, execute: "yes", cooldownMs: 300000 },
+      { proposal, execute: false },
+    ]) {
+      const res = await app.request("http://localhost/api/brain/internal/swarm/actions", { method: "POST",
+        headers: authHeaders, body: JSON.stringify(body) });
+      expect(res.status).toBe(400);
+    }
+    expect(db.query("SELECT COUNT(*) AS count FROM brain_swarm_actions").get()).toEqual({ count: 0 });
+  });
+
+  it("persists failed evaluations as queryable audit without recommendations", async () => {
+    const snapshot = await getSnapshot();
+    const res = await app.request("http://localhost/api/brain/internal/swarm/evaluations", { method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ mode: "execute", snapshot, result: { error: "model request timed out after 12000ms" } }) });
+    expect(res.status).toBe(200);
+    const { evaluations } = await api<{ evaluations: Array<{ mode: string; result: string }> }>("/api/brain/internal/swarm/evaluations");
+    expect(evaluations).toHaveLength(1);
+    expect(evaluations[0]!.mode).toBe("execute");
+    expect(JSON.parse(evaluations[0]!.result).error).toContain("timed out");
+    expect(db.query("SELECT COUNT(*) AS count FROM brain_swarm_recommendations").get()).toEqual({ count: 0 });
+  });
+
+  it("retains duplicate evaluation audits as distinct durable rows", async () => {
+    const snapshot = await getSnapshot();
+    const audit = { mode: "shadow", snapshot, result: { proposals: [] } };
+    const first = await api<{ id: string }>("/api/brain/internal/swarm/evaluations", "POST", audit);
+    const second = await api<{ id: string }>("/api/brain/internal/swarm/evaluations", "POST", audit);
+    expect(second.id).not.toBe(first.id);
+    expect(db.query("SELECT COUNT(*) AS count FROM brain_swarm_evaluations").get()).toEqual({ count: 2 });
+  });
+
+  it("retains evaluation audit rows until a retention policy is recorded (ADR-023 §7)", async () => {
+    const snapshot = await getSnapshot();
+    await api("/api/brain/internal/swarm/evaluations", "POST", { mode: "shadow", snapshot, result: { proposals: [] } });
+    const ancient = new Date(Date.now() - 400 * 24 * 3600 * 1000).toISOString();
+    db.run("UPDATE brain_swarm_evaluations SET created_at = ?", [ancient]);
+    const { evaluations } = await api<{ evaluations: unknown[] }>("/api/brain/internal/swarm/evaluations");
+    expect(evaluations).toHaveLength(1);
+  });
+});

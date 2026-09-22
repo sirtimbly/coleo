@@ -177,4 +177,21 @@ describe("Swarm runner", () => {
     expect(execution.calls.filter((path) => path.endsWith("/prompt"))).toHaveLength(1);
     expect(listSwarmActions(db, now)[0]!.status).toBe("uncertain");
   });
+  it("fails closed on model failure: audits the error and dispatches nothing", async () => {
+    const { calls, options } = harness("execute");
+    const runner = new SwarmRunner({ ...options, evaluate: async () => { throw new Error("systemOne 500 model unavailable"); } });
+    await expect(runner.poll(30000)).rejects.toThrow("Swarm evaluation failed; no actions dispatched");
+    expect(calls.some((path) => path.endsWith("/actions"))).toBe(false);
+    expect(calls.some((path) => path.endsWith("/prompt"))).toBe(false);
+    // The failure itself is still audited exactly once before the throw.
+    expect(calls.filter((path) => path.endsWith("/evaluations"))).toHaveLength(1);
+  });
+  it("treats an evaluation timeout like any other model failure", async () => {
+    const { calls, options } = harness("execute");
+    const runner = new SwarmRunner({ ...options, evaluate: async () => { throw new Error("systemOne request timed out after 12000ms"); } });
+    await expect(runner.poll(30000)).rejects.toThrow("Swarm evaluation failed; no actions dispatched");
+    expect(calls.filter((path) => path.endsWith("/evaluations"))).toHaveLength(1);
+    expect(calls.some((path) => path.endsWith("/actions"))).toBe(false);
+    expect(listSwarmActions(db, now)).toHaveLength(0);
+  });
 });
