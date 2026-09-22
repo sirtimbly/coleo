@@ -11,6 +11,43 @@ before writing them to Qdrant. The embedding module lives under `src/embedding/`
 | **Local** | No OpenAI key, or `COLEO_EMBEDDING_PROVIDER=local` | 384 (`Xenova/all-MiniLM-L6-v2`) | Uses `@xenova/transformers` when installed |
 | **Mock (local fallback)** | Local path without transformers | 384 | Deterministic hash-based unit vectors for offline/dev/tests |
 
+## Production decision and data boundary
+
+The approved production provider for the Cloudflare control runtime is the local
+`Xenova/all-MiniLM-L6-v2` model at **384 dimensions**, with
+`COLEO_EMBEDDING_PROVIDER=local`. The real `@xenova/transformers` runtime must be
+present and load successfully. The deterministic mock fallback is development
+and test plumbing only and must not index production data.
+
+Do not enable the OpenAI-compatible provider in production for status history,
+transcripts, task descriptions, bug reports, or arm context. The indexing
+pipeline embeds event text and stores the full event payload in Qdrant, so that
+content can include workspace paths, operational details, or other sensitive
+data. Sending it to an external embedding endpoint requires a separate approved
+data-processing exception, documented redaction rules, a provider-specific
+retention agreement, and a collection migration plan.
+
+The required deployment configuration is:
+
+```bash
+COLEO_EMBEDDING_PROVIDER=local
+LOCAL_EMBEDDING_MODEL=Xenova/all-MiniLM-L6-v2
+```
+
+`OPENAI_API_KEY` may still be used by unrelated arm/model features, but it must
+not select the embedding provider. Set the explicit local provider value above
+because provider auto-detection otherwise prefers OpenAI whenever that key is
+present.
+
+If the local model cannot load or embedding fails, do not substitute mock or
+external embeddings. Keep core writes working, let the JetStream consumer retry
+the unacknowledged indexing event, and serve SQLite keyword-only search until
+the provider recovers. Before changing providers or dimensions, snapshot the
+current Qdrant data, create a new collection with the new vector size, backfill
+from the durable SQLite/JetStream source, validate search and filters, then
+switch traffic. Roll back by restoring the matching snapshot or by routing back
+to the prior collection; never mix vector dimensions in one collection.
+
 ## Environment
 
 ```bash
