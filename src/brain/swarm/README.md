@@ -280,3 +280,54 @@ Adaptive batching of oversized snapshots; retention policy for
 `brain_swarm_*` tables (currently unbounded, contain private source
 text); long-running swarm evaluations remain outside the plan-evaluation
 lock, which guards only plan prepare/regenerate/sync.
+
+## API boundaries
+
+Reference for `src/api/routes/brain-swarm.ts`, `src/api/swarm-inbox.ts`,
+`src/api/swarm-snapshot.ts`. Verified against source 2026-09-22;
+route suites (`brain-swarm`, `swarm-events`) and `swarm-evaluation`
+pass (34/34 combined).
+
+### Authentication and authorization
+
+Routes mount under authenticated `/api/brain/internal/swarm` behind
+the global API-key middleware (`X-Coleo-API-Key` / `X-API-Key` /
+`?api_key`). There is no per-user authorization in Phase 1 by design:
+possession of the shared key authorizes evaluation reads, proposal
+reservations, audit writes, and operator reconciliation alike.
+Do not imply finer-grained access from these routes.
+
+### Request validation
+
+Every route validates with Zod and throws typed 400s before any
+persistence: window bounds (`pollIntervalMs` positive ≤ 1 h,
+`windowPolls` 1–100), `since` timestamps, full `proposalSchema` +
+bounded `detail`/`cooldownMs` on reservation, outcome enums with
+10–4000-char detail on finish/reconcile, and proposal arrays on
+evaluation ingest. Malformed input never creates reservations, inbox
+entries, evaluations, or state mutations.
+
+### Snapshot consistency (`swarm-snapshot.ts`)
+
+Snapshots are point-in-time reads with explicit coverage accounting,
+not transactions: JetStream scan (20 000-record fail-closed bound),
+project-scoped filtering, then bounded DB reads (100 tasks/bugs/
+discoveries, referenced records backfilled). Every truncation or
+unavailability appends a coverage note; `coverage.complete` gates
+execution. Entity versions are `updated_at` timestamps consumed as
+optimistic-concurrency preconditions by dispatch. Concurrent writes
+during collection can therefore only cause a safe `stale_target`
+rejection, never a silent overwrite.
+
+### Separation from authoritative state
+
+Evaluation paths write exclusively to `brain_swarm_evaluations`,
+`brain_swarm_actions`, and `brain_swarm_recommendations`
+(`INSERT OR IGNORE` dedup by action key; disposition updates inside
+the reservation transaction). Inbox records are advisory projections
+(`requiresAction` only when `uncertain`). Task/arm/bug/mail effects
+happen solely through the existing authenticated API adapters in
+`dispatchSwarmAction`, each re-checking versions and policy gates;
+unsupported capabilities stay proposals-only. Reconciliation is
+operator-only and restricted to `executing`/`uncertain` receipts —
+the evaluator never calls it.
