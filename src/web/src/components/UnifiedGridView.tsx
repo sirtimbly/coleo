@@ -144,7 +144,7 @@ export function UnifiedGridView({ className }: { className?: string }) {
 						<div>
 							<h1 className="text-sm font-semibold">Resource sheets</h1>
 							<p className="text-xs text-muted-foreground">
-								One spreadsheet interaction model for structured work
+								Plan items are synchronized from the canonical plan; candidates are not executable until the Brain selects them.
 							</p>
 						</div>
 					</div>
