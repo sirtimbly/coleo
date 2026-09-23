@@ -131,9 +131,12 @@ export function useInfiniteDiscoveries(filters?: DiscoveryFilters) {
 
   return {
     discoveries: discoveriesQuery.data?.pages.flatMap((page) => page.discoveries) ?? [],
+    total: discoveriesQuery.data?.pages[0]?.pagination.total ?? 0,
     hasNextPage: discoveriesQuery.hasNextPage,
     isFetchingNextPage: discoveriesQuery.isFetchingNextPage,
     isLoading: discoveriesQuery.isLoading,
+    isError: discoveriesQuery.isError,
+    error: discoveriesQuery.error,
     refetch: discoveriesQuery.refetch,
     fetchNextPage: discoveriesQuery.fetchNextPage,
   };

@@ -24,6 +24,7 @@ import { useTasks } from "@/hooks/useTasks";
 import { cn } from "@/lib";
 import { useWorkspaceOpenRoute } from "@/workspace/route-context";
 
+import { filterDiscoveriesBySearch, filterTasksBySearch } from "./unified-grid-utils";
 import type { Task } from "@/lib";
 import type { ResourceSheetRowMove } from "@/workbench/ResourceSheet";
 import type { TaskUpdate } from "@/workbench/resource-updates";
@@ -45,10 +46,28 @@ function SheetLoading({ label }: { label: string }) {
 	);
 }
 
+function SheetError({ label, message, onRetry }: { label: string; message: string; onRetry: () => void }) {
+	return (
+		<div className="flex h-full flex-col items-center justify-center gap-2 text-sm">
+			<p className="text-danger">Failed to load {label}: {message}</p>
+			<Button size="sm" variant="outline" onPress={onRetry}>Retry</Button>
+		</div>
+	);
+}
+
+function SheetEmpty({ label }: { label: string }) {
+	return (
+		<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+			No {label} match the current search.
+		</div>
+	);
+}
+
 export function UnifiedGridView({ className }: { className?: string }) {
 	const [activeTab, setActiveTab] = useState<TabType>("plan-items");
 	const [searchText, setSearchText] = useState("");
 	const deferredSearchText = useDeferredValue(searchText);
+	const searchActive = deferredSearchText.trim().length > 0;
 	const openWorkspaceRoute = useWorkspaceOpenRoute();
 
 	const tasksResult = useTasks();
@@ -60,15 +79,7 @@ export function UnifiedGridView({ className }: { className?: string }) {
 	const updatePlanItemMutation = planItems.updateTask;
 	const reorderPlanItemMutation = planItems.reorderTaskAsync;
 
-	const filterTasks = useCallback((tasks: Task[]) => {
-		if (!deferredSearchText.trim()) return tasks;
-		const search = deferredSearchText.toLocaleLowerCase();
-		return tasks.filter((task) =>
-			task.subject.toLocaleLowerCase().includes(search)
-			|| task.description.toLocaleLowerCase().includes(search)
-			|| task.phase?.toLocaleLowerCase().includes(search)
-		);
-	}, [deferredSearchText]);
+	const filterTasks = useCallback((tasks: Task[]) => filterTasksBySearch(tasks, deferredSearchText), [deferredSearchText]);
 	const filteredTasks = useMemo(
 		() => filterTasks(tasksResult.tasks),
 		[filterTasks, tasksResult.tasks],
@@ -77,14 +88,10 @@ export function UnifiedGridView({ className }: { className?: string }) {
 		() => filterTasks(planItems.tasks),
 		[filterTasks, planItems.tasks],
 	);
-	const filteredDiscoveries = useMemo(() => {
-		if (!deferredSearchText.trim()) return discoveriesResult.discoveries;
-		const search = deferredSearchText.toLocaleLowerCase();
-		return discoveriesResult.discoveries.filter((discovery) =>
-			discovery.title.toLocaleLowerCase().includes(search)
-			|| discovery.details.toLocaleLowerCase().includes(search)
-		);
-	}, [deferredSearchText, discoveriesResult.discoveries]);
+	const filteredDiscoveries = useMemo(
+		() => filterDiscoveriesBySearch(discoveriesResult.discoveries, deferredSearchText),
+		[deferredSearchText, discoveriesResult.discoveries],
+	);
 
 	const openTask = useCallback((task: Task) => {
 		openWorkspaceRoute(
@@ -179,7 +186,7 @@ export function UnifiedGridView({ className }: { className?: string }) {
 						<Tabs.Tab id="discoveries" className="flex-1">
 							<Lightbulb className="h-4 w-4" />
 							Discoveries
-							<Chip size="sm" variant="soft">{discoveriesResult.discoveries.length}</Chip>
+							<Chip size="sm" variant="soft">{discoveriesResult.total || discoveriesResult.discoveries.length}</Chip>
 							<Tabs.Indicator />
 						</Tabs.Tab>
 					</Tabs.List>
@@ -187,7 +194,11 @@ export function UnifiedGridView({ className }: { className?: string }) {
 
 				<Tabs.Panel id="plan-items" className="min-h-0 flex-1 p-0">
 					<Suspense fallback={<SheetLoading label="plan items" />}>
-						{planItems.isLoading ? <SheetLoading label="plan items" /> : (
+						{planItems.isLoading ? <SheetLoading label="plan items" /> : planItems.isError ? (
+							<SheetError label="plan items" message={planItems.error?.message ?? "unknown error"} onRetry={() => { void planItems.refetch(); }} />
+						) : searchActive && filteredPlanItems.length === 0 ? (
+							<SheetEmpty label="plan items" />
+						) : (
 							<TaskSheet
 								tasks={filteredPlanItems}
 								viewId="plan-items-sheet"
@@ -222,7 +233,11 @@ export function UnifiedGridView({ className }: { className?: string }) {
 
 				<Tabs.Panel id="tasks" className="min-h-0 flex-1 p-0">
 					<Suspense fallback={<SheetLoading label="tasks" />}>
-						{tasksResult.isLoading ? <SheetLoading label="tasks" /> : (
+						{tasksResult.isLoading ? <SheetLoading label="tasks" /> : tasksResult.isError ? (
+							<SheetError label="tasks" message={tasksResult.error?.message ?? "unknown error"} onRetry={() => { void tasksResult.refetch(); }} />
+						) : searchActive && filteredTasks.length === 0 ? (
+							<SheetEmpty label="tasks" />
+						) : (
 							<TaskSheet
 								tasks={filteredTasks}
 								onOpenDetails={openTask}
@@ -256,7 +271,11 @@ export function UnifiedGridView({ className }: { className?: string }) {
 
 				<Tabs.Panel id="discoveries" className="min-h-0 flex-1 p-0">
 					<Suspense fallback={<SheetLoading label="discoveries" />}>
-						{discoveriesResult.isLoading ? <SheetLoading label="discoveries" /> : (
+						{discoveriesResult.isLoading ? <SheetLoading label="discoveries" /> : discoveriesResult.isError ? (
+							<SheetError label="discoveries" message={discoveriesResult.error?.message ?? "unknown error"} onRetry={() => { void discoveriesResult.refetch(); }} />
+						) : searchActive && filteredDiscoveries.length === 0 ? (
+							<SheetEmpty label="discoveries" />
+						) : (
 							<DiscoverySheet
 								discoveries={filteredDiscoveries}
 								onUpdateStatus={(id, status) => discoveriesMutation.updateDiscovery({
