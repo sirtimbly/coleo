@@ -77,6 +77,25 @@ function isBlockedTaskCategory(value: unknown): value is BlockedTaskCategory {
 	);
 }
 
+function isCompletePreparedPayload(payload: unknown, task: { source_ref: string | null; plan_line_uid: string | null }): boolean {
+	if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+	const value = payload as Record<string, unknown>;
+	const nonEmptyStrings = (entry: unknown): boolean =>
+		Array.isArray(entry) && entry.length > 0 && entry.every((item) => typeof item === "string" && item.trim().length > 0);
+	const explicitArray = (entry: unknown): boolean =>
+		Array.isArray(entry) && entry.every((item) => typeof item === "string" && item.trim().length > 0);
+	const contextReady = typeof value.context === "string"
+		? value.context.trim().length > 0
+		: Boolean(value.context && typeof value.context === "object" && !Array.isArray(value.context));
+	const provenance = typeof value.sourceRef === "string" && value.sourceRef.trim().length > 0
+		|| Boolean(task.source_ref || task.plan_line_uid);
+	return provenance
+		&& nonEmptyStrings(value.acceptanceCriteria)
+		&& explicitArray(value.dependencies)
+		&& contextReady
+		&& nonEmptyStrings(value.outputs);
+}
+
 function requireIsoDate(value: string, field: string): string {
 	if (Number.isNaN(new Date(value).getTime())) {
 		throw HttpError.badRequest(`${field} must be a valid date`);
@@ -777,8 +796,17 @@ export function createTasksRoutes() {
 		const handoffId = c.req.param("id");
 		const handoff = db.query("SELECT task_id FROM task_handoffs WHERE id = ? AND status = 'queued'").get(handoffId) as { task_id: string } | null;
 		if (!handoff) throw HttpError.notFound(`Queued handoff not found: ${handoffId}`);
-		const task = db.query("SELECT id, status, dependency_blocked FROM tasks WHERE id = ?").get(handoff.task_id) as { id: string; status: TaskStatus; dependency_blocked: number } | null;
+		const task = db.query("SELECT id, status, dependency_blocked, source_ref, plan_line_uid FROM tasks WHERE id = ?").get(handoff.task_id) as { id: string; status: TaskStatus; dependency_blocked: number; source_ref: string | null; plan_line_uid: string | null } | null;
 		if (!task) throw HttpError.notFound(`Task not found: ${handoff.task_id}`);
+		let preparedPayload: unknown;
+		try {
+			preparedPayload = JSON.parse(String((db.query("SELECT payload FROM task_handoffs WHERE id = ?").get(handoffId) as { payload: string }).payload || "{}"));
+		} catch {
+			throw new HttpError(409, "Prepared task payload is invalid");
+		}
+		if (!isCompletePreparedPayload(preparedPayload, task)) {
+			throw new HttpError(409, "Prepared task must include canonical plan provenance, acceptance criteria, dependencies, context, and outputs");
+		}
 		if (task.dependency_blocked === 1) throw new HttpError(409, "Task dependencies are not satisfied");
 		const unmet = db.query(
 			`SELECT 1 FROM task_dependencies d

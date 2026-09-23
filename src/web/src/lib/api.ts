@@ -166,6 +166,8 @@ export interface PreparedTaskDefinition {
   context: string;
   requirements: string[];
   acceptanceCriteria: string[];
+  dependencies: string[];
+  outputs: string[];
   priority: Task['priority'];
   classification: string;
   phase: string;

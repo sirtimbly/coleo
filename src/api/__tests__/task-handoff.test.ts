@@ -54,7 +54,10 @@ describe("task handoff queue", () => {
 		const taskId = await createDraft();
 		const first = await app.request(`/api/tasks/${taskId}/handoff`, {
 			method: "POST", headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ preparedBy: "architect-1", prepared: { acceptanceCriteria: ["works"] } }),
+			body: JSON.stringify({ preparedBy: "architect-1", prepared: {
+				sourceRef: ".project/plan.md#prepared-work", acceptanceCriteria: ["works"],
+				dependencies: [], context: "Plan context", outputs: ["feature files"],
+			} }),
 		});
 		expect(first.status).toBe(202);
 		expect((db.query("SELECT status FROM tasks WHERE id = ?").get(taskId) as { status: string }).status).toBe("draft");
@@ -69,7 +72,10 @@ describe("task handoff queue", () => {
 		db.run(`INSERT INTO tasks (id, subject, description, status, priority, created_at, updated_at)
 			VALUES ('dependency-1', 'Dependency', 'Details', 'in_progress', 'normal', ?, ?)`, [now, now]);
 		db.run("INSERT INTO task_dependencies (task_id, depends_on_task_id) VALUES (?, ?)", [taskId, "dependency-1"]);
-		const queued = await app.request(`/api/tasks/${taskId}/handoff`, { method: "POST", body: "{}" });
+		const queued = await app.request(`/api/tasks/${taskId}/handoff`, { method: "POST", body: JSON.stringify({ prepared: {
+			sourceRef: ".project/plan.md#prepared-work", acceptanceCriteria: ["works"],
+			dependencies: ["dependency-1"], context: "Plan context", outputs: ["feature files"],
+		} }) });
 		const queuedBody = await queued.json() as { handoff: { id: string } };
 		const blocked = await app.request(`/api/tasks/handoff/${queuedBody.handoff.id}/activate`, { method: "POST" });
 		expect(blocked.status).toBe(409);
@@ -77,5 +83,17 @@ describe("task handoff queue", () => {
 		const activated = await app.request(`/api/tasks/handoff/${queuedBody.handoff.id}/activate`, { method: "POST" });
 		expect(activated.status).toBe(200);
 		expect((db.query("SELECT status FROM tasks WHERE id = ?").get(taskId) as { status: string }).status).toBe("pending");
+	});
+
+	it("keeps incomplete preparation out of the executable queue", async () => {
+		const taskId = await createDraft();
+		const queued = await app.request(`/api/tasks/${taskId}/handoff`, {
+			method: "POST",
+			body: JSON.stringify({ prepared: { acceptanceCriteria: ["works"] } }),
+		});
+		const body = await queued.json() as { handoff: { id: string } };
+		const response = await app.request(`/api/tasks/handoff/${body.handoff.id}/activate`, { method: "POST" });
+		expect(response.status).toBe(409);
+		expect((db.query("SELECT status FROM tasks WHERE id = ?").get(taskId) as { status: string }).status).toBe("draft");
 	});
 });
