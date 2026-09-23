@@ -123,6 +123,31 @@ describe("resource sheet model", () => {
 		])).toBe(false);
 	});
 
+	it("keeps 100-item collection interactions within the baseline budget", () => {
+		const source = rows(100);
+		const startedAt = performance.now();
+		const initial = projectResourceRows(source, COLUMNS, []);
+		const filtered = projectResourceCollection(source, COLUMNS, {
+			filters: [{ field: "status", operator: "equals", value: "pending" }],
+			sort: [{ field: "progress", direction: "desc" }],
+		});
+		const changed = source.map((row, index) => index === 50 ? { ...row, subject: "Updated task" } : row);
+		const updated = projectResourceRows(changed, COLUMNS, []);
+		const move = resolveResourceRowMove(
+			new Map(changed.map((row) => [row.id, row])),
+			"row-50",
+			50,
+			["row-50", ...changed.filter((row) => row.id !== "row-50").map((row) => row.id)],
+		);
+		const elapsed = performance.now() - startedAt;
+
+		expect(initial.sheetRows).toHaveLength(100);
+		expect(filtered).toHaveLength(80);
+		expect(areProjectedResourceRowsEqual(initial.sheetRows, updated.sheetRows)).toBe(false);
+		expect(move.toIndex).toBe(0);
+		expect(elapsed).toBeLessThan(100);
+	});
+
 	for (const benchmark of [
 		{ count: 1_000, thresholdMs: 50 },
 		{ count: 10_000, thresholdMs: 250 },
