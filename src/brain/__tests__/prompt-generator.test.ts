@@ -5,7 +5,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { __promptTestables, generateTaskDetermination } from "../prompt-generator";
 import { createSqliteBrainDb } from "../../db/brain-db-adapter";
-import { CLASSIFICATION_PROMPT_TEMPLATES, getClassificationPrompt } from "../classification-prompts";
+import { CLASSIFICATION_PROMPT_TEMPLATES, getClassificationPrompt, getClassificationTools } from "../classification-prompts";
 
 const NOW = new Date("2026-01-16T00:00:00Z").toISOString();
 
@@ -16,12 +16,21 @@ describe("classification prompt templates", () => {
 			expect(prompt).toContain("general-purpose arm");
 			expect(prompt).toContain("concrete verification evidence");
 			expect(prompt).toContain("Specific");
-			expect(prompt).toBe(CLASSIFICATION_PROMPT_TEMPLATES[classification]!);
+			expect(prompt).toContain(CLASSIFICATION_PROMPT_TEMPLATES[classification]!);
+			expect(prompt).toContain("Relevant Tool Context");
 		});
 	}
 
 	it("falls back safely for unknown classifications", () => {
-		expect(getClassificationPrompt("custom-domain")).toBe(CLASSIFICATION_PROMPT_TEMPLATES.default!);
+		expect(getClassificationPrompt("custom-domain")).toContain(CLASSIFICATION_PROMPT_TEMPLATES.default!);
+	});
+
+	it("keeps universal tools while narrowing specialized context", () => {
+		const qaTools = getClassificationTools("qa");
+		expect(qaTools).toContain("complete_task");
+		expect(qaTools).toContain("report_bug");
+		expect(qaTools).not.toContain("update_documentation");
+		expect(getClassificationTools("unknown")).toContain("get_full_briefing");
 	});
 });
 

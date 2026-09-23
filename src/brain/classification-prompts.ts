@@ -4,6 +4,22 @@
  */
 export const CLASSIFICATION_PROMPT_VERSION = "1";
 
+const UNIVERSAL_TOOLS = ["get_full_briefing", "claim_task", "submit_status_report", "complete_task", "report_discovery"] as const;
+const CLASSIFICATION_TOOLS: Readonly<Record<string, readonly string[]>> = {
+	architect: ["get_documentation", "find_relevant_docs", "share_note", "request_approval"],
+	development: ["get_documentation", "check_documentation_changes", "share_note", "request_approval"],
+	qa: ["get_documentation", "check_documentation_changes", "report_bug", "share_note"],
+	documentation: ["get_documentation", "check_documentation_changes", "update_documentation", "share_note"],
+	verify: ["get_documentation", "check_documentation_changes", "report_bug", "share_note"],
+	bug_fix: ["get_documentation", "check_documentation_changes", "report_bug", "request_approval"],
+	default: ["get_documentation", "find_relevant_docs", "share_note"],
+};
+
+export function getClassificationTools(classification: string | null | undefined): readonly string[] {
+	const normalized = classification?.trim().toLowerCase() || "default";
+	return [...UNIVERSAL_TOOLS, ...(CLASSIFICATION_TOOLS[normalized] || CLASSIFICATION_TOOLS.default!)];
+}
+
 const COMMON = `
 ## Classification Contract (v${CLASSIFICATION_PROMPT_VERSION})
 - This classification applies only to the current task; remain a general-purpose arm.
@@ -57,5 +73,6 @@ export const CLASSIFICATION_PROMPT_TEMPLATES: Readonly<Record<string, string>> =
 
 export function getClassificationPrompt(classification: string | null | undefined): string {
 	const normalized = classification?.trim().toLowerCase() || "default";
-	return CLASSIFICATION_PROMPT_TEMPLATES[normalized] || CLASSIFICATION_PROMPT_TEMPLATES.default!;
+	const template = CLASSIFICATION_PROMPT_TEMPLATES[normalized] || CLASSIFICATION_PROMPT_TEMPLATES.default!;
+	return `${template}\n\n## Relevant Tool Context\nUse the universal workflow tools plus these task-relevant tools: ${getClassificationTools(normalized).join(", ")}. Tool filtering is contextual only; your arm remains general-purpose.`;
 }
