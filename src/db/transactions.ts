@@ -416,14 +416,14 @@ export async function assignTaskToArm(
 }
 
 /**
- * Auto-assign watcher arms when a task is claimed
- * Selects appropriate arms based on domain and availability
+ * Auto-assign watcher arms when a task is claimed.
+ * Watchers are general-purpose; task classification must not route by arm identity.
  */
 export async function autoAssignWatcherArms(
   db: Database,
   taskId: string,
   primaryArmId: string,
-  taskDomain?: string
+  _taskDomain?: string
 ): Promise<TransactionResult<{ watchersAssigned: string[]; needsMoreArms: boolean }>> {
   return withTransaction(db, (db) => {
     const now = new Date().toISOString();
@@ -444,30 +444,15 @@ export async function autoAssignWatcherArms(
 
     // Find available arms (not already assigned to this task, not the primary arm)
     let availableArms = db.query(`
-      SELECT id, name, domain, status
+      SELECT id, name, status
       FROM arms
       WHERE id != ?
         AND status IN ('idle', 'running')
         AND id NOT IN (SELECT arm_id FROM task_arm_consensus WHERE task_id = ?)
-    `).all(primaryArmId, taskId) as Array<{ id: string; name: string; domain: string; status: string }>;
+    `).all(primaryArmId, taskId) as Array<{ id: string; name: string; status: string }>;
 
-    // Prioritize arms by domain match, then general arms
-    const prioritizedArms = availableArms.sort((a, b) => {
-      const aDomain = a.domain || 'general';
-      const bDomain = b.domain || 'general';
-      const taskDomainNormalized = taskDomain || 'general';
-
-      // Exact domain match gets highest priority
-      if (aDomain === taskDomainNormalized && bDomain !== taskDomainNormalized) return -1;
-      if (bDomain === taskDomainNormalized && aDomain !== taskDomainNormalized) return 1;
-
-      // General arms get medium priority
-      if (aDomain === 'general' && bDomain !== 'general') return -1;
-      if (bDomain === 'general' && aDomain !== 'general') return 1;
-
-      // Otherwise maintain order
-      return 0;
-    });
+    // Preserve database order. Arm domain is legacy metadata, not a routing capability.
+    const prioritizedArms = availableArms;
 
     // Assign up to armsToAssign watchers
     const watchersAssigned: string[] = [];
