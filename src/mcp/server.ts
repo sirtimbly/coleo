@@ -2710,7 +2710,7 @@ export function createMcpServer(): McpServer {
 							taskId,
 							subject,
 							taskDescription,
-							"pending",
+							"draft",
 							priority,
 							"development", // Prepared tasks are typically development tasks
 							null, // domain (unscoped)
@@ -2719,6 +2719,21 @@ export function createMcpServer(): McpServer {
 							new Date().toISOString(),
 							ARM_ID,
 							new Date().toISOString(),
+						],
+					);
+
+					// Preparation is not assignment: queue the draft for Brain activation.
+					db.run(
+						`INSERT INTO task_handoffs
+						 (id, task_id, status, prepared_by, prepared_at, queued_at, payload)
+						 VALUES (?, ?, 'queued', ?, ?, ?, ?)`,
+						[
+							`handoff-${taskId}`,
+							taskId,
+							ARM_ID,
+							new Date().toISOString(),
+							new Date().toISOString(),
+							JSON.stringify({ discussion_id, related_plan_id, estimated_effort }),
 						],
 					);
 
