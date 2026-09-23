@@ -22,6 +22,7 @@ import {
 	isValidationTaskSubject,
 	isVerificationTaskSubject,
 } from "./task-subjects";
+import { getClassificationPrompt } from "./classification-prompts";
 
 export interface PromptContext {
 	projectRoot: string;
@@ -288,7 +289,7 @@ function pickExistingActiveTask(
 			id: task.id,
 			subject: task.subject,
 			description: task.description,
-			classification: task.domain || "development",
+			classification: task.classification || task.domain || "development",
 			priority: task.priority,
 			domain: task.domain || undefined,
 		},
@@ -1284,6 +1285,7 @@ function mapBugStatusToTaskStatus(status: string): Task["status"] {
 }
 
 function generateInstructions(task: Task): string {
+	const classification = task.classification?.toLowerCase() || task.domain?.toLowerCase() || "development";
 	const domain = task.domain?.toLowerCase() || "";
 	const subject = task.subject.toLowerCase();
 	const isBugTask =
@@ -1338,34 +1340,8 @@ ${task.description}
 		);
 	}
 
-	if (domain === "docs" || subject.includes("doc")) {
-		return (
-			baseInstructions +
-			`
-
-## Documentation-Specific
-
-- Focus on feature docs, API docs, and capabilities docs
-- Do NOT update conceptual or architectural docs
-- Match docs to actual code implementation
-- Add "Future Work" notes for planned but unimplemented features`
-		);
-	}
-
-	if (domain === "testing" || subject.includes("test")) {
-		return (
-			baseInstructions +
-			`
-
-## Testing-Specific
-
-- search for existing tests, read comments, and find code that should have been tested that other agents left behind.
-- Write tests that verify the implementation
-- Consider edge cases
-- Ensure tests are maintainable
-- Run existing tests to verify nothing is broken`
-		);
-	}
+	if (domain === "docs" || subject.includes("doc")) return baseInstructions + getClassificationPrompt("documentation");
+	if (domain === "testing" || subject.includes("test")) return baseInstructions + getClassificationPrompt("qa");
 
 	if (domain === "refactoring" || subject.includes("refactor")) {
 		return (
@@ -1386,7 +1362,7 @@ ${task.description}
 		);
 	}
 
-	return baseInstructions;
+	return baseInstructions + getClassificationPrompt(classification);
 }
 
 function buildContextBundle(

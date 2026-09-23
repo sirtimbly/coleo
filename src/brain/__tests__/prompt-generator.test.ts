@@ -5,8 +5,25 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { __promptTestables, generateTaskDetermination } from "../prompt-generator";
 import { createSqliteBrainDb } from "../../db/brain-db-adapter";
+import { CLASSIFICATION_PROMPT_TEMPLATES, getClassificationPrompt } from "../classification-prompts";
 
 const NOW = new Date("2026-01-16T00:00:00Z").toISOString();
+
+describe("classification prompt templates", () => {
+	for (const classification of ["architect", "development", "qa", "documentation", "verify", "bug_fix", "default"]) {
+		it(`defines a scoped contract for ${classification}`, () => {
+			const prompt = getClassificationPrompt(classification);
+			expect(prompt).toContain("general-purpose arm");
+			expect(prompt).toContain("concrete verification evidence");
+			expect(prompt).toContain("Specific");
+			expect(prompt).toBe(CLASSIFICATION_PROMPT_TEMPLATES[classification]!);
+		});
+	}
+
+	it("falls back safely for unknown classifications", () => {
+		expect(getClassificationPrompt("custom-domain")).toBe(CLASSIFICATION_PROMPT_TEMPLATES.default!);
+	});
+});
 
 function createTestDb(): Database {
   const db = new Database(":memory:");
