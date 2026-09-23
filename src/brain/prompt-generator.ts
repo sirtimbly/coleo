@@ -1487,6 +1487,7 @@ export function formatContextBundle(result: ContextBundleResult): string {
 }
 
 export const __promptTestables = {
+	generateInstructions,
 	readCurrentPlan,
 	extractDependenciesFromPhase,
 	collectDependenciesForTask,

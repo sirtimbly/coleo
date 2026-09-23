@@ -25,6 +25,25 @@ describe("classification prompt templates", () => {
 	});
 });
 
+describe("classification execution matrix", () => {
+	for (const classification of ["architect", "development", "qa", "documentation"]) {
+		it(`gives a general-purpose arm ${classification} instructions`, () => {
+			const instructions = __promptTestables.generateInstructions({
+				id: `task-${classification}`,
+				subject: `${classification} task`,
+				description: "Execute the assigned work",
+				status: "pending",
+				priority: "normal",
+				classification,
+				createdAt: new Date("2026-01-01T00:00:00Z"),
+				updatedAt: new Date("2026-01-01T00:00:00Z"),
+			});
+			expect(instructions).toContain("general-purpose arm");
+			expect(instructions.toLowerCase()).toContain(classification === "qa" ? "qa-specific" : `${classification}-specific`);
+		});
+	}
+});
+
 function createTestDb(): Database {
   const db = new Database(":memory:");
   db.exec(`
