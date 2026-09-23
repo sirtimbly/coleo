@@ -704,6 +704,98 @@ export function createTasksRoutes() {
 	});
 
 	/**
+	 * Queue a prepared task for Brain handoff. This intentionally leaves the
+	 * task in draft status; only the Brain's dependency-aware activation route
+	 * can make it eligible for arm assignment.
+	 * POST /api/tasks/:id/handoff
+	 */
+	app.post("/:id/handoff", async (c) => {
+		const db = c.get("db");
+		const taskId = c.req.param("id");
+		const existing = db.query("SELECT id, status FROM tasks WHERE id = ?").get(taskId) as
+			{ id: string; status: TaskStatus } | null;
+		if (!existing) throw HttpError.notFound(`Task not found: ${taskId}`);
+		if (!["draft", "pending"].includes(existing.status)) {
+			throw HttpError.badRequest("Only draft or pending tasks can be handed off");
+		}
+
+		const body = await c.req.json<{
+			prepared?: Record<string, unknown>;
+			preparedBy?: string;
+		}>();
+		if (body.prepared !== undefined &&
+			(!body.prepared || typeof body.prepared !== "object" || Array.isArray(body.prepared))) {
+			throw HttpError.badRequest("prepared must be an object");
+		}
+		const now = new Date().toISOString();
+		const handoffId = `handoff-${crypto.randomUUID()}`;
+		const preparedBy = body.preparedBy?.trim() || null;
+		const payload = JSON.stringify(body.prepared ?? {});
+		const prior = db.query("SELECT * FROM task_handoffs WHERE task_id = ?").get(taskId) as {
+			id: string; status: string; task_id: string; prepared_by: string | null;
+			prepared_at: string; queued_at: string; activated_at: string | null; payload: string;
+		} | null;
+		if (prior && prior.status === "queued") {
+			return c.json({ handoff: { id: prior.id, taskId, status: prior.status, queuedAt: prior.queued_at } }, 200);
+		}
+		if (prior) {
+			db.run("DELETE FROM task_handoffs WHERE task_id = ?", [taskId]);
+		}
+		db.run(
+			`INSERT INTO task_handoffs
+			 (id, task_id, status, prepared_by, prepared_at, queued_at, payload)
+			 VALUES (?, ?, 'queued', ?, ?, ?, ?)`,
+			[handoffId, taskId, preparedBy, now, now, payload],
+		);
+		broadcast("tasks", "task.handoff_queued", { taskId, handoffId });
+		return c.json({ handoff: { id: handoffId, taskId, status: "queued", queuedAt: now } }, 202);
+	});
+
+	/** List queued handoffs. Selection does not activate or assign work. */
+	app.get("/handoff", (c) => {
+		const db = c.get("db");
+		const rows = db.query(
+			`SELECT h.id, h.task_id, h.status, h.prepared_by, h.prepared_at, h.queued_at, h.payload,
+				t.subject, t.status AS task_status, t.dependency_blocked
+			 FROM task_handoffs h JOIN tasks t ON t.id = h.task_id
+			 WHERE h.status = 'queued' ORDER BY h.queued_at ASC`,
+		).all() as Array<Record<string, unknown>>;
+		return c.json({ handoffs: rows.map((row) => ({
+			id: row.id, taskId: row.task_id, status: row.status, subject: row.subject,
+			preparedBy: row.prepared_by, preparedAt: row.prepared_at, queuedAt: row.queued_at,
+			payload: JSON.parse(String(row.payload || "{}")), taskStatus: row.task_status,
+			dependencyBlocked: row.dependency_blocked === 1,
+		})) });
+	});
+
+	/**
+	 * Brain-only handoff activation. Dependencies are checked transactionally so
+	 * queueing and assignment remain distinct operations.
+	 */
+	app.post("/handoff/:id/activate", async (c) => {
+		const db = c.get("db");
+		const handoffId = c.req.param("id");
+		const handoff = db.query("SELECT task_id FROM task_handoffs WHERE id = ? AND status = 'queued'").get(handoffId) as { task_id: string } | null;
+		if (!handoff) throw HttpError.notFound(`Queued handoff not found: ${handoffId}`);
+		const task = db.query("SELECT id, status, dependency_blocked FROM tasks WHERE id = ?").get(handoff.task_id) as { id: string; status: TaskStatus; dependency_blocked: number } | null;
+		if (!task) throw HttpError.notFound(`Task not found: ${handoff.task_id}`);
+		if (task.dependency_blocked === 1) throw new HttpError(409, "Task dependencies are not satisfied");
+		const unmet = db.query(
+			`SELECT 1 FROM task_dependencies d
+			 JOIN tasks dependency ON dependency.id = d.depends_on_task_id
+			 WHERE d.task_id = ? AND dependency.status != 'completed' LIMIT 1`,
+		).get(task.id);
+		if (unmet) throw new HttpError(409, "Task dependencies are not satisfied");
+		const now = new Date().toISOString();
+		db.run("UPDATE task_handoffs SET status = 'activated', activated_at = ? WHERE id = ? AND status = 'queued'", [now, handoffId]);
+		if (task.status === "draft") {
+			db.run("UPDATE tasks SET status = 'pending', updated_at = ? WHERE id = ?", [now, task.id]);
+		}
+		broadcast("tasks", "task.handoff_activated", { taskId: task.id, handoffId });
+		return c.json({ handoff: { id: handoffId, taskId: task.id, status: "activated", activatedAt: now } });
+	});
+
+	/**
 	 * Get task statistics for progress visualization.
 	 * This static route must remain ahead of GET /:id.
 	 */

@@ -1,0 +1,81 @@
+import { describe, expect, it, beforeEach, afterEach } from "bun:test";
+import { Database } from "bun:sqlite";
+import { Hono } from "hono";
+import { createTasksRoutes } from "../routes/tasks";
+import { HttpError } from "../middleware/error";
+
+describe("task handoff queue", () => {
+	let db: Database;
+	let app: Hono<{ Variables: { db: Database } }>;
+
+	beforeEach(() => {
+		db = new Database(":memory:");
+		db.exec(`
+			CREATE TABLE tasks (
+				id TEXT PRIMARY KEY, subject TEXT NOT NULL, description TEXT NOT NULL,
+				status TEXT NOT NULL, priority TEXT NOT NULL, source_type TEXT, source_ref TEXT,
+				phase TEXT, domain TEXT, classification TEXT, assigned_to TEXT,
+				dependency_blocked INTEGER DEFAULT 0, consensus_status TEXT, plan_line_uid TEXT,
+				sort_order INTEGER DEFAULT 0, order_key TEXT, comment_count INTEGER DEFAULT 0,
+				last_comment_at TEXT, mail_thread_id TEXT, progress INTEGER DEFAULT 0,
+				created_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT,
+				claimed_at TEXT, started_at TEXT, blocked_at TEXT, blocked_reason TEXT,
+				blocked_category TEXT, blocked_recheck_at TEXT, blocked_last_checked_at TEXT,
+				blocked_review_count INTEGER DEFAULT 0, blocked_needs_human INTEGER DEFAULT 0,
+				blocked_human_notified_at TEXT, blocked_review_arm_id TEXT,
+				blocked_review_started_at TEXT, due_date TEXT, artifacts TEXT DEFAULT '[]',
+				context TEXT DEFAULT '{}', metadata TEXT DEFAULT '{}'
+			);
+			CREATE TABLE task_dependencies (task_id TEXT, depends_on_task_id TEXT);
+			CREATE TABLE task_handoffs (
+				id TEXT PRIMARY KEY, task_id TEXT NOT NULL UNIQUE, status TEXT NOT NULL,
+				prepared_by TEXT, prepared_at TEXT NOT NULL, queued_at TEXT NOT NULL,
+				activated_at TEXT, payload TEXT NOT NULL DEFAULT '{}'
+			);
+		`);
+		app = new Hono<{ Variables: { db: Database } }>();
+		app.use("*", async (c, next) => { c.set("db", db); return next(); });
+		app.route("/api/tasks", createTasksRoutes());
+		app.onError((error, c) => error instanceof HttpError
+			? c.json({ error: error.message }, error.status as 400 | 404 | 409 | 500)
+			: c.json({ error: "Internal server error" }, 500));
+	});
+
+	afterEach(() => db.close());
+
+	async function createDraft(): Promise<string> {
+		const now = new Date().toISOString();
+		db.run(`INSERT INTO tasks (id, subject, description, status, priority, created_at, updated_at)
+			VALUES ('draft-1', 'Prepared work', 'Details', 'draft', 'normal', ?, ?)`, [now, now]);
+		return "draft-1";
+	}
+
+	it("queues a draft without making it eligible and is idempotent", async () => {
+		const taskId = await createDraft();
+		const first = await app.request(`/api/tasks/${taskId}/handoff`, {
+			method: "POST", headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ preparedBy: "architect-1", prepared: { acceptanceCriteria: ["works"] } }),
+		});
+		expect(first.status).toBe(202);
+		expect((db.query("SELECT status FROM tasks WHERE id = ?").get(taskId) as { status: string }).status).toBe("draft");
+		const second = await app.request(`/api/tasks/${taskId}/handoff`, { method: "POST", body: "{}" });
+		expect(second.status).toBe(200);
+		expect((db.query("SELECT COUNT(*) AS count FROM task_handoffs").get() as { count: number }).count).toBe(1);
+	});
+
+	it("activates only when dependencies are complete", async () => {
+		const taskId = await createDraft();
+		const now = new Date().toISOString();
+		db.run(`INSERT INTO tasks (id, subject, description, status, priority, created_at, updated_at)
+			VALUES ('dependency-1', 'Dependency', 'Details', 'in_progress', 'normal', ?, ?)`, [now, now]);
+		db.run("INSERT INTO task_dependencies (task_id, depends_on_task_id) VALUES (?, ?)", [taskId, "dependency-1"]);
+		const queued = await app.request(`/api/tasks/${taskId}/handoff`, { method: "POST", body: "{}" });
+		const queuedBody = await queued.json() as { handoff: { id: string } };
+		const blocked = await app.request(`/api/tasks/handoff/${queuedBody.handoff.id}/activate`, { method: "POST" });
+		expect(blocked.status).toBe(409);
+		db.run("UPDATE tasks SET status = 'completed' WHERE id = 'dependency-1'");
+		const activated = await app.request(`/api/tasks/handoff/${queuedBody.handoff.id}/activate`, { method: "POST" });
+		expect(activated.status).toBe(200);
+		expect((db.query("SELECT status FROM tasks WHERE id = ?").get(taskId) as { status: string }).status).toBe("pending");
+	});
+});
