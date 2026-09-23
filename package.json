@@ -65,6 +65,8 @@
 		"index:transcripts": "bun run src/scripts/jetstream-transcript-indexer.ts",
 		"simulate:arm-output": "bun run src/scripts/simulate-arm-output-processor.ts",
 		"bakeoff:classification": "bun run src/scripts/classification-bakeoff.ts",
+		"eval:clean-room": "bun run src/scripts/evaluation-clean-room.ts",
+		"eval:regression": "bun run src/scripts/evaluation-regression.ts",
 		"eval:human-history": "bun run src/scripts/eval-human-history.ts",
 		"web:dev": "bun run --cwd src/web dev",
 		"web:build": "bun run --cwd src/web build",

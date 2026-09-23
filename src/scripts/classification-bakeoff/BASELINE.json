@@ -1,0 +1,18 @@
+{
+  "provenance": "Measured baseline from the initial bake-off (2026-09-18/19). See src/scripts/classification-bakeoff/RESULTS.md for the full record, failure analysis, and interpretation.",
+  "corpusFingerprint": "2afb062c069a5ff33ef9d57e997dfe0b6ecb42f06221b1ec58f56e8cf7057b3f",
+  "models": {
+    "current": "gpt-5.6-luna",
+    "jev": "jev-1.13.0"
+  },
+  "accuracy": {
+    "arm": {
+      "current": { "correct": 40, "total": 40 },
+      "jev": { "correct": 36, "total": 40 }
+    },
+    "human": {
+      "current": { "correct": 48, "total": 48 },
+      "jev": { "correct": 48, "total": 48 }
+    }
+  }
+}
