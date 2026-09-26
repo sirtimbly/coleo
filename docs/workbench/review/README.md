@@ -34,6 +34,7 @@ framework before another application needs it.
 - [The bench: tools and product recipes](./bench.md).
 - [The signal desk: live updates and recovery](./signal-desk.md).
 - [The notebook: profile ownership and save consistency](./notebook.md).
+- [The panel host: lifecycle and coupling inventory](./panel-host.md).
 
 Findings distinguish observed code from failure scenarios inferred from it.
 Priorities describe user impact: P1 is potential lost state or incorrect profile
@@ -73,3 +74,33 @@ documentation commit. Proposed runtime fixes and all coupling refactors remain
 unimplemented until a direction is selected. Each chapter specifies bounded
 follow-up commits and acceptance checks rather than treating recommendations
 as completed fixes.
+
+## Verification at the reviewed snapshot
+
+The focused baseline passed: **27 tests, 0 failures, 117 assertions** across
+the resource-sheet model, socket reconnect, task-query cache, refresh gate,
+and workbench API foundation suites. The sheet model includes 1k/10k/50k gates;
+these measure pure projection work, not browser rendering performance.
+
+```sh
+bun test src/web/__tests__/resource-sheet-model.test.ts \
+  src/web/__tests__/websocket-reconnect.test.ts \
+  src/web/__tests__/task-query-cache.test.ts \
+  src/web/__tests__/refresh-gate.test.ts \
+  src/api/__tests__/workbench-foundation.test.ts
+```
+
+No production code changed. Browser race reproductions, bundle profiling,
+full type/lint suites, and end-to-end validation were not run for this
+documentation review. Each proposed fix lists the checks needed before it can
+be called complete. Tests ran in the isolated worktree using the existing
+checkout's installed dependencies; the lockfile was not changed.
+
+Two disposable API probes additionally confirmed that stale view writes can
+erase prior changes and that an unsupported bundle schema version is accepted;
+the notebook chapter gives the reproduction sequence. The probes used a
+temporary database and did not touch project data.
+
+`bun run docs:build` passed. All 42 local links in this review resolved to
+existing files, and `git diff --check` passed. The documentation build ignores
+dead links globally, so the separate link check is material evidence.
