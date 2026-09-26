@@ -9,6 +9,10 @@ explains its implementation; the dated entries below preserve migration history.
 
 ## Current architecture (2026-09-21)
 
+The [September architecture review](./review/README.md) compares these ownership
+claims with the implementation and groups open decisions into four categories.
+It is a proposed review, not a replacement architecture decision.
+
 The workbench refactor covers the application shell and the shared presentation
 of domain screens. React 19, HeroUI v3, and Tailwind v4 provide the control and
 styling foundation. Golden Layout is the default shell; classic mode uses the

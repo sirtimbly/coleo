@@ -4,6 +4,10 @@ See [ADR-004](../../../../.project/decisions/004-shadcn-components.md) for the
 current architecture and [the workbench guide](../../../../docs/workbench/README.md)
 for the migration record. This document covers adapter implementation rules.
 
+The [September architecture review](../../../../docs/workbench/review/README.md)
+records implementation gaps and proposed directions. Its coupling refactors
+remain unapproved and unimplemented.
+
 This folder owns reusable application-shell behavior:
 
 - stable resource and projection contracts;
