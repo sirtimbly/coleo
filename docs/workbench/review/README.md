@@ -33,6 +33,7 @@ framework before another application needs it.
 
 - [The bench: tools and product recipes](./bench.md).
 - [The signal desk: live updates and recovery](./signal-desk.md).
+- [The notebook: profile ownership and save consistency](./notebook.md).
 
 Findings distinguish observed code from failure scenarios inferred from it.
 Priorities describe user impact: P1 is potential lost state or incorrect profile
