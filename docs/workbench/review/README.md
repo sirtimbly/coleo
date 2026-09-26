@@ -32,6 +32,7 @@ framework before another application needs it.
 ## Reading the evidence
 
 - [The bench: tools and product recipes](./bench.md).
+- [The signal desk: live updates and recovery](./signal-desk.md).
 
 Findings distinguish observed code from failure scenarios inferred from it.
 Priorities describe user impact: P1 is potential lost state or incorrect profile
