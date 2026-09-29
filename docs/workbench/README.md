@@ -9,6 +9,13 @@ explains its implementation; the dated entries below preserve migration history.
 
 ## Current architecture (2026-09-21)
 
+The [September architecture review](./review/README.md) compares these ownership
+claims with the implementation. Its [implementation plan](./review/implementation-plan.md)
+records the direction selected on September 29: Messaging first, independent
+panels, portable resource models, semantic toolbars, and retirement of classic
+mode. Those are planned changes; the current-implementation description below
+continues to describe the reviewed code until that work lands.
+
 The workbench refactor covers the application shell and the shared presentation
 of domain screens. React 19, HeroUI v3, and Tailwind v4 provide the control and
 styling foundation. Golden Layout is the default shell; classic mode uses the
