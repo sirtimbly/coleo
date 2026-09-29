@@ -1,3 +1,4 @@
+import { acquirePlanEvaluation } from "../../project-setup/evaluation-lock";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -74,12 +75,16 @@ describe("project setup routes", () => {
 	let app: Hono<{ Variables: { db: Database } }>;
 	let formatterGuidance: string | undefined;
 	let formatterError: string | undefined;
+	let formatterCalls = 0;
+	let formatterEffect: (() => Promise<void>) | undefined;
 
 	beforeEach(async () => {
 		root = await mkdtemp(join(tmpdir(), "coleo-project-setup-api-"));
 		db = createTestDb();
 		formatterGuidance = undefined;
 		formatterError = undefined;
+		formatterCalls = 0;
+		formatterEffect = undefined;
 		app = new Hono<{ Variables: { db: Database } }>();
 		app.use("*", async (c, next) => {
 			c.set("db", db);
@@ -90,6 +95,8 @@ describe("project setup routes", () => {
 			workspace: new LocalWorkspaceAccess(root),
 			coleoDir: join(root, ".coleo"),
 			formatter: async (content, _sourcePath, guidance) => {
+				formatterCalls += 1;
+				await formatterEffect?.();
 				formatterGuidance = guidance;
 				return {
 				mode: "structured",
@@ -100,6 +107,51 @@ describe("project setup routes", () => {
 				};
 			},
 		}));
+	});
+
+	it("rejects stale editor content before calling the model", async () => {
+		const workspace = new LocalWorkspaceAccess(root);
+		await workspace.writeText(".project/plan.md", "Newer plan from Brain");
+		const response = await app.request("/api/project-setup/prepare", {
+			method: "POST", headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ sourcePath: ".project/plan.md", content: "Old editor text", expectedHash: "stale" }),
+		});
+		expect(response.status).toBe(409);
+		expect(formatterCalls).toBe(0);
+		expect((await workspace.readText(".project/plan.md"))?.content).toBe("Newer plan from Brain");
+		const release = await acquirePlanEvaluation(join(root, ".coleo"));
+		expect(release).not.toBeNull();
+		release?.();
+	});
+
+	it("does not prepare or regenerate while the Brain owns evaluation", async () => {
+		const release = await acquirePlanEvaluation(join(root, ".coleo"));
+		try {
+			for (const [path, body] of [
+				["prepare", { sourcePath: ".project/plan.md", content: "Plan", expectedHash: null }],
+				["regenerate-tasks", { explanation: "Reorder work" }],
+			] as const) {
+				const response = await app.request(`/api/project-setup/${path}`, {
+					method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+				});
+				expect(response.status).toBe(409);
+				expect(await response.text()).toContain("Another plan evaluation is running");
+			}
+			expect(formatterCalls).toBe(0);
+		} finally { release?.(); }
+	});
+
+	it("does not overwrite a destination edited during preparation from another source file", async () => {
+		const workspace = new LocalWorkspaceAccess(root);
+		await workspace.writeText(".project/plan.md", "Existing canonical plan");
+		formatterEffect = async () => { await workspace.writeText(".project/plan.md", "External edit during evaluation"); };
+		const response = await app.request("/api/project-setup/prepare", {
+			method: "POST", headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ sourcePath: ".project/brief.md", content: "Build the first release", expectedHash: null }),
+		});
+		expect(response.status).toBe(400);
+		expect(formatterCalls).toBe(1);
+		expect((await workspace.readText(".project/plan.md"))?.content).toBe("External edit during evaluation");
 	});
 
 	it("returns formatter diagnostics when prepare uses structured fallback", async () => {

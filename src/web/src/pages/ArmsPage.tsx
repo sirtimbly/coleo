@@ -1427,7 +1427,7 @@ export function ArmsPage() {
 
 							<div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border bg-surface-secondary/60 px-4 py-3">
 								<span className="text-xs text-muted-foreground">
-									{spawningArmId !== null ? `Starting ${spawnModal.name}…` : spawnBlocker || `Ready to spawn on ${selectedSpawnAgent?.hostname}.`}
+									{spawningArmId !== null ? `Checking model access and starting ${spawnModal.name}…` : spawnBlocker || `A small model request checks access on ${selectedSpawnAgent?.hostname} before starting.`}
 								</span>
 								<div className="flex gap-2">
 									<Button variant="ghost" onPress={closeSpawnModal}>
@@ -1444,7 +1444,7 @@ export function ArmsPage() {
 										) : (
 											<Play className="h-4 w-4" />
 										)}
-										{spawningArmId !== null ? "Starting..." : "Spawn Arm"}
+										{spawningArmId !== null ? "Checking & starting…" : "Spawn Arm"}
 									</Button>
 								</div>
 							</div>

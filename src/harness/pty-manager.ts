@@ -152,6 +152,9 @@ export class PTYManager {
    * Write text to the PTY
    */
   write(session: PTYSession, text: string): void {
+    // bun-pty cannot create a native pointer for an empty buffer. Blank lines
+    // in multiline prompts are valid; their separators are written separately.
+    if (text.length === 0) return;
     session.pty.write(text);
   }
 

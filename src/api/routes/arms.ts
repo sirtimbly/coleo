@@ -5,7 +5,10 @@
  */
 import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
+import { subjectToken } from "../../nats/subject-token";
 import { HttpError } from "../middleware";
+import { isSupportedHarness, UnsupportedHarnessError } from "../../harness/supported";
+import { isModelCheckFailure, ModelCheckError } from "../../harness/model-check-error";
 import { getGlobalHarnessManager } from "../../harness";
 import { broadcast } from "../websocket";
 import { loadConfig, getColeoDir, getRandomPreferredModel } from "../../config";
@@ -31,6 +34,10 @@ interface ArmsContext {
   Variables: {
     db: Database;
   };
+}
+
+function requireSupportedHarness(harness: unknown): void {
+  if (!isSupportedHarness(harness)) throw HttpError.badRequest(new UnsupportedHarnessError().message);
 }
 
 const AUTO_AGENT_ID = `agent-${hostname()}-autostart`;
@@ -548,7 +555,7 @@ function logActivity(_db: Database, actor: string, action: string, target?: stri
   // Publish to JetStream if initialized
   if (eventStore.isInitialized()) {
     const subject = resolvedTarget 
-      ? `coleo.events.arm.${resolvedTarget}.${action}`
+      ? `coleo.events.arm.${subjectToken(resolvedTarget)}.${action}`
       : `coleo.events.api.${action}`;
     
     eventStore.publishEvent(subject, {
@@ -1331,7 +1338,8 @@ export function createArmsRoutes() {
     const now = new Date().toISOString();
 
     // Use template values, then body values, then config defaults
-    const harness = body.harness || template?.harness || defaults.harness;
+    const harness = body.harness ?? template?.harness ?? defaults.harness;
+    requireSupportedHarness(harness);
     const provider = body.provider || template?.provider || defaults.provider;
     const model = body.model || template?.model || defaults.model;
     const contextBudget = body.contextBudget || template?.contextBudget || defaults.contextBudget;
@@ -1425,6 +1433,7 @@ export function createArmsRoutes() {
       values.push(body.domain);
     }
     if (body.harness !== undefined) {
+      requireSupportedHarness(body.harness);
       updates.push("harness = ?");
       values.push(body.harness);
     }
@@ -1674,6 +1683,8 @@ export function createArmsRoutes() {
       allowLocalFallback?: boolean;
     }>();
 
+    if (body.harness !== undefined) requireSupportedHarness(body.harness);
+
     // Check if arm exists (include runtime metadata for recovery)
     let row = db.query("SELECT id, name, domain, harness, status, provider, model, port, pid, session_id, agent_id, host, context_budget, workdir, last_activity_at, last_heartbeat, last_output_at, current_task_id, current_task_subject, config FROM arms WHERE id = ?").get(id) as {
       id: string;
@@ -1716,7 +1727,8 @@ export function createArmsRoutes() {
       }
 
       const now = new Date().toISOString();
-      const harness = body.harness || template?.harness || defaults.harness;
+      const harness = body.harness ?? template?.harness ?? defaults.harness;
+      requireSupportedHarness(harness);
       const provider = body.provider || template?.provider || defaults.provider;
       const model = body.model || template?.model || defaults.model;
       const contextBudget = template?.contextBudget || defaults.contextBudget;
@@ -1771,6 +1783,8 @@ export function createArmsRoutes() {
     // Load config for defaults
     const config = await loadConfig();
     const defaults = config.defaults;
+
+    requireSupportedHarness(row.harness);
 
     // Use body > arm record > random preferred model > config defaults
     let provider = body.provider || row.provider;
@@ -2111,6 +2125,10 @@ export function createArmsRoutes() {
         });
 
         if (!response.success) {
+          if (isModelCheckFailure(response)) throw HttpError.badRequest(response.error || "Model access check failed");
+          if (response.error?.startsWith("Command timed out after ")) {
+            throw new HttpError(504, `The Arm Host did not confirm startup for ${provider}/${model}: ${response.error}. Its connection may have been interrupted. Check the arm's status before retrying; startup may still have completed.`);
+          }
           throw new Error(response.error || "Agent spawn failed");
         }
 
@@ -2165,6 +2183,7 @@ export function createArmsRoutes() {
             const { agentHost, response } = await spawnOnAgent(agentId);
             return persistDistributedSpawn(agentId, agentHost, response);
           } catch (err) {
+            if (err instanceof HttpError) throw err;
             const message = err instanceof Error ? err.message : String(err);
 
             const retryableDistributedFailure =
@@ -2193,6 +2212,7 @@ export function createArmsRoutes() {
                   const { agentHost, response } = await spawnOnAgent(retryAgentId);
                   return persistDistributedSpawn(retryAgentId, agentHost, response);
                 } catch (retryErr) {
+                  if (retryErr instanceof HttpError) throw retryErr;
                   const retryMessage = retryErr instanceof Error ? retryErr.message : String(retryErr);
                   console.warn(
                     `[spawn] Retry after evicting agent ${agentId} failed for ${id}: ${retryMessage}`,
@@ -2276,6 +2296,7 @@ export function createArmsRoutes() {
         model,
       });
     } catch (err) {
+      if (err instanceof ModelCheckError) throw HttpError.badRequest(err.message);
       const message = err instanceof Error ? err.message : String(err);
       throw HttpError.internal(`Failed to spawn arm: ${message}`);
     }
@@ -2326,6 +2347,8 @@ export function createArmsRoutes() {
     if (!row) {
       throw HttpError.notFound(`Arm not found: ${id}`);
     }
+
+    requireSupportedHarness(row.harness);
 
     const config = await loadConfig();
     const provider = body.provider || row.provider || config.defaults.provider;
@@ -2475,6 +2498,7 @@ export function createArmsRoutes() {
           });
 
           if (!response.success) {
+            if (isModelCheckFailure(response)) throw HttpError.badRequest(response.error || "Model access check failed");
             throw HttpError.internal(response.error || "Failed to restart arm on agent");
           }
 
@@ -2633,6 +2657,9 @@ export function createArmsRoutes() {
       provider,
       model,
       initialPrompt: undefined,
+    }).catch((error: unknown) => {
+      if (error instanceof ModelCheckError) throw HttpError.badRequest(error.message);
+      throw error;
     });
 
     const now = new Date().toISOString();
@@ -2671,6 +2698,10 @@ export function createArmsRoutes() {
   app.post("/:id/kill", async (c) => {
     const db = c.get("db");
     const id = c.req.param("id");
+    const expectedVersion = c.req.header("X-Coleo-Expected-Version");
+    if (expectedVersion && (db.query("SELECT updated_at FROM arms WHERE id=?").get(id) as { updated_at: string } | null)?.updated_at !== expectedVersion) {
+      throw new HttpError(409, "Arm changed since evaluation");
+    }
 
     // Check if arm exists and get agent info
     const row = db.query("SELECT id, agent_id FROM arms WHERE id = ?").get(id) as { id: string; agent_id: string | null } | null;
@@ -2998,7 +3029,7 @@ export function createArmsRoutes() {
       host: row.host,
     });
     if (distributedAgentId) {
-      const { snapshot } = await refreshDistributedRuntimeFromAgent(
+      const { snapshot, confirmed } = await refreshDistributedRuntimeFromAgent(
         db,
         id,
         distributedAgentId,
@@ -3010,7 +3041,11 @@ export function createArmsRoutes() {
           lastActivityAt: null,
         },
       );
-      const hasSession = !!(snapshot.sessionId || snapshot.port);
+      // PTY harnesses have no HTTP port or API session ID. A live runtime
+      // confirmed by its owning agent is sufficient for those harnesses.
+      const hasSession = !!(snapshot.sessionId || snapshot.port) || (
+        confirmed && !!snapshot.pid && snapshot.status !== "stopped" && snapshot.status !== "error"
+      );
 
       return c.json({
         state: mapDistributedStatusToHarnessState(snapshot.status),
@@ -3504,7 +3539,7 @@ export function createArmsRoutes() {
           try {
             const pollUntil = new Date();
             const events = await eventStore.queryEvents({
-              subject: `coleo.events.arm.${id}.>`,
+              subject: `coleo.events.arm.${subjectToken(id)}.>`,
               since: lastPollTime,
               until: pollUntil,
               limit: 100,
@@ -3614,6 +3649,10 @@ export function createArmsRoutes() {
     if (!body.prompt) {
       throw HttpError.badRequest("prompt is required");
     }
+    const expectedVersion = c.req.header("X-Coleo-Expected-Version");
+    if (expectedVersion && (db.query("SELECT updated_at FROM arms WHERE id=?").get(id) as { updated_at: string } | null)?.updated_at !== expectedVersion) {
+      throw new HttpError(409, "Arm changed since evaluation");
+    }
 
     // Check if arm exists
     const row = db.query("SELECT id, status, planning_blocked, agent_id, harness, host, pid, port, provider, model FROM arms WHERE id = ?").get(id) as {
@@ -3693,7 +3732,7 @@ export function createArmsRoutes() {
         );
         if (!response.success) {
           return c.json(
-            { error: `Arm ${id} is currently unreachable on distributed agent ${distributedAgentId}. Retry shortly.` },
+            { error: `Prompt delivery to Arm ${id} on agent ${distributedAgentId} failed: ${response.error || "Agent did not accept the prompt"}` },
             503,
           );
         }

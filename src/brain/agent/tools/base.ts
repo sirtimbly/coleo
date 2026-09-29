@@ -4,12 +4,18 @@
 
 import type { BrainDb } from "../../db-client";
 import type { WorkspaceAccess } from "../../../workspace";
+import type { BrainEventPublisher } from "../../brain-api-client";
 
 export interface ToolContext {
   db: BrainDb;
   projectRoot: string;
   coleoDir: string;
   workspace?: WorkspaceAccess;
+  /**
+   * API-boundary event publisher. When absent, tools skip event
+   * publication (previous best-effort behavior without JetStream).
+   */
+  publishEvent?: BrainEventPublisher;
 }
 
 export interface ToolResult<T = unknown> {

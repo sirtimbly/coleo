@@ -3,6 +3,7 @@ import { startServer } from "../../api";
 import { ensureLocalNatsForServe } from "../local-nats";
 import {
 	startService,
+	registerServiceProcess,
 	stopService,
 	restartService,
 	getServiceStatus,
@@ -27,6 +28,7 @@ export function registerServeCommand(program: Command): void {
 				port: options.port ? parseInt(options.port, 10) : undefined,
 				host: options.host,
 			});
+			await registerServiceProcess("server");
 		});
 
 	// Start in background

@@ -7,6 +7,7 @@
  * - disabled: No claim enforcement, parallel writes allowed
  */
 
+import { subjectToken } from "../nats/subject-token";
 import { openDatabase, type Database } from "../db";
 import { join } from "path";
 import { getColeoDir } from "../config";
@@ -165,7 +166,7 @@ export function autoClaimFile(
     
     // Log the activity to JetStream
     if (eventStore.isInitialized()) {
-      eventStore.publishEvent(`coleo.events.arm.${armId}.auto_claim_file`, {
+      eventStore.publishEvent(`coleo.events.arm.${subjectToken(armId)}.auto_claim_file`, {
         type: "auto_claim_file",
         armId,
         data: { filePath, claim_type: claimType },

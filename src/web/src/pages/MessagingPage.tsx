@@ -350,9 +350,10 @@ function MessagingCollectionPage({ projection }: { projection: "inbox" | "mail" 
 						.map((event, index) => projectRecentEvent(event, index)),
 				];
 		const durableTaskIds = new Set(workbenchInbox
-			.filter((record) => record.resource.kind === "task")
+			.filter((record) => record.source === "task")
 			.map((record) => record.resource.id));
 		const focused = merged.filter((entry) => {
+			if (entry.item.id.startsWith("swarm:")) return true;
 			if (!entry.item.resourceId || !durableTaskIds.has(entry.item.resourceId)) return true;
 			return entry.item.id === `task:${entry.item.resourceId}` || entry.item.id.startsWith("status:");
 		});

@@ -1,4 +1,5 @@
 import { RetentionPolicy, StorageType, DeliverPolicy, AckPolicy, ReplayPolicy } from 'nats';
+import { subjectToken } from "./subject-token";
 import { VERSION, NATS_SCHEMA_VERSION } from '../version';
 import type {
   JetStreamClient,
@@ -224,7 +225,7 @@ export class EventStore implements IEventStore {
 
   async getArmEvents(armId: string, limit: number = 50, since?: Date): Promise<EventData[]> {
     return this.queryEvents({
-      subject: `coleo.events.arm.${armId}.>`,
+      subject: `coleo.events.arm.${subjectToken(armId)}.>`,
       limit,
       since,
       latest: true,
@@ -310,7 +311,7 @@ export class EventStore implements IEventStore {
 
   async reconstructTaskState(taskId: string, options?: StateReconstructionOptions): Promise<TaskState> {
     const events = await this.queryEvents({
-      subject: `coleo.events.task.${taskId}.*`,
+      subject: `coleo.events.task.${subjectToken(taskId)}.*`,
       limit: options?.maxEvents || 1000,
     });
 
@@ -363,7 +364,7 @@ export class EventStore implements IEventStore {
 
   async reconstructArmState(armId: string, options?: StateReconstructionOptions): Promise<ArmState> {
     const events = await this.queryEvents({
-      subject: `coleo.events.arm.${armId}.*`,
+      subject: `coleo.events.arm.${subjectToken(armId)}.*`,
       limit: options?.maxEvents || 500,
     });
 
@@ -424,7 +425,7 @@ export class EventStore implements IEventStore {
     lastActivity: string | null;
   }> {
     const events = await this.queryEvents({
-      subject: `coleo.events.arm.${armId}.*`,
+      subject: `coleo.events.arm.${subjectToken(armId)}.*`,
       since,
     });
 

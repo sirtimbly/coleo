@@ -736,9 +736,12 @@ export function createBugsRoutes() {
     params.push(id);
 
     try {
-      const result = db.run(`UPDATE bugs SET ${updates.join(", ")} WHERE id = ?`, params);
+      const expectedVersion = c.req.header("X-Coleo-Expected-Version");
+      if (expectedVersion) params.push(expectedVersion);
+      const result = db.run(`UPDATE bugs SET ${updates.join(", ")} WHERE id = ?${expectedVersion ? " AND updated_at = ?" : ""}`, params);
 
       if (result.changes === 0) {
+        if (expectedVersion) throw new HttpError(409, "Bug changed since evaluation");
         throw HttpError.notFound("Bug not found");
       }
 

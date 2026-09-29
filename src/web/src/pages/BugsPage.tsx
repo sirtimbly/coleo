@@ -618,7 +618,7 @@ export function BugsPage() {
 	}, [queryClient]);
 	const bugCardCollection = (
 		<AdaptiveCardCollection
-			items={filteredBugs}
+			projectedItems={filteredBugs}
 			columns={display.cardColumns}
 			presentation={display.cardPresentation}
 			getKey={(bug) => bug.id}

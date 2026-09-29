@@ -5,6 +5,7 @@
  */
 import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
+import { subjectToken } from "../../nats/subject-token";
 import { HttpError } from "../middleware";
 import { broadcast } from "../websocket";
 import { withTransaction } from "../../db/transactions";
@@ -12,6 +13,8 @@ import { eventStore } from "../../nats/jetstream";
 import { generateKeyBetween } from "../../lib/fractional-indexing";
 import { getServerWorkspaceAccess } from "../workspace-access";
 import { prepareTaskFromDiscussion } from "../services/task-preparation";
+import { createPreparedTask, activateTaskHandoff } from "../services/task-handoff";
+import { preparedTaskRequestSchema } from "../../types/task-handoff";
 import {
 	compileResourceListFilters,
 	matchesResourceListFilters,
@@ -283,7 +286,7 @@ function logActivity(
 ): void {
 	if (eventStore.isInitialized()) {
 		const subject = target
-			? `coleo.events.task.${target}.${action}`
+			? `coleo.events.task.${subjectToken(target)}.${action}`
 			: `coleo.events.api.${action}`;
 
 		eventStore
@@ -680,6 +683,15 @@ export function createTasksRoutes() {
 		return c.json({ bin: typedBin, timeZone, start: startIso, end: endIso, buckets });
 	});
 
+	/** Atomically prepare a draft and queue its handoff for Brain activation. */
+	app.post("/prepared", async (c) => {
+		const parsed = preparedTaskRequestSchema.safeParse(await c.req.json());
+		if (!parsed.success) throw HttpError.badRequest(parsed.error.issues.map((issue) => issue.message).join("; "));
+		const result = createPreparedTask(c.get("db"), parsed.data);
+		broadcast("tasks", "task.handoff_queued", { taskId: result.task.id, handoffId: result.handoff.id });
+		return c.json(result, 201);
+	});
+
 	/**
 	 * Prepare a detailed task definition from a task's discussion history.
 	 * POST /api/tasks/:id/prepare
@@ -700,6 +712,87 @@ export function createTasksRoutes() {
 		});
 
 		return c.json({ prepared });
+	});
+
+	/**
+	 * Queue a prepared task for Brain handoff. This intentionally leaves the
+	 * task in draft status; only the Brain's dependency-aware activation route
+	 * can make it eligible for arm assignment.
+	 * POST /api/tasks/:id/handoff
+	 */
+	app.post("/:id/handoff", async (c) => {
+		const db = c.get("db");
+		const taskId = c.req.param("id");
+		const existing = db.query("SELECT id, status FROM tasks WHERE id = ?").get(taskId) as
+			{ id: string; status: TaskStatus } | null;
+		if (!existing) throw HttpError.notFound(`Task not found: ${taskId}`);
+		if (!["draft", "pending"].includes(existing.status)) {
+			throw HttpError.badRequest("Only draft or pending tasks can be handed off");
+		}
+
+		const body = await c.req.json<{
+			prepared?: Record<string, unknown>;
+			preparedBy?: string;
+		}>();
+		if (body.prepared !== undefined &&
+			(!body.prepared || typeof body.prepared !== "object" || Array.isArray(body.prepared))) {
+			throw HttpError.badRequest("prepared must be an object");
+		}
+		const now = new Date().toISOString();
+		const handoffId = `handoff-${crypto.randomUUID()}`;
+		const preparedBy = body.preparedBy?.trim() || null;
+		const payload = JSON.stringify(body.prepared ?? {});
+		const prior = db.query("SELECT * FROM task_handoffs WHERE task_id = ?").get(taskId) as {
+			id: string; status: string; task_id: string; prepared_by: string | null;
+			prepared_at: string; queued_at: string; activated_at: string | null; payload: string;
+		} | null;
+		if (prior && prior.status === "queued") {
+			// Retain queue identity while allowing incomplete preparation to be repaired.
+			if (body.prepared !== undefined) {
+				db.run("UPDATE task_handoffs SET payload = ?, prepared_by = COALESCE(?, prepared_by), prepared_at = ? WHERE id = ?",
+					[payload, preparedBy, now, prior.id]);
+			}
+			return c.json({ handoff: { id: prior.id, taskId, status: prior.status, queuedAt: prior.queued_at } }, 200);
+		}
+		if (prior) {
+			db.run("DELETE FROM task_handoffs WHERE task_id = ?", [taskId]);
+		}
+		db.run(
+			`INSERT INTO task_handoffs
+			 (id, task_id, status, prepared_by, prepared_at, queued_at, payload)
+			 VALUES (?, ?, 'queued', ?, ?, ?, ?)`,
+			[handoffId, taskId, preparedBy, now, now, payload],
+		);
+		broadcast("tasks", "task.handoff_queued", { taskId, handoffId });
+		return c.json({ handoff: { id: handoffId, taskId, status: "queued", queuedAt: now } }, 202);
+	});
+
+	/** List queued handoffs. Selection does not activate or assign work. */
+	app.get("/handoff", (c) => {
+		const db = c.get("db");
+		const rows = db.query(
+			`SELECT h.id, h.task_id, h.status, h.prepared_by, h.prepared_at, h.queued_at, h.payload,
+				t.subject, t.status AS task_status, t.dependency_blocked
+			 FROM task_handoffs h JOIN tasks t ON t.id = h.task_id
+			 WHERE h.status = 'queued' ORDER BY h.queued_at ASC`,
+		).all() as Array<Record<string, unknown>>;
+		return c.json({ handoffs: rows.map((row) => ({
+			id: row.id, taskId: row.task_id, status: row.status, subject: row.subject,
+			preparedBy: row.prepared_by, preparedAt: row.prepared_at, queuedAt: row.queued_at,
+			payload: JSON.parse(String(row.payload || "{}")), taskStatus: row.task_status,
+			dependencyBlocked: row.dependency_blocked === 1,
+		})) });
+	});
+
+	/**
+	 * Brain-only handoff activation. Dependencies are checked transactionally so
+	 * queueing and assignment remain distinct operations.
+	 */
+	app.post("/handoff/:id/activate", async (c) => {
+		const handoffId = c.req.param("id");
+		const activated = activateTaskHandoff(c.get("db"), handoffId);
+		broadcast("tasks", "task.handoff_activated", { taskId: activated.taskId, handoffId });
+		return c.json({ handoff: { id: handoffId, ...activated, status: "activated" } });
 	});
 
 	/**
@@ -1537,10 +1630,13 @@ export function createTasksRoutes() {
 		values.push(now);
 		values.push(id);
 
-		db.run(
-			`UPDATE tasks SET ${updates.join(", ")} WHERE id = ?`,
+		const expectedVersion = c.req.header("X-Coleo-Expected-Version");
+		if (expectedVersion) values.push(expectedVersion);
+		const updateResult = db.run(
+			`UPDATE tasks SET ${updates.join(", ")} WHERE id = ?${expectedVersion ? " AND updated_at = ?" : ""}`,
 			values as (string | number | null)[],
 		);
+		if (expectedVersion && updateResult.changes === 0) throw new HttpError(409, "Task changed since evaluation");
 
 		let planStatusSynced: boolean | null = null;
 		const planStatus = body.status === "pending" || body.status === "completed" || body.status === "cancelled"
@@ -1663,7 +1759,7 @@ export function createTasksRoutes() {
 				};
 
 				eventStore
-					.publishEvent(`coleo.events.task.${id}.${eventType}`, {
+					.publishEvent(`coleo.events.task.${subjectToken(id)}.${eventType}`, {
 						type: eventType,
 						armId: row.assigned_to || existing.assigned_to || undefined,
 						data,
@@ -1676,7 +1772,7 @@ export function createTasksRoutes() {
 				const eventArmId = row.assigned_to || existing.assigned_to;
 				if (eventArmId) {
 					eventStore
-						.publishEvent(`coleo.events.arm.${eventArmId}.${eventType}`, {
+						.publishEvent(`coleo.events.arm.${subjectToken(eventArmId)}.${eventType}`, {
 							type: eventType,
 							armId: eventArmId,
 							data,

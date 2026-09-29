@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { Database } from "bun:sqlite";
 import { Hono } from "hono";
+import { formatErrorResponse } from "../middleware/error";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -91,7 +92,109 @@ describe("arms spawn route auto-creation", () => {
       c.set("db", db);
       return next();
     });
+    app.onError((err, c) => formatErrorResponse(c, err));
     app.route("/api/arms", createArmsRoutes());
+  });
+
+  for (const harness of ["opencode", "opencode-tui", "custom", ""]) {
+    it(`rejects unsupported harness ${JSON.stringify(harness)} before creating an arm`, async () => {
+      for (const url of ["/api/arms", "/api/arms/unsupported/spawn"]) {
+        const response = await app.request(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "unsupported", harness }),
+        });
+        expect(response.status).toBe(400);
+        expect(await response.json()).toMatchObject({ error: expect.stringContaining("opencode-api") });
+        expect(db.query("SELECT id FROM arms WHERE id = 'unsupported'").get()).toBeNull();
+      }
+    });
+  }
+
+  it("rejects unsupported harnesses inherited from templates and saved defaults", async () => {
+    await mkdir(join(tempDir, "arms"), { recursive: true });
+    await writeFile(join(tempDir, "arms", "legacy.toml"), '[arm]\nname = "Legacy"\nharness = "opencode"\n');
+    for (const body of [{ template: "legacy.toml" }, {}]) {
+      if (!("template" in body)) {
+        await writeFile(join(tempDir, "config.toml"), '[defaults]\nharness = "opencode-tui"\n');
+      }
+      const response = await app.request("/api/arms/inherited/spawn", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: expect.stringContaining("opencode-api") });
+      expect(db.query("SELECT id FROM arms WHERE id = 'inherited'").get()).toBeNull();
+    }
+  });
+
+  for (const structured of [true, false]) {
+    it(`shows model-access failures from ${structured ? "current" : "older"} arm hosts without fallback`, async () => {
+      const providerError = "Model check failed for opencode/free-model on this Arm Host: OpenCode's free tier can only be used from within OpenCode";
+      let spawnCalls = 0;
+      const mockArmClient = {
+        findBestAgent: () => ({ agentId: "model-host", hostname: "host", capabilities: ["opencode-api"] }),
+        getAgent: () => ({ agentId: "model-host", hostname: "host" }),
+        spawnArm: async () => {
+          spawnCalls++;
+          return { requestId: "model-check", success: false, error: providerError,
+            ...(structured ? { errorCode: "MODEL_CHECK_FAILED" } : {}) };
+        },
+        // A model rejection must not evict a healthy host or retry elsewhere.
+        listArmsOnAgent: async () => { throw new Error("Unexpected reachability probe after model rejection"); },
+      };
+      getArmClientSpy = spyOn(serverModule, "getArmClient").mockImplementation(() => mockArmClient as never);
+      serverModule.setArmClient(mockArmClient as never);
+      const response = await app.request("/api/arms/model-rejected/spawn", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "opencode", model: "free-model", allowLocalFallback: true }),
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: providerError });
+      expect(spawnCalls).toBe(1);
+      expect(db.query("SELECT pid, session_id FROM arms WHERE id = 'model-rejected'").get())
+        .toEqual({ pid: null, session_id: null });
+    });
+  }
+
+  it("shows an arm-host timeout without retrying an uncertain spawn", async () => {
+    let spawnCalls = 0;
+    const mockArmClient = {
+      findBestAgent: () => ({ agentId: "timeout-host", hostname: "host", capabilities: ["opencode-api"] }),
+      getAgent: () => ({ agentId: "timeout-host", hostname: "host" }),
+      spawnArm: async () => {
+        spawnCalls++;
+        return { requestId: "timeout", success: false, error: "Command timed out after 210000ms" };
+      },
+      listArmsOnAgent: async () => { throw new Error("Do not retry an uncertain spawn"); },
+    };
+    getArmClientSpy = spyOn(serverModule, "getArmClient").mockImplementation(() => mockArmClient as never);
+    serverModule.setArmClient(mockArmClient as never);
+    const response = await app.request("/api/arms/timed-out/spawn", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "kimi-for-coding", model: "kimi-for-coding", allowLocalFallback: true }),
+    });
+    expect(response.status).toBe(504);
+    expect(await response.json()).toEqual({ error: expect.stringContaining("Command timed out after 210000ms") });
+    expect(spawnCalls).toBe(1);
+  });
+
+  it("rejects unsupported profile edits and restarting saved legacy arms", async () => {
+    const now = new Date().toISOString();
+    db.run(`INSERT INTO arms (id, name, domain, harness, status, context_budget, created_at, updated_at, config)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ["legacy", "Legacy", "general", "opencode", "stopped", 100000, now, now, "{}"]);
+    for (const action of ["spawn", "recover"]) {
+      const response = await app.request(`/api/arms/legacy/${action}`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+      });
+      expect(response.status).toBe(400);
+    }
+    const patch = (harness: string) => app.request("/api/arms/legacy", {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ harness }),
+    });
+    expect((await patch("opencode-tui")).status).toBe(400);
+    expect((await patch("opencode-api")).status).toBe(200);
+    expect(db.query("SELECT harness FROM arms WHERE id = 'legacy'").get()).toEqual({ harness: "opencode-api" });
   });
 
   it("exposes planning-gated arms and rejects direct prompts until the gate opens", async () => {
@@ -441,14 +544,14 @@ describe("arms spawn route auto-creation", () => {
     expect(updated?.session_id).toBe("ses_retry");
   });
 
-  it("routes every harness to the remote agent and uses its configured workdir in hosted mode", async () => {
+  it("routes the supported harness to the remote agent and uses its configured workdir in hosted mode", async () => {
     const now = new Date().toISOString();
     db.run(
       `INSERT INTO arms (
         id, name, domain, harness, status, context_budget, current_context_used,
         created_at, updated_at, provider, model, config
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ["remote-only", "Remote Only", "research", "kimi-cli", "starting", 100000, 0, now, now, "kimi", "default", JSON.stringify({})],
+      ["remote-only", "Remote Only", "research", "opencode-api", "starting", 100000, 0, now, now, "kimi", "default", JSON.stringify({})],
     );
     process.env.COLEO_REMOTE_ARMS_ONLY = "1";
     process.env.COLEO_REMOTE_WORKDIR = "/srv/tenant/workspace";
@@ -456,7 +559,7 @@ describe("arms spawn route auto-creation", () => {
 
     const spawnCalls: Array<{ agentId: string; options: { workDir?: string; initialPrompt?: string } }> = [];
     const mockArmClient = {
-      findBestAgent: () => ({ agentId: "remote-agent", hostname: "agent-host", capabilities: ["kimi-cli"], maxArms: 10 }),
+      findBestAgent: () => ({ agentId: "remote-agent", hostname: "agent-host", capabilities: ["opencode-api"], maxArms: 10 }),
       getAgent: () => ({ agentId: "remote-agent", hostname: "agent-host" }),
       spawnArm: async (agentId: string, _armId: string, options: { workDir?: string; initialPrompt?: string }) => {
         spawnCalls.push({ agentId, options });
@@ -849,6 +952,27 @@ describe("arms spawn route auto-creation", () => {
     expect(updated?.session_id).toBe("ses_live_agent");
     expect(updated?.agent_id).toBe("live-agent");
     expect(updated?.host).toBe("recover-host");
+  });
+
+  it.each([true, false])("reports a PTY session only when its host confirms it: %s", async (confirmed) => {
+    const now = new Date().toISOString();
+    db.run(
+      `INSERT INTO arms (id, name, domain, harness, status, context_budget, created_at, updated_at, agent_id, host, pid, config)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ["pty-arm", "PTY Arm", "general", "opencode", "idle", 100000, now, now, "agent-1", "agent-host", 123, "{}"],
+    );
+    const mockArmClient = {
+      getAgentForArm: () => "agent-1",
+      getAgent: () => ({ agentId: "agent-1", hostname: "agent-host" }),
+      getAgents: () => [],
+      getArmState: async () => ({ success: confirmed, data: confirmed ? { status: "idle", pid: 123, port: null, sessionId: null } : undefined }),
+      listArmsOnAgent: async () => ({ success: false }),
+    };
+    getArmClientSpy = spyOn(serverModule, "getArmClient").mockImplementation(() => mockArmClient as never);
+    serverModule.setArmClient(mockArmClient as never);
+    const response = await app.request("http://coleo.test/api/arms/pty-arm/state");
+    expect(response.status).toBe(200);
+    expect((await response.json()).hasSession).toBe(confirmed);
   });
 
   it("forwards interrupt when prompting a distributed arm", async () => {

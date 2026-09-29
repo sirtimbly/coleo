@@ -55,11 +55,21 @@ JWT (Option 2) can be added later when needed without breaking existing clients.
 
 ## Implementation
 
-- API key configured via `OCTOPAI_API_KEY` env var or auto-generated on first run
+- API key configured via `COLEO_API_KEY` env var (or `COLEO_API_TOKEN`
+  as an accepted alias), resolved by `resolveApiKey()` in
+  `src/network-config.ts`, or auto-generated on first run
 - CLI passes key via `X-API-Key` header
 - Web UI stores key in localStorage
 - WebSocket authentication via first message with API key
 - Health endpoint (`/api/health`) is public (no auth required)
+
+## Amendment History
+
+- 2026-09-22: Renamed documented variable from `OCTOPAI_API_KEY` to
+  `COLEO_API_KEY` / `COLEO_API_TOKEN` to match the implementation
+  (`resolveApiKey()`). No code reads `OCTOPAI_API_KEY`; no
+  compatibility alias exists or is required. Approved by human in
+  task `phase0pl-8d7b3d` discussion ("Update ADR-003 yes").
 
 ## Future Considerations
 

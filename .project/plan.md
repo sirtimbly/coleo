@@ -14,37 +14,65 @@ See [requirements.md](./requirements.md) for philosophy, [progressive-planning.m
 4. **Transparency** - All project state in plain text files, version controlled
 5. **Human-centric** - Humans provide requirements; arms execute and report
 
+## Execution Rules
+
+The project is executed progressively. The Brain must read this plan, explicitly referenced sub-plans only, completed task history, status reports, discoveries, blockers, and current repository state before determining the next task.
+
+No task may be assigned until its prerequisites, architecture decisions, environment requirements, file claims, leases, approval gates, and validation inputs are satisfied. Existing filenames, modified files, generated artifacts, checkbox states, or test names are not evidence that implementation is complete until behavior has been inspected and validated.
+
+Tasks must preserve the source-of-truth boundaries established below:
+
+- Human-editable Markdown plans and decisions remain version controlled.
+- Maildir remains the interoperable communication store.
+- SQLite remains the queryable application-state store unless an explicitly approved migration changes a particular boundary.
+- NATS JetStream is used only according to the approved event and messaging migration plan.
+- The API is the authenticated integration boundary for Brain, CLI, Observatory, and persistence operations.
+- Arms remain general-purpose executors. Classification belongs to tasks, not arms.
+- Review, polish, human review, and merge are passes on the original task, not automatically generated child tasks.
+- Comments are passive context and do not directly requeue tasks, assign reviewers, or prompt arms.
+- The single-next-task model remains authoritative; the plan document is the backlog.
+- Evaluation artifacts, fixtures, historical classifications, swarm recommendations, and bakeoff reports are evidence and decision-support data; they do not directly assign work or override lifecycle gates.
+- Evaluation locks must prevent concurrent or stale evaluation runs from changing authoritative project state.
+
+---
+
 ## Phase 0: Planning, Architecture, and Execution Preconditions
 
 This phase establishes the authoritative planning model, resolves architectural conflicts, and verifies repository/runtime assumptions before any feature work is assigned. Existing filenames, modified files, generated artifacts, and tests must not be treated as proof that implementation is complete.
 
-The current workspace contains changes across Cloudflare and hosting entrypoints, onboarding and Arms UI/API code, migration catalog code, image-tag and repository-preparation scripts, end-to-end coverage, onboarding tests, and newly added workspace-startup, arm-host, repository-preparation, and arm-context-defaults modules/tests. These paths are inventory evidence only; their behavior must be inspected and validated before being treated as delivered.
+The current workspace inventory contains Cloudflare and hosting entrypoints, onboarding and Arms UI/API code, migration catalog code, image-tag and repository-preparation scripts, end-to-end coverage, onboarding tests, workspace-startup, arm-host, repository-preparation, and arm-context-defaults modules/tests. It also contains current or newly added swarm evaluation, classification bakeoff, historical-classification, evaluation-lock, adaptive-card-motion, Brain Swarm controls, swarm routes, swarm snapshots, swarm inbox, swarm migrations, and typesafe-AI skill files. These paths are inventory evidence only; their behavior must be inspected and validated before being treated as delivered.
 
-Phase 0 is also the planning gate for all later phases. It must establish the authoritative command set, service topology, persistence boundaries, deployment target, rollback posture, task dependencies, and concurrent-work controls before technical implementation tasks can be claimed.
+The supplied Git porcelain status reports modifications in `.coleo/cache/opencode-models.json`, `.coleo/config.toml`, `.project/plan.md`, `bun.lock`, `package.json`, E2E tests, API routes and tests, Brain files and tests, CLI/config/database/type files, and web pages/components. It reports newly added typesafe-AI skill files, `skills-lock.json`, swarm API, Brain swarm, evaluation, database, project-setup, classification-bakeoff, historical-classification, and adaptive-card-motion files. This status is historical input and must be rechecked live before assignment.
+
+Phase 0 is the planning gate for all later phases. It must establish the authoritative command set, service topology, persistence boundaries, deployment target, rollback posture, task dependencies, evaluation boundaries, and concurrent-work controls before technical implementation tasks can be claimed.
 
 ### Deliverables
 
 - [ ] **Inventory the current implementation before assignment.** Read the complete canonical plan, explicitly linked sub-plans, requirements, decisions, acceptance documents, relevant source modules, tests, configuration, deployment files, and current Git status. Treat `.project/plan.md` and only the sub-plans explicitly referenced from it as authoritative for progressive planning.
-- [ ] **Inspect the current workspace changes before feature assignment.** Review the modified and untracked files reported by Git, including `docker/prepare-repository.sh`, Cloudflare and hosting entrypoints, onboarding routes and tests, migration catalog and arm-context-defaults migration/tests, Cloudflare image-tag and preparation tests, `App.tsx`, `ProjectOnboarding.tsx`, `ArmsPage.tsx`, API helpers, `WorkspaceConnectionNotice`, `WorkspaceStartup`, arm-host hooks/libs/components, and workspace-startup tests. Distinguish verified behavior from merely present files.
+- [x] **Reconcile the inventory snapshot with live repository state.** Re-run `git status --porcelain` immediately before assignment, record whether the workspace remains clean, and preserve the historical inventory commentary as context rather than treating it as a claim that changes are currently present.
+- [ ] **Inspect current workspace changes before feature assignment when present.** Review all modified and untracked files from the fresh Git status, including API, Brain, CLI, config, database, type, web, E2E, evaluation, swarm, project-setup, and skill changes. Distinguish verified behavior from merely present files.
 - [ ] **Record the current baseline.** Run the documented install, typecheck, lint, unit-test, web-build, integration-test, and end-to-end validation commands where available. Record failures, environment prerequisites, changed files, generated files, and known gaps in a status report before assigning feature work.
 - [ ] **Confirm the runtime and primary application stack.** Preserve the existing decisions for Bun, Hono, React/Vite, SQLite, NATS, API-key authentication, and shadcn/ui, and verify conformity with decisions/001, decisions/003, and decisions/004.
 - [ ] **Decide and document the production deployment target.** Compare the existing self-hosting, Docker, Cloudflare, and planned Docker Swarm paths. Record which target is authoritative for production, which targets are local or transitional, and compatibility requirements before production deployment work begins.
-- [ ] **Decide and document vector-search deployment and embedding boundaries.** Before Phase 12 couples production behavior to Qdrant, decide whether Qdrant is approved for the selected deployment target, identify its persistent-volume, authentication, network, backup, retention, access-control, cost, and outage-recovery requirements, and record the approved embedding provider, data-handling restrictions, fallback behavior, and rollback path. Qdrant remains a recommendation rather than an approved production dependency until this decision is recorded.
+- [ ] **Decide and document vector-search deployment and embedding boundaries.** Before Phase 12 couples production behavior to Qdrant, decide whether Qdrant is approved for the selected deployment target, identify persistent-volume, authentication, network, backup, retention, access-control, cost, outage-recovery, data-handling, fallback, and rollback requirements, and record the approved embedding provider.
 - [ ] **Reconcile arm identity, reputation, and governance requirements.** Arms are general-purpose and must not use arm-global reputation or domain routing. Phase 14 governance references reputation-based consensus and reputation tracking. Add an architectural decision resolving this conflict before governance implementation; do not silently preserve arm specialization or reputation-based selection.
 - [ ] **Reconcile task lifecycle models.** Use the branch-centered iterative task lifecycle as the authoritative lifecycle for implementation, review, polish, human review, and merge. Preserve progressive planning’s single-next-task model while ensuring review and polish are passes on the original task rather than generated child tasks.
-- [ ] **Reconcile Agentic Brain boundary descriptions.** Preserve Phase 9’s API-first requirement and resolve the apparent conflict between its diagram/tool descriptions that mention direct SQLite, file system, MCP, and NATS access and the requirement that the Brain Agent must not bypass the verified boundary to access NATS, JetStream, harnesses, task state, or external side effects directly. Record which API or mediated interfaces each Brain tool may use before Agentic Brain implementation begins.
-- [ ] **Reconcile production persistence sequencing.** Document how the Phase 23 PostgreSQL option relates to the Phase 0 SQLite source-of-truth decision, Phase 6 SQLite consolidation, selected production target, migration safety requirements, and any future database portability work. Do not begin PostgreSQL support or treat it as a production prerequisite until the approved production persistence posture is explicit.
-- [ ] **Define source-of-truth boundaries.** Confirm that plan documents remain human-editable and version controlled, Maildir remains the interoperable communication store, SQLite remains the queryable application state store unless an approved event-sourcing migration changes a specific boundary, and NATS JetStream is used only according to the approved migration plan.
+- [ ] **Reconcile Agentic Brain boundary descriptions.** Preserve Phase 9’s API-first requirement and resolve the apparent conflict between descriptions mentioning direct SQLite, file system, MCP, and NATS access and the requirement that the Brain Agent must not bypass the verified boundary to access NATS, JetStream, harnesses, task state, or external side effects directly.
+- [ ] **Reconcile production persistence sequencing.** Document how the Phase 23 PostgreSQL option relates to the Phase 0 SQLite source-of-truth decision, Phase 6 SQLite consolidation, selected production target, migration safety requirements, and future portability work.
+- [ ] **Define source-of-truth boundaries.** Confirm that plan documents remain human-editable and version controlled, Maildir remains the interoperable communication store, SQLite remains the queryable application-state store unless approved otherwise, and NATS JetStream is used only according to the approved migration plan.
 - [ ] **Define task-file dependency and output tracking.** Establish how tasks reference acceptance criteria, decisions, plans, source files, context files, and output files, including verification of outputs before completion.
-- [ ] **Define assignment and approval gates.** No task may be assigned until prerequisites are complete. Represent unresolved dependencies, active leases, file claims, human approval gates, and status-report-created verification or clarification work explicitly.
+- [ ] **Define assignment and approval gates.** No task may be assigned until prerequisites are complete. Represent unresolved dependencies, active leases, file claims, human approval gates, evaluation locks, and status-report-created verification or clarification work explicitly.
 - [ ] **Create or update the canonical status record.** Maintain `.project/status.md` as the human-facing record of current phase, verified capabilities, known gaps, blockers, links to plans and acceptance documents, and validation evidence.
-- [ ] **Define validation and delivery commands.** Identify the authoritative commands for repository installation, formatting, linting, type checking, unit tests, integration tests, browser tests, documentation builds, production builds, migrations, and deployment smoke tests. Record environment variables, services, ports, fixtures, cleanup requirements, and expected outputs.
-- [ ] **Define change isolation and ownership rules.** Confirm branch, worktree, claim, lease, generated-file, migration, and concurrent-edit rules before assigning work to multiple arms.
-- [ ] **Define rollback and migration safety.** Document backup, restore, rollback, dual-write, feature-flag, and failure-recovery expectations for schema, event, deployment, and persistence changes.
-- [ ] **Verify the workspace-startup and repository-preparation contract.** Determine the intended relationship between onboarding, `docker/prepare-repository.sh`, Cloudflare/hosting entrypoints, workspace connection notices, startup state, arm-host discovery, and migration defaults. Add or update documentation and failure-path tests without assuming the newly present files already satisfy the contract.
+- [ ] **Define validation and delivery commands.** Identify authoritative commands for installation, formatting, linting, type checking, unit tests, integration tests, browser tests, documentation builds, production builds, migrations, evaluation runs, and deployment smoke tests. Record environment variables, services, ports, fixtures, cleanup requirements, and expected outputs.
+- [ ] **Define change isolation and ownership rules.** Confirm branch, worktree, claim, lease, generated-file, migration, evaluation-fixture, and concurrent-edit rules before assigning work to multiple arms.
+- [ ] **Define rollback and migration safety.** Document backup, restore, rollback, dual-write, feature-flag, evaluation-data, deployment, and failure-recovery expectations for schema, event, deployment, and persistence changes.
+- [ ] **Verify the workspace-startup and repository-preparation contract.** Determine the intended relationship between onboarding, `docker/prepare-repository.sh`, Cloudflare/hosting entrypoints, workspace connection notices, startup state, arm-host discovery, and migration defaults. Add or update documentation and failure-path tests without assuming newly present files already satisfy the contract.
 - [ ] **Stage status-report foundations before lifecycle implementation.** Define the minimum report schema, durable storage boundary, routing ownership, and malformed-report handling needed by task lifecycle work. Full reporting, Maildir migration, dashboard work, and human-facing aggregation remain Phase 7 deliverables.
-- [ ] **Create an execution dependency map.** Map each phase’s prerequisites, service dependencies, migration dependencies, acceptance evidence, approval gates, and rollback requirements so dependent work cannot start ahead of its foundations.
-- [ ] **Create a verified implementation inventory.** For every completed or in-progress checkbox in this plan, record the evidence source, validation command, relevant tests, runtime conditions, known limitations, and whether the behavior remains verified after the current workspace changes.
+- [ ] **Define evaluation and experiment boundaries.** Specify fixture provenance, dataset versioning, model/provider configuration, deterministic seeds where possible, redaction, cost limits, output retention, reproducibility, human-label handling, comparison metrics, and the rule that evaluation output cannot mutate authoritative tasks, plans, leases, or approvals without an explicit API-mediated action.
+- [ ] **Verify evaluation-lock semantics.** Confirm lock acquisition, expiry, ownership, renewal, stale-lock recovery, cancellation, cleanup, and concurrent-run behavior before any swarm or classification evaluation is used operationally.
+- [ ] **Create an execution dependency map.** Map each phase’s prerequisites, service dependencies, migration dependencies, acceptance evidence, approval gates, rollback requirements, and evaluation dependencies so dependent work cannot start ahead of its foundations.
+- [ ] **Create a verified implementation inventory.** For every completed or in-progress checkbox in this plan, record the evidence source, validation command, relevant tests, runtime conditions, known limitations, and whether the behavior remains verified after current workspace changes.
+- [ ] **Define a clean assignment handoff.** Before the first implementation assignment, publish the verified baseline, unresolved decisions, blocked phases, approved commands, active worktree rules, evaluation constraints, and exact first eligible task in `.project/status.md`.
 
 ### Communication Modes
 
@@ -59,11 +87,11 @@ To keep humans, the Brain, and arms aligned, standardize three primary communica
 - [ ] **Validate versioned NATS payloads at consumer boundaries.** Define supported schema versions, translate supported historical payloads into the current internal form, and retain unsupported messages with an actionable operator error. Test replay of retained messages across upgrades; version badges alone are observational.
 - [ ] **Make message-to-database processing retry-safe.** Commit database changes and durable message deduplication records atomically before acknowledging JetStream messages. Verify duplicate delivery and crash recovery between commit and acknowledgement. Audit database-to-NATS writes for an outbox requirement so committed state cannot lose its event.
 
+---
+
 ## Phase 1: Core Infrastructure and API Boundary
 
 This phase provides the execution substrate and integration boundaries required by every later feature. Phase 0 decisions, repository validation, and the API-owned integration model must precede changes here. The existing foundation is described below as complete in the source plan, but its runtime behavior, tests, and boundary claims remain subject to verification.
-
-The verified API boundary, startup ordering, authentication, migrations, event delivery, and failure behavior are prerequisites for Observatory, task lifecycle, arm-harness, and deployment work. No dependent phase may infer successful implementation from file paths or test names alone.
 
 ### Deliverables
 
@@ -80,8 +108,10 @@ The verified API boundary, startup ordering, authentication, migrations, event d
 - [ ] **Verify onboarding and workspace connection boundaries.** Confirm that onboarding creates or selects the intended project/workspace, that API authentication and connection errors are surfaced clearly, and that startup does not silently use stale or local-only state.
 - [ ] **Verify arm-context default migration behavior.** Validate migration ordering, repeatability, rollback expectations, default values, and compatibility with existing arm records.
 - [ ] **Publish verified boundary evidence.** Update `.project/status.md` with tested service topology, supported startup paths, known limitations, command evidence, and unresolved boundary gaps.
+- [ ] **Add a dependency-aware integration smoke suite.** Start the approved local topology from a clean workspace, run migrations, exercise API, CLI, Brain, ArmAgent, Maildir, WebSocket, and shutdown paths, then clean up all processes and temporary state.
+- [ ] **Verify generated and deployment artifacts.** Confirm that generated configuration, image tags, repository-preparation output, and deployment manifests are reproducible and are not treated as authoritative application state.
 
-### Completed Foundation
+### Historical Foundation Commentary
 
 ### Phase 0: Core Infrastructure
 
@@ -112,33 +142,34 @@ Execution details and phased rollout:
 - `.project/plans/brain-api-boundary-execution-plan.md`
 - `docs/architecture/brain-api-boundary.md`
 
+---
+
 ## Phase 2: Observatory Foundation Verification and Enhancements
 
 The Observatory phase depends on the verified API boundary and core infrastructure. The source plan records Phase 1 as complete, while the following enhancements remain non-blocking and do not retroactively prevent Phase 1 from being considered complete. Each enhancement must be validated through API behavior, UI behavior, and relevant acceptance evidence.
 
-Observatory work consumes authoritative API and WebSocket state. It must not become an alternate source of truth for task, arm, ownership, activity, queue, or startup state. Reusable UI primitives, error boundaries, accessibility behavior, loading states, and responsive behavior should be established before individual surface expansion.
-
 ### Deliverables
 
 - [ ] **Verify the Phase 1 acceptance criteria.** Confirm Hono startup, health behavior, automatic SQLite migrations, arm listing and lifecycle updates, activity timeline, WebSocket reconnect behavior, React/Vite build, client-side routing, CLI proxying, API-key authentication, progressive-planning hooks, and `.project/status.md` evidence.
-- [ ] **Verify the Phase 1 web implementation without assuming changed filenames prove completion.** Inspect the actual behavior of the current adaptive-card, workbench, workspace, page, layout, design-system, and background-asset changes listed by Git status.
-- [ ] **Establish Observatory resilience primitives.** Validate screen error boundaries, workspace connection notices, startup states, retry behavior, loading and empty states, route recovery, and telemetry for client-visible API or WebSocket failures before adding dependent pages.
-- [ ] **Add the Project Plan Viewer.** Provide a file/folder tree of `.project/` and key documents on the left, including `README.md`, `plan.md`, `requirements.md`, `decisions/`, `acceptance/`, and `plans/`. Render the selected Markdown file on the right, allow plan documents to be edited in the browser, show a visible “Last Updated” timestamp derived from git commit metadata or filesystem mtime, and clearly indicate recently changed files.
+- [ ] **Verify the Phase 1 web implementation without assuming changed filenames prove completion.** Inspect the actual behavior of adaptive-card, workbench, workspace, page, layout, design-system, and background-asset changes listed by Git status.
+- [ ] **Establish Observatory resilience primitives.** Validate screen error boundaries, workspace connection notices, startup states, retry behavior, loading and empty states, route recovery, and telemetry for client-visible API or WebSocket failures.
+- [ ] **Add the Project Plan Viewer.** Provide a file/folder tree of `.project/` and key documents on the left, including `README.md`, `plan.md`, `requirements.md`, `decisions/`, `acceptance/`, and `plans/`. Render selected Markdown on the right, allow plan documents to be edited in the browser, show a visible “Last Updated” timestamp derived from git commit metadata or filesystem mtime, and clearly indicate recently changed files.
 - [x] **Enhance the Mail and Message Interface.** Show sent messages from users to the Brain or arms in addition to the current inbox-only view. Provide threaded conversations that include arm responses.
 - [ ] **Enhance the Task List.** Display past completed tasks, the current in-progress task, and the next scheduled or upcoming task. Provide a timeline view with recent activity rather than limiting the interface to a CRUD backlog.
 - [ ] **Add the Arm Viewer Page.** Make every arm clickable from anywhere in the UI, show live arm status and activity, and display the history of arms that have closed or finished in the project. For dead arms, retain only the last 100 activity items, and assign each arm a unique randomly generated color.
-- [ ] **Resolve the arm-metrics API contract.** The prior dedicated arm metrics endpoint task is cancelled below. Before graph work relies on an aggregated metrics endpoint, identify the approved replacement route or routes, define authentication, aggregation windows, retention, polling, cache, and failure behavior, and verify that the cancelled endpoint contract is not reintroduced implicitly.
+- [ ] **Resolve the arm-metrics API contract.** Identify the approved replacement route or routes, define authentication, aggregation windows, retention, polling, cache, and failure behavior, and verify that the cancelled endpoint contract is not reintroduced implicitly.
 - [ ] ~~**Add arm metrics endpoints.** Implement `GET /api/arms/:id/metrics`, `GET /api/arms/:id/context-history`, and `GET /api/arms/:id/cost-history`. The endpoints must provide the data required by the full graph, sparkline, context, and cost views.~~ <!--octopai:status:cancelled-->
-- [ ] **Add Arm Activity and Efficiency Visualization.** Provide a minute-by-minute activity bar graph over a 30-minute window, using stacked or grouped bars with events per minute and leaving gaps for inactive minutes. Distinguish file writes in blue, thinking/reasoning in yellow, tool calls in green, and completed tasks in prominent purple; allow tasks to pile up vertically within a minute bar so activity and efficiency are visible at a glance.
+- [ ] **Add Arm Activity and Efficiency Visualization.** Provide a minute-by-minute activity bar graph over a 30-minute window, using stacked or grouped bars with events per minute and leaving gaps for inactive minutes. Distinguish file writes in blue, thinking/reasoning in yellow, tool calls in green, and completed tasks in prominent purple; allow tasks to pile up vertically within a minute bar.
 - [ ] **Add context usage visualization to arm activity.** Place a higher-resolution context-length line graph below the activity graph, using samples such as every 10–15 seconds. Show context token usage over time, indicate the 80% compression threshold, and shade the warning zone near context limits.
 - [ ] **Add cost visualization to arm activity.** Place a cost or money-usage line graph below the context graph and show a running total of spend over time. Optionally stack input, output, and cache costs, show a dollars-per-hour cost-rate indicator based on recent activity, and show a budget threshold line when configured.
-- [ ] **Source arm cost data from OpenCode.** Use `GET /provider` and `Provider.models[].cost` for model pricing, `AssistantMessage.cost` for per-message cost, and `AssistantMessage.tokens` for input, output, reasoning, and cache read/write usage. The resulting views must help users identify expensive and inexpensive arms, cost spikes during complex reasoning, and the return on investment of different model choices.
+- [ ] **Source arm cost data from OpenCode.** Use `GET /provider` and `Provider.models[].cost` for model pricing, `AssistantMessage.cost` for per-message cost, and `AssistantMessage.tokens` for input, output, reasoning, and cache read/write usage.
 - [ ] **Provide responsive graph views and data feeds.** Show complete 30-minute graphs and legends on the Arms list page, and a compressed sparkline-style view on the Arm Viewer page. Generate graph data from the SSE event stream, poll an aggregated metrics endpoint from the frontend, and continue delivering live list updates through WebSocket events.
 - [ ] **Add Arm Spawning from the Web UI.** Provide a browser form for spawning arms, auto-populate the name input with generated names, allow names to be regenerated, and provide provider and model dropdowns with cost estimates and budget warnings. Show real-time feedback while spawning.
 - [ ] **Add Model Recommendations and Budget Tracking.** Show cost estimates per model, such as GPT-4.1 versus Claude-3.5, based on expected token usage. Warn users about high-cost models when they spawn arms.
 - [ ] **Add Message Queue Visualization.** Add an API endpoint that reports queue depth and processing times, then display real-time queue status with graphs.
-- [ ] **Validate accessibility, responsive layouts, loading states, empty states, error states, reconnect behavior, keyboard navigation, and reduced-motion behavior for the Observatory surfaces.**
+- [ ] **Validate accessibility, responsive layouts, loading states, empty states, error states, reconnect behavior, keyboard navigation, and reduced-motion behavior for Observatory surfaces.**
 - [ ] **Validate API/UI data ownership.** Confirm that the UI does not derive authoritative task, arm, activity, ownership, or queue state from filenames or stale local state.
+- [ ] **Add route, API-contract, and browser-level regression tests** for each Observatory surface, including unavailable API, expired authentication, WebSocket disconnect, stale data, empty collections, and partial startup.
 
 ### Dependencies
 
@@ -146,23 +177,56 @@ Observatory work consumes authoritative API and WebSocket state. It must not bec
 - Phase 1: Core Infrastructure and API Boundary
 - Phase 1 acceptance verification
 
-## Phase 3: Collaborative Planning and Task Refinement
+---
 
-This phase depends on the Observatory API/UI foundation, the canonical plan format, task-file references, progressive-planning semantics, and the branch-centered task lifecycle. It provides human and architect-agent collaboration without turning the UI into a static CRUD backlog or bypassing Brain-controlled assignment.
+## Phase 2A: Evaluation, Classification, and Swarm Foundation
 
-Task preparation must remain distinct from task assignment: preparation may create validated candidate work, while only the Brain’s dependency-aware single-next-task calculation may make work eligible for execution.
+This phase is inserted before task-lifecycle and Agentic Brain work because the workspace contains new evaluation, classification-bakeoff, historical-classification, swarm-runner, swarm-evaluator, swarm persistence, and evaluation-lock paths. Their behavior must be established before evaluation results can influence classification, recommendations, Brain decisions, or operational controls.
+
+Evaluation runs are not authoritative task execution. They must use versioned fixtures, bounded resources, explicit model configuration, durable run identity, and API-owned persistence. Swarm recommendations remain advisory until a later approved integration explicitly applies them through normal dependency, lease, approval, and lifecycle gates.
 
 ### Deliverables
 
-- [ ] **Add a high-performance multi-tabbed grid view.** Support sorting and filtering large numbers of plan items, tasks, and discoveries. The grid must remain usable for the scale covered by the acceptance criteria.
+- [ ] **Inspect and document the swarm architecture.** Review `src/brain/swarm/README.md`, `runner.ts`, `evaluator.ts`, and `types.ts`; define runner inputs, candidate arms/models, prompt construction, result schema, cancellation, failure behavior, and resource limits.
+- [ ] **Inspect and document swarm API boundaries.** Review `src/api/routes/brain-swarm.ts`, `src/api/swarm-inbox.ts`, and `src/api/swarm-snapshot.ts`; verify authentication, authorization, request validation, snapshot consistency, and separation between evaluation results and authoritative task state.
+- [ ] **Verify swarm database migrations and actions.** Review `swarm-evaluations`, `swarm-recommendations`, and `src/db/swarm-actions.ts`; verify migration ordering, idempotence, transactions, retention, deduplication, and restart recovery.
+- [ ] **Verify evaluation locks.** Test exclusive acquisition, lease renewal, expiry, stale-owner recovery, cancellation, lock cleanup, and concurrent acquisition through `src/project-setup/evaluation-lock.ts`.
+- [ ] **Define evaluation data contracts.** Version fixtures, prompts, model configuration, labels, metrics, reports, recommendations, and provenance. Store enough metadata to reproduce each run.
+- [ ] **Define evaluation redaction and safety rules.** Prevent secrets, private credentials, uncontrolled repository mutations, or unapproved external side effects from entering fixtures or evaluation prompts.
+- [ ] **Verify classification bakeoff behavior.** Inspect classifiers, fixtures, report generation, tests, README, and RESULTS files. Confirm that classifier comparisons are reproducible and that reports distinguish measured results from recommendations.
+- [ ] **Verify historical classification behavior.** Inspect history extraction, queries, schema, reports, README, and RESULTS files. Validate representative historical data, missing fields, duplicate records, privacy handling, and report provenance.
+- [ ] **Verify evaluation scripts.** Run `eval-human-history.ts` and `eval-swarm-window.ts` against bounded fixtures or approved data windows, and record cost, latency, failure, and reproducibility evidence.
+- [ ] **Add evaluation API and persistence tests.** Cover malformed requests, unauthorized access, duplicate runs, stale locks, cancellation, partial results, model failure, timeout, restart recovery, and retention.
+- [ ] **Define recommendation application gates.** Recommendations must remain advisory until an explicit authenticated API action validates prerequisites, creates the correct task/pass state, and records the decision and evidence.
+- [ ] **Define swarm inbox and snapshot consistency.** Ensure snapshots identify source revision, evaluation run, data window, model configuration, and timestamp, and cannot be mistaken for live authoritative state.
+- [ ] **Integrate evaluation evidence with `.project/status.md`.** Record dataset/version, command, model/provider, result artifact, known limitations, and whether the result is suitable for operational use.
+- [ ] **Validate dependency order.** No classification routing, Brain task assignment, arm selection, budget enforcement, or governance decision may depend on unverified swarm or bakeoff output.
+- [ ] **Add regression and clean-room evaluation commands.** Ensure evaluation artifacts can be generated from a clean environment without undeclared local files or manual database changes.
+
+### Dependencies
+
+- Phase 0: Planning, Architecture, and Execution Preconditions
+- Phase 1: Core Infrastructure and API Boundary
+- Verified model configuration and data-redaction rules
+
+---
+
+## Phase 3: Collaborative Planning and Task Refinement
+
+This phase depends on the Observatory API/UI foundation, the canonical plan format, task-file references, progressive-planning semantics, and the branch-centered task lifecycle. Task preparation must remain distinct from task assignment: preparation may create validated candidate work, while only the Brain’s dependency-aware single-next-task calculation may make work eligible for execution.
+
+### Deliverables
+
+- [ ] **Add a high-performance multi-tabbed grid view.** Support sorting and filtering large numbers of plan items, tasks, and discoveries.
 - [x] **Add progress visualization.** Show real-time progress tracking, completion status, and sub-task breakdown for plan items and tasks.
 - [x] **Add collaborative discussion UI.** Provide an integrated chat interface for discussing implementation and design for a specific item with an “Architect” agent.
 - [ ] **Add the Task Preparation Agent.** Allow the agent to turn a discussion into a detailed task definition containing context, requirements, and acceptance criteria.
-- [ ] **Add the Task Handoff Mechanism.** Queue prepared tasks for execution by other arms and bridge the planning and execution workflows.
+- [ ] **Add the Task Handoff Mechanism.** Queue prepared tasks for execution by other arms and bridge planning and execution workflows.
 - [ ] **Preserve the planning representation.** Show recent activity, current work, the single next task, and a collaborative planning board without exposing a full speculative backlog as the source of truth.
 - [ ] **Ensure prepared tasks integrate with the canonical plan.** Prepared work must reference its plan item, acceptance criteria, dependencies, context, and outputs before it can appear in the Next Task preview.
-- [ ] **Validate discussion persistence and authorization.** Preserve discussion history per item and prevent unauthorized plan, task, or context changes.
+- [ ] **Validate discussion persistence and authorization.**
 - [ ] **Validate large-collection performance.** Measure sorting, filtering, rendering, updates, and interaction for at least 100 items.
+- [ ] **Validate preparation-to-assignment integration.** Confirm that prepared work cannot bypass dependency, lease, approval, claim, branch, evaluation, or output-verification gates.
 
 ### Acceptance Criteria
 
@@ -172,11 +236,11 @@ Task preparation must remain distinct from task assignment: preparation may crea
 - [ ] Prepared tasks appear in the “Next Task” preview when ready.
 - [ ] Foundational criteria remain covered by [acceptance/phase-1.md](./acceptance/phase-1.md).
 
+---
+
 ## Phase 4: Task Classification and Context
 
-This phase establishes task-level behavior and context while preserving the principle that arms remain general-purpose. It depends on the core Brain/MCP/CLI infrastructure and task representation, but not on permanent arm domains or specialization. Existing context-bundle, discovery, assignment, and discovery API infrastructure must be verified before missing prompt behavior is added.
-
-Classification schemas, context redaction, prompt construction, and tool filtering must be specified before lifecycle assignment begins. The same task metadata must be used consistently by the Brain, API, MCP, harnesses, and Observatory.
+This phase establishes task-level behavior and context while preserving the principle that arms remain general-purpose. It depends on core Brain/MCP/CLI infrastructure, task representation, and verified evaluation contracts, but not on permanent arm domains or specialization.
 
 ### Task Classifications
 
@@ -189,21 +253,24 @@ Classification schemas, context redaction, prompt construction, and tool filteri
 
 ### Deliverables
 
-- [ ] **Implement classification-specific prompt templates.** Create prompts for architect, development, QA, documentation, and other required classifications. Each template must describe expected work and output without assigning permanent specialization to an arm.
-- [ ] **Ensure arms can execute every task classification.** Classification must determine behavior and context rather than arm identity. Verify that any eligible arm can receive and complete each classification.
+- [ ] **Implement classification-specific prompt templates.** Create prompts for architect, development, QA, documentation, and other required classifications.
+- [ ] **Ensure arms can execute every task classification.** Classification must determine behavior and context rather than arm identity.
 - [x] **Verify that arms receive discoveries when tasks are assigned.**
 - [x] **Verify that discoveries are stored in SQLite with FTS5 search.**
 - [x] **Verify that the API provides discovery listing and search.**
-- [ ] **Filter tools by task specialization only as task-context filtering.** Select and filter available tools based on task classification to prevent context overload while preserving general-purpose arms.
+- [ ] **Filter tools by task specialization only as task-context filtering.**
 - [ ] **Ensure classification is task metadata.** Do not add or restore arm-level domain, expertise, or specialization fields used for routing.
 - [ ] **Define classification-specific acceptance and output schemas.**
 - [ ] **Verify context bundles.** Include requirements, decisions, plans, tasks, documentation, discoveries, prior art, acceptance criteria, dependencies, comments, branch state, and relevant files.
-- [ ] **Validate context-size and redaction rules.** Prevent sensitive, irrelevant, duplicate, or stale content from entering prompts.
+- [ ] **Validate context-size and redaction rules.**
+- [ ] **Test classification compatibility across API, MCP, Brain, harness, CLI, and Observatory boundaries.**
+- [ ] **Validate evaluation-backed classifier changes.** Any classifier or prompt change must identify the fixture/version, comparison baseline, metrics, and approval required before operational use.
 
 ### Dependencies
 
 - Phase 0: Planning, Architecture, and Execution Preconditions
 - Phase 1: Core Infrastructure and API Boundary
+- Phase 2A: Evaluation, Classification, and Swarm Foundation
 - Phase 3: Collaborative Planning and Task Refinement
 
 ### Acceptance Criteria
@@ -213,11 +280,13 @@ Classification schemas, context redaction, prompt construction, and tool filteri
 - [x] Discoveries are stored in SQLite with FTS5 search.
 - [x] The API provides discovery listing and search.
 
+---
+
 ## Phase 5: Progressive Planning and Durable Task Lifecycle
 
 This phase makes the canonical plan executable by the Brain while preserving progressive planning’s runtime determination model. It establishes the durable branch-centered lifecycle governing implementation, review, polish, human review, and merge. Dependencies must be parsed before work is assigned, and task state must never be reset by stale or unrelated events.
 
-The Phase 0 status-report foundation is a prerequisite for this phase. Phase 7 completes formal report aggregation, dashboard, and Maildir migration after durable task and pass relationships exist. This sequencing resolves the dependency without weakening the requirement that status reports influence task determination.
+The Phase 0 status-report foundation is a prerequisite. Phase 7 completes formal report aggregation, dashboard, and Maildir migration after durable task and pass relationships exist.
 
 ### Inputs to Task Assignment
 
@@ -238,7 +307,7 @@ IF incomplete AND ready → assign development task
 IF blocked → notify human
 ```
 
-The branch-centered task lifecycle defined below supersedes generation of separate review or polish child tasks. “Verify & polish” work must be recorded as a pass on the original task where that lifecycle applies.
+The branch-centered task lifecycle supersedes generation of separate review or polish child tasks. “Verify & polish” work must be recorded as a pass on the original task where that lifecycle applies.
 
 ### Deliverables
 
@@ -249,31 +318,35 @@ The branch-centered task lifecycle defined below supersedes generation of separa
 - [ ] **Verify completed-task history tracking through the `status_reports` table.**
 - [ ] **Verify status report parsing and influence on tasking.**
 - [ ] **Verify automatic primary and watcher arm assignment when tasks are claimed.**
-- [ ] **Verify consensus updates through the API, allowing arms to submit approvals or rejections and reach quorum.**
-- [ ] **Verify that the `report_dependency` tool captures discovery-based relationships surfaced during execution.**
+- [ ] **Verify consensus updates through the API.**
+- [ ] **Verify that the `report_dependency` tool captures discovery-based relationships.**
 - [ ] **Verify that `### Dependencies` sections are parsed directly from plan phases.**
 - [ ] **Verify that plan dependencies are linked to matching tasks.**
 - [ ] **Verify that new work is marked blocked when prerequisites are unfinished.**
 - [ ] **Verify that architect tasks can be spawned to update plan dependencies when unresolved prerequisites are discovered.**
 - [ ] **Implement the canonical single-next-task calculation.** Read `.project/plan.md`, follow only explicitly referenced sub-plans, inspect completed tasks, status reports, discoveries, open tasks, and blockers, then determine one next task or pass.
-- [ ] **Implement dependency-aware assignment gating.** Do not assign a task until required prerequisites are complete and no human, bug, environment, file-claim, arm/runtime, or active-pass blocker remains.
-- [ ] **Add durable lifecycle storage.** Store task passes, leases, branch references, diff references, and structured decisions. Preserve association between all pass artifacts and the original task.
+- [ ] **Implement dependency-aware assignment gating.**
+- [ ] **Add durable lifecycle storage.** Store task passes, leases, branch references, diff references, and structured decisions.
 - [ ] **Add atomic pass operations.** Implement claim, release, and completion API operations that verify eligibility, arm idleness, lease identity, and task state atomically.
-- [ ] **Require lease identity for completion.** Require matching lease ID, pass ID, task ID, and arm ID in arm completion and review tools and inbox validation. Reject missing, stale, duplicated, expired, unleased, or wrong-arm responses without changing state.
-- [ ] **Make comments passive context.** Human comments must not change blocked-review scheduling or active leases. Generic email replies are comments and do not directly create reviewers, requeue tasks, or prompt arms.
-- [ ] **Correlate email threads and human reviews.** Store durable message-to-task and human-review-request mappings and resolve inbound mail through `In-Reply-To` and `References`.
-- [ ] **Guard dependency reevaluation.** Replace unconditional dependency unblocking with compare-and-set reevaluation that changes readiness only for genuinely dependency-blocked tasks with all prerequisites complete and no active pass.
-- [ ] **Remove the blocked-task reviewer loop.** Stop the periodic reviewer-assignment loop and use Brain task-action scoring with the branch-centered pass model.
-- [ ] **Use passes instead of child tasks.** Stop creating validation, review, and polish child tasks. Convert identifiable existing review child tasks into pass history while preserving comments and activity records.
-- [ ] **Add Brain scoring and merge safeguards.** Score implement, review, polish, human review, merge, wait, and irrelevant outcomes using task, branch, diff, evidence, comments, cost, risk, and confidence; enforce deterministic merge rules.
-- [ ] **Add autonomy metrics.** Track human-review rate, autonomous approval rate, merge success, rework passes, and stale-lease rejection so the target of more than 50% autonomous merged work can be evaluated.
-- [ ] **Add task-file references.** Store acceptance criteria, decisions, plans, source dependencies, context files, and output files for each task.
-- [ ] **Verify task outputs before completion.** Confirm declared output files exist, are valid, correspond to the pass, and are not merely claimed in a report.
-- [ ] **Add integration and concurrency tests.** Cover competing claims, stale leases, dependency races, branch continuity, comments, email correlation, approvals, merge failures, and restart recovery.
+- [ ] **Require lease identity for completion.** Reject missing, stale, duplicated, expired, unleased, or wrong-arm responses without changing state.
+- [ ] **Make comments passive context.** Human comments must not change blocked-review scheduling or active leases.
+- [ ] **Correlate email threads and human reviews.**
+- [ ] **Guard dependency reevaluation.** Use compare-and-set reevaluation that changes readiness only for genuinely dependency-blocked tasks with all prerequisites complete and no active pass.
+- [ ] **Remove the blocked-task reviewer loop.**
+- [ ] **Use passes instead of child tasks.**
+- [ ] **Add Brain scoring and merge safeguards.**
+- [ ] **Add autonomy metrics.** Track human-review rate, autonomous approval rate, merge success, rework passes, and stale-lease rejection.
+- [ ] **Add task-file references.**
+- [ ] **Verify task outputs before completion.**
+- [ ] **Add integration and concurrency tests.**
+- [ ] **Add restart recovery for active passes.**
+- [ ] **Add explicit cancellation and abandonment handling.**
+- [ ] **Ensure evaluation recommendations cannot bypass lifecycle gates.** Applying a recommendation must create auditable API-mediated state transitions.
 
 ### Dependencies
 
 - Phase 0 status-report foundation
+- Phase 2A: Evaluation, Classification, and Swarm Foundation
 - Phase 4: Task Classification and Context
 - Claims system
 - Verified API boundary
@@ -306,22 +379,7 @@ The branch-centered task lifecycle defined below supersedes generation of separa
 | `human_review` | Record structured human approval when requested | Approve, reject, or request follow-up |
 | `merge` | Merge the approved branch and verify it on main | Terminal completion or merge failure |
 
-Each pass records:
-
-- Task
-- Arm or human actor
-- Pass type
-- Branch
-- Base and head commits
-- Diff reference
-- Summary
-- Tests
-- Findings
-- Outcome
-- Start time
-- Completion time
-
-Review and polish history must remain queryable without creating additional queue items.
+Each pass records task, actor, pass type, branch, base and head commits, diff reference, summary, tests, findings, outcome, start time, and completion time.
 
 ### Durable Pass Leasing
 
@@ -337,8 +395,6 @@ Pass assignment uses a durable, single-use lease rather than an advisory reviewe
 - Pass completion and arm release occur in one transaction.
 - Expired leases are reclaimed safely without disturbing newer work.
 
-This replaces the blocked-task reviewer loop and prevents failed persistence from prompting an arm or marking it busy locally. It also prevents stale responses from altering task state.
-
 ### Branch and Diff Continuity
 
 - Each code task has a canonical working branch or branch reference.
@@ -350,15 +406,7 @@ This replaces the blocked-task reviewer loop and prevents failed persistence fro
 
 ### Brain Scoring and Next-Action Selection
 
-The Brain evaluates task-plus-action candidates. Its LLM scoring input includes:
-
-- Task requirements and acceptance criteria.
-- Current status, blockers, dependencies, and priority.
-- Canonical branch state, commits, stored diffs, and test evidence.
-- Implementation, review, polish, human-review, and merge pass history.
-- Human and arm comments, including comments added since the previous pass.
-- Open findings, bugs, discoveries, and related tasks.
-- Model cost, risk, and confidence of prior reviewers.
+The Brain evaluates task-plus-action candidates using requirements, acceptance criteria, blockers, dependencies, branch state, commits, stored diffs, test evidence, pass history, comments, findings, bugs, discoveries, model cost, risk, and confidence.
 
 The Brain produces scores and reasoning for:
 
@@ -397,9 +445,8 @@ Comments are append-only task context, not queue commands.
 
 - Human rejection records feedback, leaves the branch and diff intact, and makes the original task eligible for another implementation or polish pass.
 - Human approval allows the Brain to schedule a merge pass when deterministic checks are satisfied.
-- If a human approves the current work but asks for an additional capability, the Brain completes and merges the current task, then creates a linked follow-up task.
-- The follow-up task references the original task, relevant human comments, branch or commit evidence, and the reason it is separate scope.
-- If the additional request changes the original acceptance criteria rather than adding follow-up scope, the Brain keeps the original task open and schedules another pass.
+- If a human approves current work but asks for an additional capability, the Brain completes and merges the current task, then creates a linked follow-up task.
+- If the additional request changes the original acceptance criteria, the Brain keeps the original task open and schedules another pass.
 
 ### Dependency Completion Safety
 
@@ -409,7 +456,7 @@ Dependency completion is evidence for reevaluation, not permission to reset arbi
 - Automatic readiness updates apply only when the task is actually dependency-blocked and every required dependency is complete.
 - A compare-and-set update verifies expected task state and the absence of an active pass before changing readiness.
 - Dependency completion never clears human, bug, environment, file-claim, or arm/runtime blockers.
-- Concurrent claimed, completed, cancelled, or otherwise changed tasks are not overwritten.
+- Concurrent task transitions are not overwritten.
 - No arm is prompted directly when a dependency completes.
 
 ### Task Completion Flow
@@ -456,11 +503,28 @@ Brain scores next action using branch, diff, tests, history, and comments
 - [ ] Approved additional scope creates a linked follow-up task without keeping completed work open.
 - [ ] More than 50% of merged tasks complete without human review under normal risk policy.
 
+---
+
 ## Phase 6: Technical Debt and Data Consistency
 
 This phase removes duplicated and unsafe persistence/access patterns only after core schema and migration behavior have been verified. JSON fallbacks must remain during the safety transition and must not be deleted before migration verification.
 
-The work should proceed by inventorying active persistence paths, adding shared utilities and tests, migrating call sites incrementally, validating production-equivalent data migration, and only then deleting verified obsolete fallback paths.
+### Deliverables
+
+- [ ] **Audit persistent JSON before removal.** Identify every persistent JSON path, reader, writer, fallback condition, migration path, recovery behavior, and test fixture.
+- [ ] **Create shared database utilities.** Add `src/db/utils.ts`.
+- [ ] **Create safe JSON utilities.** Add `src/utils/json.ts` and use Zod validation.
+- [ ] **Create standardized error utilities.** Add `src/utils/errors.ts`.
+- [ ] **Consolidate duplicate type definitions.** Move shared `OctopaiConfig`, `ArmConfig`, and arm interfaces into `src/types/index.ts`.
+- [ ] **Create activity-logging helpers.** Add `src/utils/activity.ts`.
+- [ ] **Fix API error handling.** Update all six violations in `src/api/routes/agents.ts` at lines 45, 50, 64, 69, 75, and 79, and the violation in `src/api/routes/activity.ts` at line 90, so routes use `HttpError` middleware.
+- [ ] **Validate every JSON parse.** Add schema validation around all `JSON.parse()` operations.
+- [ ] **Replace overly broad types.**
+- [ ] **Reduce duplicated implementation patterns.** Consolidate the 50+ duplicated database connection patterns, 100+ duplicated error-handling patterns, and 100+ duplicated JSON-operation patterns. Target at least a 50% reduction in code duplication.
+- [ ] **Validate production-equivalent migration.** Exercise backup, restore, fallback, upgrade, downgrade, interrupted-migration, and recovery procedures.
+- [ ] **Remove JSON file fallbacks after migration verification.**
+- [ ] **Verify the SQLite single-source-of-truth result.**
+- [ ] **Run dependency and regression validation after each migration slice.**
 
 ### Known Architectural Issues
 
@@ -474,8 +538,6 @@ More than 50 JSON files were found storing state, violating the single-source-of
 - Individual arm states: `.octopai/state/arms/`
 - Shared notes: `.octopai/state/notes/`
 
-Dual SQLite and JSON storage creates a risk of data inconsistency.
-
 The following migrations are complete:
 
 - Brain state was migrated to the `brain_state` table.
@@ -485,31 +547,9 @@ The following migrations are complete:
 - `seenArmIds` was removed as a stored state value and is derived from task assignments.
 - Shared notes were migrated to the `notes` table.
 
-### Deliverables
-
-- [ ] **Audit persistent JSON before removal.** Identify every persistent JSON path, reader, writer, fallback condition, migration path, recovery behavior, and test fixture before deleting any fallback.
-- [ ] **Create shared database utilities.** Add `src/db/utils.ts` to consolidate duplicated database connection and access patterns.
-- [ ] **Create safe JSON utilities.** Add `src/utils/json.ts` for JSON operations and use Zod validation for parsed values.
-- [ ] **Create standardized error utilities.** Add `src/utils/errors.ts` for standardized error handling and middleware integration.
-- [ ] **Consolidate duplicate type definitions.** Move shared `OctopaiConfig`, `ArmConfig`, and arm interfaces into `src/types/index.ts`.
-- [ ] **Create activity-logging helpers.** Add `src/utils/activity.ts` to consolidate repeated activity-logging patterns.
-- [ ] **Fix API error handling.** Update all six violations in `src/api/routes/agents.ts` at lines 45, 50, 64, 69, 75, and 79, and the violation in `src/api/routes/activity.ts` at line 90, so routes use `HttpError` middleware rather than direct error responses.
-- [ ] **Validate every JSON parse.** Add Zod schema validation around all `JSON.parse()` operations.
-- [ ] **Replace overly broad types.** Replace `Record<string, unknown>` with specific interfaces where the data shape is known, reduce inappropriate uses of `unknown`, and remove unsafe `as unknown as` casting chains.
-- [ ] **Reduce duplicated implementation patterns.** Consolidate the 50+ duplicated database connection patterns, 100+ duplicated error-handling patterns, and 100+ duplicated JSON-operation patterns. Target at least a 50% reduction in code duplication.
-- [ ] **Validate production-equivalent migration.** Exercise backup, restore, fallback, upgrade, downgrade, interrupted-migration, and recovery procedures against representative persistent state before fallback removal.
-- [ ] **Remove JSON file fallbacks after migration verification.** Confirm SQLite migrations are complete and fallback files are no longer needed before deleting JSON persistence paths.
-- [ ] **Verify the SQLite single-source-of-truth result.** Ensure all persistent state is in SQLite and no JSON files are used for persistent state.
-
 ### Remaining Migration Work
 
 File fallbacks are currently retained for safety during transition and must be removed only after migration verification.
-
-### Dependencies
-
-- Phase 0: Planning, Architecture, and Execution Preconditions
-- Phase 1: Core Infrastructure and API Boundary
-- Successful migration verification
 
 ### Acceptance Criteria
 
@@ -521,23 +561,24 @@ File fallbacks are currently retained for safety during transition and must be r
 - [ ] All API routes use `HttpError` middleware.
 - [ ] Code duplication is reduced by 50% or more.
 
+---
+
 ## Phase 7: Status Reports and Human Oversight
 
-Status reports depend on progressive planning and the communication boundary. They must be formalized before bug tracking and agentic Brain behavior because status reports provide evidence for task history, blockers, discoveries, and next actions.
-
-The schema and minimum parsing foundation was staged in Phase 0 so Phase 5 could model status evidence safely. This phase completes formal report generation, routing, Maildir integration where approved, human-facing dashboarding, and resilient end-to-end report processing.
+Status reports depend on progressive planning and the communication boundary. They must be formalized before bug tracking and Agentic Brain behavior because status reports provide evidence for task history, blockers, discoveries, and next actions.
 
 ### Deliverables
 
-- [ ] **Define the status report message type.** Specify fields identifying reporting arm, task, status, findings, and supporting information. Support later bug-reporting and task-determination flows.
-- [ ] **Implement status report parsing in the Brain.** Parse incoming reports, validate structure, and store information needed for task history and aggregation.
-- [ ] **Aggregate and route reports to humans.** Combine relevant arm reports and deliver them through the established communication path, including email where appropriate.
-- [ ] **Make status influence task determination.** Feed parsed reports into progressive planning so issues, blockers, and completion information affect the next assignment.
-- [ ] **Add a status dashboard in the API.** Expose status-report information for Observatory display.
-- [ ] **Add user-message confirmation and tracking.** Track the processing fate of each user message, whether it was added to the plan, and whether it unblocked work.
+- [ ] **Define the status report message type.**
+- [ ] **Implement status report parsing in the Brain.**
+- [ ] **Aggregate and route reports to humans.**
+- [ ] **Make status influence task determination.**
+- [ ] **Add a status dashboard in the API.**
+- [ ] **Add user-message confirmation and tracking.**
 - [ ] **Migrate status reports to Maildir when approved.** Write reports to `~/.octopai/mail/brain/cur/`, preserve Markdown bodies, add `X-Octopai-Type: status-report` and `X-Octopai-Task: <task-id>` headers, expose reports through mail UI/API, and support human replies.
-- [ ] **Preserve status evidence in task passes.** Associate reports with task, pass, branch, files, tests, discoveries, issues, blockers, and next steps.
-- [ ] **Add failure and retry handling.** Ensure malformed, duplicated, delayed, or unrouteable status reports do not corrupt task state.
+- [ ] **Preserve status evidence in task passes.**
+- [ ] **Add failure and retry handling.**
+- [ ] **Test status reports through API, Maildir, Brain, task lifecycle, and Observatory paths.**
 
 ### Status Report Flow
 
@@ -555,15 +596,15 @@ Arm → Status Report → Brain → Aggregates → Human (email)
 - Phase 5: Progressive Planning and Durable Task Lifecycle
 - Communication modes and Maildir boundary
 
+---
+
 ## Phase 8: Bug Tracking and Resolution
 
 Bug tracking depends on formal status reports and progressive dependency blocking. It must preserve source, priority, assignment, blockers, evidence, and the investigation → fix → verification sequence without bypassing durable task passes.
 
-Bug state, escalation, notification, and resolution actions must use API-owned persistence and must not directly reset lifecycle state, bypass assignment gates, or create review/polish child tasks.
-
 ### Problem
 
-Arms may encounter compilation failures, test failures, runtime errors, and other bugs during execution. Humans may report issues that block progress. These issues must be tracked, prioritized, and resolved without losing work history.
+Arms may encounter compilation failures, test failures, runtime errors, and other bugs during task execution. Humans may report issues that block progress. These issues must be tracked, prioritized, and resolved without losing work history.
 
 ### Bug Sources
 
@@ -583,14 +624,14 @@ Arms may encounter compilation failures, test failures, runtime errors, and othe
 ### Deliverables
 
 - [ ] **Define bug report message types.** Support `arm_reported`, `human_reported`, and `system_detected` sources and retain priority, assignment, blockers, and resolution information.
-- [ ] **Add the bug-tracking table.** Store bug status, priority, assignee, and blockers.
+- [ ] **Add the bug-tracking table.**
 - [ ] **Implement Brain priority rules.**
-- [ ] **Implement escalation for blocked tasks.** Escalate high-priority work, reassign isolated medium-priority work, and prevent dependent tasks from running while an unresolved blocking bug remains.
+- [ ] **Implement escalation for blocked tasks.**
 - [ ] **Implement the bug-resolution workflow.** Track investigation → fix → verification, including evidence and outcome.
 - [ ] **Notify humans about critical and blocking bugs.**
 - [ ] **Add API endpoints for bug management.**
 - [ ] **Add UI for bug tracking and status.**
-- [ ] **Ensure bug work uses task passes.** Do not create review or polish child tasks where the branch-centered lifecycle applies.
+- [ ] **Ensure bug work uses task passes.**
 - [ ] **Test duplicate, concurrent, stale, and reopened bug reports.**
 - [ ] **Preserve bug-to-task, bug-to-pass, bug-to-branch, and bug-to-commit relationships.**
 
@@ -616,11 +657,11 @@ When bug resolved:
 - Phase 5: Progressive Planning and Durable Task Lifecycle
 - Phase 7: Status Reports and Human Oversight
 
+---
+
 ## Phase 9: Agentic Brain
 
-The Agentic Brain depends on task classification, progressive planning, formal status reports, bug handling, and the API-owned integration boundary. Migration must be incremental: retain the polling loop, add the agent and validated tools, replace one behavior at a time, and preserve deterministic fallback logic whenever the LLM or framework is unavailable.
-
-The Brain Agent must remain an API-first orchestration client. It must not bypass the verified boundary to access NATS, JetStream, harnesses, task state, or external side effects directly.
+The Agentic Brain depends on task classification, progressive planning, formal status reports, bug handling, evaluation foundations, and the API-owned integration boundary. Migration must be incremental: retain the polling loop, add the agent and validated tools, replace one behavior at a time, and preserve deterministic fallback logic whenever the LLM or framework is unavailable.
 
 ### Goal
 
@@ -631,25 +672,13 @@ See [brain-agent-plan.md](./brain-agent-plan.md) for full implementation details
 ### Architecture
 
 ```txt
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                    Agentic Brain                                             │
-├──────────────────────────────────────────────────────────────────────────────┤
-│  ┌───────────────┐    ┌───────────────────────┐    ┌─────────────────────┐   │
-│  │ Human Input   │──▶ │ Brain Agent          │──▶ │ Arm Actions         │   │
-│  │ (Email/       │    │  (LLM + Tools)        │    │ (via MCP/ NATS)    │   │
-│  │  Tasks)       │    │                       │    │                     │   │
-│  └───────────────┘    └───────────────────────┘    └─────────────────────┘   │
-│                           │                                      │            │
-│                           ▼                                      │            │
-│                  ┌───────────────────────┐                       │            │
-│                  │ Tools (SQLite,        │                       │            │
-│                  │ File System, MCP,     │                       │            │
-│                  │ NATS)                 │                       │            │
-│                  └───────────────────────┘                       │            │
-└──────────────────────────────────────────────────────────────────────────────┘
+Human Input → Brain Agent (LLM + mediated tools) → API-mediated Arm Actions
+                         ↓
+              Plans, tasks, discoveries,
+              status reports, and human messages
 ```
 
-The Phase 0 Brain-boundary decision determines the mediated API or service interfaces represented by “via MCP/ NATS” and “Tools (SQLite, File System, MCP, NATS)” in this historical architecture diagram. The diagram does not authorize direct Brain bypasses of the verified API-owned integration boundary.
+The Phase 0 Brain-boundary decision determines the mediated interfaces. Historical descriptions mentioning SQLite, file system, MCP, and NATS do not authorize direct Brain bypasses of the API-owned integration boundary.
 
 ### Framework
 
@@ -665,31 +694,35 @@ Use LangChain.js with:
 
 | Tool | Purpose |
 |---|---|
-| `readPlan` | Read plan documents |
+| `readPlan` | Read plan documents through the approved boundary |
 | `getTaskHistory` | Query completed and in-progress tasks |
 | `getStatusReports` | Parse arm status reports |
 | `getDiscoveries` | Query discoveries through FTS5 |
 | `determineNextTask` | Perform core progressive planning |
 | `assignTask` | Send a task to an arm |
-| `storeDiscovery` | Save a discovery to SQLite |
-| `sendToHuman` | Write to Maildir |
+| `storeDiscovery` | Save a discovery |
+| `sendToHuman` | Write to Maildir through the approved interface |
 | `getArmStatus` | Check arm health and detect stuck loops |
 
 ### Deliverables
 
 - [ ] **Integrate LangChain.js.** Configure `createAgent`, Zod-validated tool calling, memory/checkpoint support, GPT-4.1 reasoning, and GPT-4.1 Codex code tasks.
-- [ ] **Implement the `BrainAgent` class.** Create the agent under the planned Brain agent structure and expose the nine tools above.
-- [ ] **Add the Brain agent system prompt.** Define how the agent reads project state, respects human approval gates, and communicates decisions.
+- [ ] **Implement the `BrainAgent` class.**
+- [ ] **Add the Brain agent system prompt.**
 - [ ] **Implement all nine Brain agent tools.**
 - [ ] **Add memory and checkpoint support.**
-- [ ] **Retain fallback logic.** On LLM/framework failure, use deterministic logic without losing task or state updates.
-- [ ] **Add the system-alignment control loop.** Compare project state with the plan and take corrective actions while enforcing human approval gates.
-- [ ] **Optimize polling and busy-arm handling.** Adjust polling frequency and add arm `busy` status so active arms are not interrupted.
-- [ ] **Add vector search for arm context history.** Store searchable arm conversation history for relevant prior context.
-- [ ] **Align agent actions with the branch-centered lifecycle.** Deterministic lease, dependency, review, merge, and approval rules remain authoritative.
+- [ ] **Retain fallback logic.**
+- [ ] **Add the system-alignment control loop.**
+- [ ] **Optimize polling and busy-arm handling.**
+- [ ] **Add vector search for arm context history.**
+- [ ] **Align agent actions with the branch-centered lifecycle.**
 - [ ] **Preserve general-purpose arm behavior.** Never select arms by domain, expertise, or arm-global reputation.
 - [ ] **Add timeout, retry, cost, rate-limit, cancellation, and observability controls.**
 - [ ] **Test deterministic fallback under unavailable-model, malformed-tool, timeout, and partial-write conditions.**
+- [ ] **Validate every tool against the approved API or mediated boundary.**
+- [ ] **Add prompt, tool, checkpoint, and model-output redaction tests.**
+- [ ] **Add evaluation fixtures for reasonable task determination, discovery handling, human messages, stuck arms, and fallback behavior.**
+- [ ] **Use swarm and classification evaluation only as versioned evidence.** No evaluation output may directly assign work, alter a lease, bypass approval, or mutate plan state.
 
 ### Migration Strategy
 
@@ -704,6 +737,7 @@ Use LangChain.js with:
 ### Dependencies
 
 - Phase 0 Agentic Brain boundary decision
+- Phase 2A: Evaluation, Classification, and Swarm Foundation
 - Phase 4: Task Classification and Context
 - Phase 5: Progressive Planning and Durable Task Lifecycle
 - Phase 7: Status Reports and Human Oversight
@@ -717,6 +751,8 @@ Use LangChain.js with:
 - [ ] Stuck arms are detected and handled.
 - [ ] Fallback logic works when the LLM is unavailable.
 
+---
+
 ## Phase 10: Context Compression
 
 Context compression depends on classification-specific context, the Agentic Brain, harness integration, and searchable arm history. Reinjection must preserve the current task’s identity and context without assigning permanent arm specialization.
@@ -727,11 +763,7 @@ Configure context-size limits and automatically re-inject task context after com
 
 ### Problem
 
-OpenCode and similar harnesses automatically compress context when it fills, typically around 80% of maximum. During compression:
-
-1. Recent messages, including task instructions, may be summarized or dropped.
-2. Agents lose visibility into their original objectives.
-3. Quality degrades as the agent loses track of its work.
+OpenCode and similar harnesses automatically compress context when it fills, typically around 80% of maximum. During compression, recent messages, including task instructions, may be summarized or dropped; agents lose visibility into original objectives; and quality degrades.
 
 ### Solution
 
@@ -758,9 +790,10 @@ After context compression, the agent receives:
 - [ ] **Add the compression-reporting MCP tool.** Register `report_context_compression` with datetime, original token count, compressed token count, and retention summary fields, then send the event to the Brain with arm ID.
 - [ ] **Detect compression and reinject context.**
 - [ ] **Document harness-specific configuration.**
-- [ ] **Test context-compression scenarios.** Cover threshold and hard-limit behavior, reinjection, disabled reinforcement, event parsing, and retention summaries.
-- [ ] **Filter tools by task specialization.** Select and filter available tools based on task classification to prevent context overload while preserving general-purpose arms.
-- [ ] **Add vector-backed arm conversation history.** Store arm conversation history in a vector database and provide configurable retention.
+- [ ] **Test context-compression scenarios.**
+- [ ] **Filter tools by task specialization.**
+- [ ] **Add vector-backed arm conversation history.**
+- [ ] **Validate that compression cannot change task identity, lease identity, branch, pass, or approval state.**
 
 ### Dependencies
 
@@ -769,35 +802,17 @@ After context compression, the agent receives:
 - Phase 9: Agentic Brain
 - Phase 16: Agent Harnesses
 
+---
+
 ## Phase 11: NATS JetStream Event Sourcing
 
 This phase migrates event persistence and state reconstruction incrementally. It depends on verified NATS integration, API boundary behavior, and status-report/event schemas. Dual-write, replay, backup, compatibility, and performance validation are mandatory before removing SQLite event storage.
 
-No event-sourcing work may silently change the source-of-truth boundary established in Phase 0. SQLite remains the queryable application-state store during transition, Maildir remains the communication store, and human-editable plans and configuration remain files unless an explicit approved decision changes a specific boundary.
-
-### Overview
-
-Migrate from SQLite-based event storage to NATS JetStream for event persistence, enabling event-sourcing patterns for state reconstruction and audit trails.
-
-### Current State
-
-- Events stored in SQLite `arm_events` table
-- Events published by harnesses via `emitEvent()`
-- Events queried via API endpoints
-- No event-sourcing patterns implemented
-
-### Target State
-
-- Events persisted in NATS JetStream streams
-- State derived from event streams
-- Comprehensive API for event querying and state reconstruction
-- Real-time event processing and historical analysis
-
 ### Deliverables
 
-- [ ] **Approve the event-sourcing boundary.** Preserve SQLite for complex query state, Maildir for messages, plans for version-controlled documents, and configuration for human-editable TOML unless an explicit decision changes a boundary.
-- [ ] **Enable JetStream on the NATS server.** Configure required flags, file storage, memory/file limits, and persistent volume.
-- [ ] **Integrate the JetStream client.** Initialize `JetStreamClient` and `JetStreamManager`, ensure the event stream exists, and preserve retention and subject strategy.
+- [ ] **Approve the event-sourcing boundary.**
+- [ ] **Enable JetStream on the NATS server.**
+- [ ] **Integrate the JetStream client.**
 - [ ] **Standardize event schemas.**
 - [ ] **Migrate harness event publishing.**
 - [ ] **Implement question event handling.**
@@ -816,6 +831,7 @@ Migrate from SQLite-based event storage to NATS JetStream for event persistence,
 - [ ] **Test retention, replay, ordering, duplicate delivery, consumer recovery, and malformed events.**
 - [ ] **Remove old SQLite event tables only after migration acceptance.**
 - [ ] **Document event schemas, replay, retention, backup, consumers, and rollback.**
+- [ ] **Verify atomic deduplication and outbox behavior** before enabling any production event-source cutover.
 
 ### Event Type Standardization
 
@@ -835,56 +851,6 @@ Migrate from SQLite-based event storage to NATS JetStream for event persistence,
 "discovery.created" | "plan.updated"
 ```
 
-### Question Event Format
-
-```typescript
-interface QuestionAskedEvent {
-  type: "question.asked";
-  properties: {
-    id: string;
-    sessionID: string;
-    questions: QuestionInfo[];
-    tool?: {
-      messageID: string;
-      callID: string;
-    };
-  };
-}
-
-interface QuestionInfo {
-  question: string;
-  header: string;
-  options: QuestionOption[];
-  multiple?: boolean;
-}
-
-interface QuestionOption {
-  label: string;
-  description: string;
-}
-```
-
-**Brain Response Events:**
-
-- `question.replied`: Human answered the question
-- `question.rejected`: Question was rejected/ignored
-
-**Brain Action Required:**
-
-When the Brain detects a `question.asked` event from any arm, it should:
-
-1. Parse the question content and options.
-2. Evaluate whether it can answer autonomously or needs human input.
-3. Either respond directly or escalate to a human.
-4. Track the question-response cycle for learning.
-
-### Dependencies
-
-- Phase 1: Core Infrastructure and API Boundary
-- Phase 7: Status Reports and Human Oversight
-- Phase 9: Agentic Brain
-- Approved event-sourcing boundary decision
-
 ### Acceptance Criteria
 
 - [ ] All Brain database queries for state are replaced with event queries.
@@ -895,6 +861,8 @@ When the Brain detects a `question.asked` event from any arm, it should:
 - [ ] No data loss occurs during migration.
 - [ ] Backward compatibility is maintained during transition.
 
+---
+
 ## Phase 12: Global Status History Search
 
 This phase depends on formal status reports, JetStream event ingestion, the Agentic Brain, embedding infrastructure, and the approved vector-database deployment decision. Qdrant is the recommended choice and must be explicitly verified before production coupling.
@@ -902,35 +870,6 @@ This phase depends on formal status reports, JetStream event ingestion, the Agen
 ### Goal
 
 Provide searchable full-text history of arm status messages and completions through vector-database indexing.
-
-### Problem
-
-Arms generate status reports, task completions, discoveries, and progress updates. Once processed, this institutional knowledge is difficult to search. Users and the Brain need:
-
-1. Historical context: “What did we try before that failed?”
-2. Pattern recognition: “Which arms tend to get stuck on similar problems?”
-3. Knowledge retrieval: “Has anyone solved this type of problem before?”
-4. An audit trail: “What happened during that overnight run?”
-
-### Vector Database
-
-| Option | Pros | Cons |
-|---|---|---|
-| SQLite + sqlite-vss | No external dependencies; single database | Limited scale |
-| LanceDB | Embedded, Rust-based, fast | Newer and less mature |
-| Chroma | Popular, good Python ecosystem | Requires separate process |
-| Qdrant | Production-ready; excellent filtering | Requires a container |
-
-**Recommendation: Qdrant from the start.**
-
-Rationale:
-
-- Production-ready filtered vector search by arm, date, and event type.
-- Octopai is already distributed through NATS and the API server.
-- A container fits the architecture.
-- Qdrant can start with `docker run qdrant/qdrant`.
-- This avoids migration costs from starting with a simpler system.
-- It is battle-tested for autonomous long-running systems.
 
 ### Deliverables
 
@@ -944,8 +883,18 @@ Rationale:
 - [ ] **Implement the retention policy.**
 - [ ] **Add a backfill script.**
 - [ ] **Validate embedding failures, duplicate events, stale indexes, retention deletion, filters, pagination, and access control.**
+- [ ] **Validate that Qdrant outage or provider outage does not corrupt SQLite, Maildir, task, or lifecycle state.**
 
-### Tracking and Status
+### Vector Database
+
+| Option | Pros | Cons |
+|---|---|---|
+| SQLite + sqlite-vss | No external dependencies; single database | Limited scale |
+| LanceDB | Embedded, Rust-based, fast | Newer and less mature |
+| Chroma | Popular, good Python ecosystem | Requires separate process |
+| Qdrant | Production-ready; excellent filtering | Requires a container |
+
+**Recommendation: Qdrant from the start.**
 
 Progress is tracked through status-history feature tasks, including:
 
@@ -956,8 +905,6 @@ Progress is tracked through status-history feature tasks, including:
 - `task-1774902988664`
 - `task-1774902988665`
 
-These tasks cover Qdrant and collection work, the search page, and ongoing ingestion and API-layer reviews. Until the status-history search tasks close and the consumer and UI deliverables land, this phase remains in progress.
-
 ### Dependencies
 
 - Phase 0 vector-search deployment and embedding-boundary decision
@@ -966,21 +913,22 @@ These tasks cover Qdrant and collection work, the search page, and ongoing inges
 - Phase 9: Agentic Brain
 - Approved vector-database deployment decision
 
+---
+
 ## Phase 13: Code Graph and Navigable Context
 
 This phase depends on stable workspace access, SQLite utilities, API/MCP boundaries, and Brain context retrieval. The graph must represent actual current code structure, update incrementally, and remain useful when source files change between indexing and task assignment.
 
-Graph results are advisory context rather than authoritative source control, dependency, task, ownership, or lifecycle state. The system must identify stale, malformed, deleted, renamed, and partially written source conditions.
-
 ### Deliverables
 
-- [ ] **Add a Tree-sitter code scanner.** Regularly index the workspace using Tree-sitter and update incrementally where possible.
-- [ ] **Store the graph in SQLite.** Represent files, symbols, and definitions as nodes, and imports, calls, references, and containment as edges.
+- [ ] **Add a Tree-sitter code scanner.**
+- [ ] **Store the graph in SQLite.**
 - [ ] **Add graph-query API endpoints.**
-- [ ] **Add the code-navigation MCP tool.** Support find definition, find references, and dependency-chain traversal.
+- [ ] **Add the code-navigation MCP tool.**
 - [ ] **Integrate graph context with the Brain.**
-- [ ] **Add incremental invalidation and recovery.** Handle deleted, renamed, malformed, or partially written files without serving stale authoritative relationships.
+- [ ] **Add incremental invalidation and recovery.**
 - [ ] **Add graph indexing and query benchmarks.**
+- [ ] **Add graph freshness and provenance metadata** so every result identifies its source revision and indexing timestamp.
 
 ### Dependencies
 
@@ -996,6 +944,8 @@ Graph results are advisory context rather than authoritative source control, dep
 - [ ] The Brain can attach graph-derived context snippets to task payloads.
 - [ ] Graph data is persisted in SQLite and survives restarts.
 
+---
+
 ## Phase 14: Governance
 
 This phase depends on the resolved governance architecture decision from Phase 0, durable tasks and passes, status/discovery history, and human approval handling. Governance must use proposals, arguments, signals, and evidence without reintroducing arm domains or unapproved arm-global reputation routing.
@@ -1006,16 +956,17 @@ Arms debate and reach consensus on plans and changes through proposals, argument
 
 ### Deliverables
 
-- [ ] **Add the proposal system.** Support proposals for `deploy`, `claim`, `refactor`, `dependency`, `breaking_change`, and `creative_override`. Retain subject, task relationship, arguments, signals, and outcome.
+- [ ] **Add the proposal system.** Support proposals for `deploy`, `claim`, `refactor`, `dependency`, `breaking_change`, and `creative_override`.
 - [ ] **Tie arguments and signals to tasks and classifications.**
-- [ ] **Calculate consensus dynamically.** Use the Phase 0 governance decision for evidence, argument quality, human-provided weights, task context, and approved trust annotations.
+- [ ] **Calculate consensus dynamically.** Use evidence, argument quality, human-provided weights, task context, and approved trust annotations.
 - [ ] **Add reputation tracking and enforcement hooks.** Store reputation information and allow Brain use only if the Phase 0 decision explicitly approves it. Otherwise use proposal- or signal-level evidence.
 - [ ] **Add the creative-override flow.** Require a clear rollback plan.
 - [ ] **Add emergency-stop (“andon cord”) handling.**
-- [ ] **Transition to task configuration templates.** Templates define defaults for tools, context bundles, safety rules, and governance expectations; remove or update MR-style templates that reference fixed arm or MR roles.
+- [ ] **Transition to task configuration templates.**
 - [ ] **Allow direct Brain plan updates with proposal-controlled arm changes.**
 - [ ] **Record governance decisions durably.**
 - [ ] **Test quorum, conflict, rejection, override, rollback, human escalation, and emergency-stop behavior.**
+- [ ] **Verify that governance cannot route work by arm domain, expertise, identity, or unapproved reputation.**
 
 ### Dependencies
 
@@ -1024,6 +975,8 @@ Arms debate and reach consensus on plans and changes through proposals, argument
 - Phase 7: Status Reports and Human Oversight
 - Phase 12: Global Status History Search
 - Human approval handling
+
+---
 
 ## Phase 15: Garden Visualization
 
@@ -1041,6 +994,7 @@ This phase depends on stable workspace events, ownership/claim data, WebSocket o
 - [x] Add a Brain mascot with personality and animation.
 - [ ] **Define stale-event and disconnected-state rendering.**
 - [ ] **Validate that Garden state is read-only and consistent with API/event authority.**
+- [ ] **Add performance, accessibility, reduced-motion, and unavailable-event rendering tests.**
 
 ### Dependencies
 
@@ -1048,6 +1002,8 @@ This phase depends on stable workspace events, ownership/claim data, WebSocket o
 - Phase 2: Observatory Foundation Verification and Enhancements
 - Phase 5: Progressive Planning and Durable Task Lifecycle
 - Stable workspace events and ownership/claim data
+
+---
 
 ## Phase 16: Agent Harnesses
 
@@ -1078,8 +1034,6 @@ Lifecycle policy:
 
 ### Phase 16.2: ACP Integration
 
-**Goal**: Add an ACP adapter layer so Coleo can interoperate with external clients, including Claude Code and Codex CLI, without hard-coding each harness.
-
 #### Deliverables
 
 - [ ] **Implement the ACP handshake.** Support `initialize`, version negotiation, and capability negotiation.
@@ -1090,6 +1044,7 @@ Lifecycle policy:
 - [ ] **Support session attach and resume.**
 - [ ] **Document ACP compatibility.**
 - [ ] **Add ACP conformance tests.**
+- [ ] **Validate ACP authorization, cancellation, reconnect, malformed-message, and unsupported-capability paths.**
 
 ### Future Work: Phase 18+
 
@@ -1103,6 +1058,8 @@ Lifecycle policy:
 - Phase 1: Core Infrastructure and API Boundary
 - Phase 5: Progressive Planning and Durable Task Lifecycle
 - Verified event handling
+
+---
 
 ## Phase 17: Budget Planning and Burn Rate Estimation
 
@@ -1127,6 +1084,7 @@ Enable long-running autonomous operation with predictable costs through model co
 - [ ] **Detect price changes and alert users.**
 - [ ] **Add budget API endpoints.**
 - [ ] **Test pricing freshness, banned-model enforcement, forecast accuracy, budget races, pause behavior, and failure recovery.**
+- [ ] **Verify that budget enforcement pauses or rejects work through durable API state rather than local arm state.**
 
 ### Dependencies
 
@@ -1146,9 +1104,11 @@ Enable long-running autonomous operation with predictable costs through model co
 - [ ] Banned models never receive work.
 - [ ] The UI clearly shows cost and quality tradeoffs.
 
+---
+
 ## Phase 18: Additional Architecture and Persistence Integration
 
-These concerns cross multiple phases and must be implemented only after the relevant boundaries are stable. They preserve the distinction between durable project artifacts, SQLite query state, event history, and Maildir communication.
+These concerns cross multiple phases and must be implemented only after the relevant boundaries are stable.
 
 ### Deliverables
 
@@ -1158,6 +1118,7 @@ These concerns cross multiple phases and must be implemented only after the rele
 - [ ] **Migrate approved status-report flows to Maildir.**
 - [ ] **Preserve compatibility with existing `.project/status-*.md` records during migration.**
 - [ ] **Add integration tests for task files, Maildir reports, event-derived state, and SQLite query state.**
+- [ ] **Verify backup, restore, replay, rollback, and interrupted-migration behavior across all approved persistence boundaries.**
 
 ### Dependencies
 
@@ -1165,6 +1126,8 @@ These concerns cross multiple phases and must be implemented only after the rele
 - Phase 7: Status Reports and Human Oversight
 - Phase 11: NATS JetStream Event Sourcing
 - Approved persistence-boundary decisions
+
+---
 
 ## Phase 19: Adaptive Card Collections and Customizable Widget Dashboards
 
@@ -1177,7 +1140,7 @@ This phase depends on the Observatory foundation, existing saved-view behavior, 
 - Sorting and filtering already happen correctly in React through `projectResourceCollection()` in `resource-sheet-model.ts`. A layout library should not duplicate that state.
 - `AdaptiveCardCollection` already preserves accessible row-major DOM order with CSS Grid.
 - Isotope has no built-in drag support and its GPL-3.0 option does not fit Coleo’s BUSL license without purchasing a commercial license.
-- Muuri is MIT-licensed, typed, and draggable, but it is an imperative absolute-positioning engine whose latest npm release is from 2021. Its DOM manipulation and pointer-oriented drag model add risk with React StrictMode, live updates, variable-height Adaptive Cards, and keyboard accessibility.
+- Muuri is MIT-licensed, typed, and draggable, but its imperative absolute-positioning engine adds risk with React StrictMode, live updates, variable-height Adaptive Cards, and keyboard accessibility.
 - Coleo already includes `dnd-kit` and Framer Motion.
 
 ### Deliverables
@@ -1191,44 +1154,37 @@ This phase depends on the Observatory foundation, existing saved-view behavior, 
 - [ ] Add a reusable `WidgetGrid` under `src/web/src/workbench/`.
 - [ ] Use CSS Grid for responsive placement and `dnd-kit` for drag ordering.
 - [ ] Enable dragging only inside an explicit **Customize dashboard** mode.
-- [ ] Restrict dragging to dedicated handles so charts, links, inputs, and Adaptive Card actions remain usable.
+- [ ] Restrict dragging to dedicated handles.
 - [ ] Support keyboard reordering, screen-reader announcements, and visible move commands.
 - [ ] Support controlled presets such as single, double, or full width and auto, compact, or tall height.
 - [ ] Include collapse, hide/show, reset, and restore-default actions.
 - [ ] Use existing `useViewPreferences()` and `workbench_views` infrastructure with `kind: "dashboard"`.
 - [ ] Store only layout configuration in `preferences.extras`; do not persist fetched metric or card payloads.
-- [ ] Version the stored layout schema and normalize it against the current widget registry so new widgets are appended and removed widgets are ignored.
-- [ ] Commit order only when a drag ends rather than during every pointer movement.
+- [ ] Version the stored layout schema and normalize it against the current widget registry.
+- [ ] Commit order only when a drag ends.
 - [ ] Avoid a database migration or new endpoint unless later requirements exceed the existing saved-view model.
-- [ ] Add `dashboard.main` for the main system dashboard.
-- [ ] Add `dashboard.brain` for Brain status and configuration.
-- [ ] Add `dashboard.arm-telemetry`, shared by fleet telemetry and every Arm Viewer instance.
-- [ ] Add `dashboard.task-insights`, shared across Task burndown and activity panels.
-- [ ] Add the corresponding Bug insights template because Bugs mirrors Tasks and should not remain inconsistent.
-- [ ] **Main dashboard:** Expose infrastructure, plan status, runtime hosts, Arms, operational inbox, task progress, and burndown as individually keyed widgets. Keep critical setup warnings pinned and non-hideable.
-- [ ] **Brain:** Make status and configuration reorderable. Keep model-access and planning-gate alerts pinned.
-- [ ] **Arm telemetry:** Keep date-range controls pinned and arrange Activity, Context, and Cost charts through the shared template.
-- [ ] **Task and Bug insights:** Preserve existing toolbar toggles while moving internal cards and charts onto the widget grid.
-- [ ] **Static surfaces:** Keep settings forms, detail cards, discussions, diffs, and live chronological streams semantically fixed.
-- [ ] Lift Process saved sort and filter preferences out of `ProcessSheet` so card and sheet modes use the same projected collection.
+- [ ] Add `dashboard.main`, `dashboard.brain`, `dashboard.arm-telemetry`, and `dashboard.task-insights`.
+- [ ] Add the corresponding Bug insights template.
+- [ ] Keep critical setup warnings, model-access alerts, planning-gate alerts, and date-range controls pinned and non-hideable where specified.
+- [ ] Lift Process saved sort and filter preferences out of `ProcessSheet`.
 - [ ] Audit other card and sheet pairs for the same consistency requirement.
-- [ ] Ensure DOM order always equals the selected sort order; animation must remain purely visual.
+- [ ] Ensure DOM order always equals selected sort order.
 - [ ] Ensure filtered cards are unmounted rather than visually hidden with focusable controls remaining in the DOM.
-- [ ] Update Workbench documentation and record the final interaction and persistence contracts.
+- [ ] Update Workbench documentation and record final interaction and persistence contracts.
 
 ### Acceptance Criteria
 
-- [ ] Sorting and filtering are performed by React before rendering, and visual animation never becomes the source of collection state.
+- [ ] Sorting and filtering are performed by React before rendering.
 - [ ] Record card DOM order matches visual and keyboard order before, during, and after transitions.
 - [ ] Record cards are not draggable in normal collection views.
 - [ ] Dashboard widgets are draggable only in customization mode and only from explicit handles.
 - [ ] Dashboard widgets can be reordered, hidden, restored, collapsed, and assigned supported size presets.
 - [ ] Pointer and keyboard users can perform equivalent widget-ordering actions.
 - [ ] Main Dashboard, Brain, Arm telemetry, and Task and Bug insights persist separate per-profile templates.
-- [ ] The Arm telemetry template is shared across fleet and per-Arm embedded views rather than stored per Arm.
-- [ ] Narrow containers collapse safely to one column, while unsupported saved spans are clamped without corrupting preferences.
+- [ ] The Arm telemetry template is shared across fleet and per-Arm embedded views.
+- [ ] Narrow containers collapse safely to one column.
 - [ ] Newly introduced widgets appear in an existing saved layout, and removed widget identifiers do not break rendering.
-- [ ] Dynamic Adaptive Card height changes, compact/detail switching, and live additions or removals do not produce overlapping cards.
+- [ ] Dynamic Adaptive Card height changes and live additions/removals do not produce overlapping cards.
 - [ ] Reduced-motion users receive immediate layout changes without movement animation.
 - [ ] Customization remains usable inside resizable and duplicated Golden Layout panels.
 
@@ -1237,19 +1193,19 @@ This phase depends on the Observatory foundation, existing saved-view behavior, 
 - [ ] Unit-test widget-state normalization, ordering, hiding, sizing, defaults, and schema upgrades.
 - [ ] Add Playwright coverage for pointer and keyboard reordering, reload persistence, profile switching, reset, mobile collapse, and Golden Layout resizing.
 - [ ] Test Adaptive Card height changes, compact/detail switching, live additions and removals, focus retention, and non-overlapping animated layouts.
-- [ ] Verify that ordinary sort/filter operations leave DOM order canonical and filtered controls cannot receive focus.
+- [ ] Verify ordinary sort/filter operations leave DOM order canonical and filtered controls cannot receive focus.
 - [ ] Run `bun run typecheck`.
 - [ ] Run `bun run --cwd src/web lint`.
-- [ ] Run the relevant unit and Playwright suites.
+- [ ] Run relevant unit and Playwright suites.
 - [ ] Run `bun run web:build` and confirm animation and drag dependencies do not introduce avoidable eager bundle cost.
-
-The persisted widget model must remain independent from a specific rendering engine. If Coleo later needs dense masonry, cross-grid transfers, or a pointer-heavy free-placement canvas, Muuri can be evaluated behind the widget layer without rewriting user preferences. For ordered grids and structured dashboards, CSS Grid, Framer Motion, and `dnd-kit` are the preferred implementation.
 
 ### Dependencies
 
 - Phase 2: Observatory Foundation Verification and Enhancements
 - Existing `useViewPreferences()` and `workbench_views` behavior verified in Phase 0
 - Verified React-owned collection projection and accessibility primitives
+
+---
 
 ## Phase 20: Remaining Brain-Created Tasks
 
@@ -1261,6 +1217,7 @@ These tasks were documented by the Brain and remain in scope. They depend on the
 - [ ] **Add thrashing detection for lazy claims.** Detect when arms are fighting over files, implement a lazy claim-release protocol, and throttle rapid reclaims.
 - [ ] **Add the handoff protocol between arms.** Define graceful task handoff, include context transfer, and handle abandoned tasks and conflicts without losing task state or work history.
 - [ ] **Test restart, abandoned-pass, handoff, claim-release, and conflict-recovery paths.**
+- [ ] **Verify that development-server controls honor authentication, authorization, claims, leases, human approval, audit logging, and rollback requirements.**
 
 ### Dependencies
 
@@ -1269,6 +1226,8 @@ These tasks were documented by the Brain and remain in scope. They depend on the
 - Phase 16: Agent Harnesses
 - Safe development-server controls and task handoff semantics
 
+---
+
 ## Phase 21: Regular Refactoring Cycle
 
 This phase is a cross-cutting maintenance capability and may run after relevant Brain, claims, and task lifecycle foundations are available. Refactoring must never begin against uncommitted target files or active claims, and oversized-file blocking must not overwrite unrelated task state.
@@ -1276,14 +1235,6 @@ This phase is a cross-cutting maintenance capability and may run after relevant 
 ### Goal
 
 Keep files small enough for LLM context windows through periodic refactoring.
-
-### Problem
-
-Large files over 400 lines:
-
-- Consume significant context budget.
-- May not fit completely into an arm’s context.
-- Lead to more errors and incomplete understanding.
 
 ### Trigger Conditions
 
@@ -1323,7 +1274,7 @@ If prerequisites are not met:
 
 ### Deliverables
 
-- [ ] **Track completed-task count in the Brain.** Increment count when a task completes and preserve it across the relevant Brain lifecycle.
+- [ ] **Track completed-task count in the Brain.**
 - [ ] **Implement `findLargeFiles()`.**
 - [ ] **Add the refactoring task classification.**
 - [ ] **Add prerequisite verification to the template.**
@@ -1331,11 +1282,14 @@ If prerequisites are not met:
 - [ ] **Escalate oversized files.**
 - [ ] **Integrate refactoring with claims.**
 - [ ] **Ensure generated refactoring tasks obey the canonical single-next-task and dependency gates.**
+- [ ] **Test concurrent edits, generated files, excluded paths, threshold changes, and recovery after interrupted refactoring.**
 
 ### Dependencies
 
 - Phase 5: Progressive Planning and Durable Task Lifecycle
 - Claims system
+
+---
 
 ## Phase 22: Notifications and Deployment
 
@@ -1343,12 +1297,14 @@ This phase depends on the production deployment decision, governance proposal fl
 
 ### Deliverables
 
-- [ ] **Add browser push notifications.** Notify users about relevant project, arm, status, bug, governance, and deployment events.
-- [ ] **Add the deployment proposal flow.** Route deployment requests through governance and preserve the resulting decision.
+- [ ] **Add browser push notifications.**
+- [ ] **Add the deployment proposal flow.**
 - [ ] **Add blue/green deployment support.**
-- [ ] **Add rollback with pause.** Pause relevant work when rollback is required and retain the rollback outcome.
+- [ ] **Add rollback with pause.**
 - [ ] **Add monitoring integration hooks.**
 - [ ] **Test notification permissions, delivery failures, deployment pauses, rollback, health checks, and traffic restoration.**
+- [ ] **Run deployment rehearsal in the selected target.** Exercise migration, health checks, traffic switch, pause, rollback, restore, and operator escalation before production traffic changes.
+- [ ] **Verify that deployment artifacts, secrets, notifications, and monitoring are sourced from approved production configuration and do not expose sensitive data.**
 
 ### Dependencies
 
@@ -1358,9 +1314,11 @@ This phase depends on the production deployment decision, governance proposal fl
 - Phase 14: Governance
 - Selected deployment target
 
+---
+
 ## Phase 23: Production Readiness
 
-This phase is last because it depends on architecture, lifecycle, event, deployment, security, harness, and UI work above. It must be validated in the selected production target from Phase 0 and include failure-path testing rather than only happy-path builds.
+This phase is last because it depends on architecture, lifecycle, event, deployment, security, harness, evaluation, and UI work above. It must be validated in the selected production target from Phase 0 and include failure-path testing rather than only happy-path builds.
 
 ### Goal
 
@@ -1369,15 +1327,17 @@ Produce a production-ready system.
 ### Deliverables
 
 - [ ] **Add PostgreSQL support.** Provide the production database option while preserving required data and query behavior.
-- [ ] **Add a comprehensive test suite.** Cover production system, orchestration behavior, APIs, harnesses, UI integration points, and failure paths.
-- [ ] **Optimize performance.** Improve slow orchestration, database, API, search, and UI operations without changing required behavior.
-- [ ] **Harden security.** Strengthen authentication, authorization, data handling, tool access, deployment controls, and production boundaries.
+- [ ] **Add a comprehensive test suite.** Cover production system, orchestration behavior, APIs, harnesses, UI integration points, evaluation paths, and failure paths.
+- [ ] **Optimize performance.**
+- [ ] **Harden security.**
 - [ ] **Add Docker Swarm support.**
-- [ ] **Write user documentation.** Document setup, configuration, communication modes, arm operation, planning, governance, deployment, and troubleshooting.
-- [ ] **Evaluate the PTY harness.** Reassess the PTY harness and record whether it is suitable for production use.
-- [ ] **Run release validation.** Verify installation, migration, backup/restore, deployment, rollback, notifications, monitoring, API authentication, WebSocket behavior, harness restart resilience, and acceptance criteria in the selected deployment target.
-- [ ] **Run disaster-recovery validation.** Test dependency outage, database failure, NATS failure, Qdrant failure, model outage, stale leases, interrupted deployment, and operator recovery.
+- [ ] **Write user documentation.** Document setup, configuration, communication modes, arm operation, planning, governance, deployment, evaluation, and troubleshooting.
+- [ ] **Evaluate the PTY harness.**
+- [ ] **Run release validation.**
+- [ ] **Run disaster-recovery validation.** Test dependency outage, database failure, NATS failure, Qdrant failure, model outage, stale leases, evaluation-lock failure, interrupted deployment, and operator recovery.
 - [ ] **Publish release evidence.** Update `.project/status.md`, acceptance records, changelog, deployment documentation, known limitations, and rollback instructions.
+- [ ] **Run final clean-room validation.** Install from the documented distribution path into a clean environment, execute setup and migration commands, run smoke and acceptance tests, and verify no undeclared local files or manual steps are required.
+- [ ] **Obtain final human release approval.** Record approved version, deployment target, migration state, backup location, rollback point, known limitations, and operator contacts.
 
 ### Dependencies
 
@@ -1386,17 +1346,20 @@ Produce a production-ready system.
 - Phase 0 production persistence decision
 - Phase 0 vector-search deployment and embedding-boundary decision
 - Selected production target
-- Verified rollback, migration, backup, and disaster-recovery procedures
+- Verified rollback, migration, backup, disaster-recovery, and evaluation procedures
+
+---
 
 ## Milestones
 
 | Milestone | Target | Description |
 |---|---|---|
 | M1: Observable | End of Phase 2 | See arm activity in the web UI |
-| M2: Coordinated | End of Phase 14 | Arms negotiate and reach consensus |
-| M3: Visual | End of Phase 15 | 3D Garden shows workspace state |
-| M4: Agentic | End of Phase 9 | Brain uses agentic decision making |
-| M5: Production | End of Phase 23 | Ready for real use |
+| M2: Evaluated | End of Phase 2A | Evaluation and swarm evidence is reproducible and safely bounded |
+| M3: Coordinated | End of Phase 14 | Arms negotiate and reach consensus |
+| M4: Visual | End of Phase 15 | 3D Garden shows workspace state |
+| M5: Agentic | End of Phase 9 | Brain uses agentic decision making |
+| M6: Production | End of Phase 23 | Ready for real use |
 
 Harness strategy is daemon-first for resilient lifecycles, with protocol adapters such as ACP planned for broader client interoperability.
 
@@ -1404,6 +1367,9 @@ Harness strategy is daemon-first for resilient lifecycles, with protocol adapter
 
 | Date | Change |
 |---|---|
+| 2026-09-19 | Validated the complete plan against the supplied workspace inventory and regeneration guidance; added explicit assignment handoff, clean-room baseline, integration smoke, generated-artifact, tool-boundary, event outbox, compression identity, ACP failure-path, graph provenance, governance routing, deployment rehearsal, and final release-approval prerequisites while preserving existing requirements, checkbox states, cancellation comment, and historical commentary. |
+| 2026-09-19 | Added Phase 2A for the newly inventoried swarm, evaluation, classification-bakeoff, historical-classification, and evaluation-lock work; made evaluation provenance, locking, redaction, reproducibility, recommendation boundaries, and operational application gates explicit. |
+| 2026-09-18 | Added a Phase 0 task to reconcile the supplied clean Git porcelain status with the historical workspace inventory before any feature assignment; preserved the inventory commentary without treating it as proof of current modifications or implementation. |
 | 2026-09-18 | Added an explicit verified-implementation inventory task to Phase 0 so all existing checked items and current workspace changes require behavioral evidence before dependent work is assigned. |
 | 2026-09-18 | Added explicit Phase 0 decisions for vector-search deployment and embeddings, Agentic Brain API-boundary reconciliation, production persistence sequencing, and replacement arm-metrics API contract; updated dependent phase prerequisites without changing existing checkbox states. |
 | 2026-09-18 | Reordered execution dependencies, staged minimum status-report foundations before durable lifecycle work, added explicit Observatory resilience, persistence-audit, deployment-target, vector-decision, graph-boundary, and execution-dependency prerequisites, while preserving all existing requirements and checkbox states. |

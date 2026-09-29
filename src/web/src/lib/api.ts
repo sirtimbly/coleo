@@ -166,6 +166,8 @@ export interface PreparedTaskDefinition {
   context: string;
   requirements: string[];
   acceptanceCriteria: string[];
+  dependencies: string[];
+  outputs: string[];
   priority: Task['priority'];
   classification: string;
   phase: string;
@@ -389,6 +391,10 @@ class ApiClient {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
+  }
+
+  async getBrainTemplate(name: string) {
+    return this.request<{ name: string; content: string; path: string }>(`/config/brain/templates/${encodeURIComponent(name)}`);
   }
 
   async getBrainModelConfig() {

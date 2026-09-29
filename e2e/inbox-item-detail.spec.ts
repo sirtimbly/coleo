@@ -68,3 +68,32 @@ test("a missing record has an unavailable state rather than an endless loading s
 	await expect(page.getByRole("heading", { name: "Inbox item unavailable" })).toBeVisible();
 	await expect(page.getByText("Loading inbox item", { exact: true })).toHaveCount(0);
 });
+
+test("swarm recommendations remain visible beside their task and open with evidence and outcome", async ({ page }) => {
+	await installMockApi(page);
+	const recommendation = {
+		itemKey: "swarm:recommendation-1", source: "swarm-recommendation", kind: "brain",
+		title: "Swarm recommendation: update task · task-1",
+		summary: "Status: Proposal only\n\nConfidence: 40.0% (model choice score)\n\nEvidence: The tests failed twice.\n\nActivity window: 12:00 to 12:05",
+		timestamp: new Date().toISOString(), resource: { kind: "task", id: "task-1" },
+		severity: "info", requiresAction: false,
+	};
+	await page.route("**/api/workbench/inbox?*", (route) => route.fulfill({ json: { items: [
+		recommendation,
+		{ ...recommendation, itemKey: "task:task-1", source: "task", kind: "task", title: "Blocked task", requiresAction: true },
+	] } }));
+	await page.route("**/api/workbench/inbox/records/swarm*", (route) => route.fulfill({ json: { item: recommendation } }));
+	await page.route("**/api/workbench/attention/swarm*", (route) => route.fulfill({ json: { attention: null } }));
+	await page.goto("/messaging?facet=brain&brainCategory=decisions");
+	const row = page.locator('[data-inbox-item-id="swarm:recommendation-1"]');
+	await expect(row).toBeVisible();
+	await row.getByRole("button", { name: `Expand ${recommendation.title} card`, exact: true }).click();
+	await row.getByRole("button", { name: `Open ${recommendation.title} in panel`, exact: true }).click();
+	const detail = page.locator('[data-card-template="workbench.event@1"][data-card-presentation="detail"]');
+	await expect(detail).toBeVisible();
+	await expect(detail).toContainText("The tests failed twice.");
+	await expect(detail).toContainText("Proposal only");
+	await expect(detail).toContainText("40.0%");
+	await page.goto("/messaging?item=swarm%3Arecommendation-1");
+	await expect(page.locator('[data-card-presentation="detail"]')).toContainText("The tests failed twice.");
+});

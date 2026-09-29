@@ -1,5 +1,10 @@
 # Coleo Design System
 
+Architecture and ownership are defined in
+[ADR-004](../../../../.project/decisions/004-shadcn-components.md). This document
+holds the detailed visual contract; the
+[workbench guide](../../../../docs/workbench/README.md) describes its application.
+
 This folder is the visual foundation for the workbench. Components here are
 compact, theme-aware, keyboard accessible, and deliberately unaware of Coleo
 domain objects.

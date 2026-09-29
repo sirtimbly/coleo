@@ -1,7 +1,8 @@
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { join } from "path";
 import { clearLine, cursorTo, moveCursor } from "node:readline";
-import { spawnArm, killArm } from "../../arm";
+import { SUPPORTED_HARNESSES } from "../../harness/supported";
+import { killArm } from "../../arm";
 import { generateArmName, generateArmNames, getNameGeneratorStats } from "../arm-names";
 import {
   expandPath,
@@ -314,15 +315,9 @@ export function registerArmCommands(program: Command): void {
     .description("Spawn a new arm (interactive if no arguments provided)")
     .option("-n, --name <name>", "Arm name/ID (auto-generates a sci-fi name if not provided)")
     .option("-w, --workdir <path>", "Working directory", process.cwd())
-    .option(
-      "-t, --terminal <terminal>",
-      "Terminal emulator (ghostty, iterm2, terminal, tmux). If not specified, uses headless API server.",
-    )
     .option("-p, --prompt <prompt>", "Initial prompt/task for the agent")
-    .option(
-      "--harness <harness>",
-      "Harness type (opencode-api, opencode-tui, opencode). Default: opencode-tui if terminal specified, otherwise opencode-api.",
-    )
+    .addOption(new Option("--harness <harness>", "Arm harness (only opencode-api is supported)")
+      .choices([...SUPPORTED_HARNESSES]))
     .option("--provider <provider>", "AI provider (e.g., anthropic, openai, opencode-zen)")
     .option("--model <model>", "Model name (e.g., gpt-5.1-codex-mini)")
     .option("--template <name>", "Use a template from ~/.coleo/arms/")
@@ -330,7 +325,6 @@ export function registerArmCommands(program: Command): void {
     .option("--watch", "Watch the arm's conversation in real-time after spawning")
     .action(async (options) => {
       const coleoDir = getColeoDir();
-      const armAgent = "opencode";
       const armDomain = "general";
       const subcommandArgs = getSubcommandArgs(["arm", "spawn"]);
       const interactive = subcommandArgs.length === 0;
@@ -370,142 +364,13 @@ export function registerArmCommands(program: Command): void {
         armName = generateArmName();
       }
 
-      if (options.terminal && !options.harness) {
-        console.log(`Using opencode-tui harness for visible terminal with API control...`);
-
-        const { apiUrl, headers } = getApiConfig();
-        if (!await isApiRunning()) {
-          console.error("API server is not running.");
-          console.error(`Expected at: ${apiUrl}`);
-          console.error("");
-          console.error("The opencode-tui harness requires the API server for arm tracking.");
-          console.error("Start the API server: coleo serve");
-          process.exit(1);
-        }
-
-        const existsRes = await fetch(`${apiUrl}/api/arms/${armName}`, { headers });
-        const armExists = existsRes.ok;
-
-        if (armExists) {
-          const existingArm = await existsRes.json() as { arm: { status: string } };
-          if (existingArm.arm.status !== "stopped") {
-            console.error(`Arm ${armName} already exists with status: ${existingArm.arm.status}`);
-            console.error("Use 'coleo arm kill <name>' first, or choose a different name.");
-            process.exit(1);
-          }
-          console.log(`Restarting stopped arm: ${armName}`);
-        } else {
-        const createPayload: Record<string, unknown> = {
-          name: armName,
-          status: "starting",
-          provider: armProvider,
-          model: armModel,
-        };
-        if (armTemplate) {
-          createPayload.template = armTemplate;
-        } else {
-          createPayload.domain = armDomain;
-        }
-        createPayload.harness = "opencode-tui";
-
-        const createRes = await fetch(`${apiUrl}/api/arms`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(createPayload),
-        });
-
-          if (!createRes.ok) {
-            const err = await createRes.json().catch(() => ({}));
-            console.error(`Failed to create arm: ${(err as { error?: string }).error || createRes.statusText}`);
-            process.exit(1);
-          }
-        }
-
-        const spawnRes = await fetch(`${apiUrl}/api/arms/${armName}/spawn`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            workdir: expandPath(armWorkdir),
-            provider: armProvider,
-            model: armModel,
-            initialPrompt: options.prompt,
-            harness: "opencode-tui",
-            terminal: options.terminal,
-            recover: options.recover || false,
-          }),
-        });
-
-        // Always read response as text first, then parse
-        const rawResponse = await spawnRes.text();
-        
-        if (!spawnRes.ok) {
-          try {
-            const err = JSON.parse(rawResponse);
-            console.error(`Failed to spawn arm: ${(err as { error?: string }).error || spawnRes.statusText}`);
-          } catch {
-            console.error(`Failed to spawn arm: ${spawnRes.statusText}`);
-          }
-          process.exit(1);
-        }
-
-        const result = JSON.parse(rawResponse) as { 
-          spawned: boolean;
-          distributed?: boolean;
-          sessionId?: string;
-          pid?: number;
-          port?: number;
-          provider?: string;
-          model?: string;
-        };
-        console.log(`Arm spawned with opencode-tui harness in ${options.terminal}:`);
-        console.log(`  ID: ${armName}`);
-        const resolvedProvider = result.provider || armProvider;
-        const resolvedModel = result.model || armModel;
-        if (resolvedProvider || resolvedModel) {
-          console.log(
-            `  Model: ${resolvedProvider ? resolvedProvider + "/" : ""}${resolvedModel || "default"}`,
-          );
-        }
-        console.log(`  Status: ${result.spawned ? "idle" : "unknown"}`);
-        console.log(`  PID: ${result.pid || "unknown"}`);
-        console.log("");
-        console.log("The arm is now running in a visible terminal window.");
-        console.log("You can interact with it directly or via the API.");
-        return;
-      }
-
-      if (options.terminal && options.harness === "opencode") {
-        const arm = await spawnArm({
-          coleoDir,
-          name: armName,
-          agent: armAgent,
-          workdir: expandPath(armWorkdir),
-          terminal: options.terminal,
-          initialPrompt: options.prompt,
-          headless: false,
-          provider: armProvider,
-          model: armModel,
-          domain: armDomain,
-        });
-
-        console.log(`Arm spawned in terminal (legacy mode): ${arm.id}`);
-        if (arm.provider || arm.model) {
-          console.log(`  Model: ${arm.provider ? arm.provider + "/" : ""}${arm.model || "default"}`);
-        }
-        console.log(`  Status: ${arm.status}`);
-        console.log(`  PID: ${arm.pid || "unknown"}`);
-        return;
-      }
-
       const { apiUrl, headers } = getApiConfig();
 
       if (!await isApiRunning()) {
         console.error("API server is not running.");
         console.error(`Expected at: ${apiUrl}`);
         console.error("");
-        console.error("Options:");
-        console.error("  1. Start the API server: coleo serve");
-        console.error("  2. Use terminal mode: coleo arm spawn --name <name> --terminal ghostty");
+        console.error("Start the API server: coleo serve");
         process.exit(1);
       }
 

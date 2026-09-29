@@ -28,6 +28,8 @@ export interface PreparedTaskDefinition {
 	context: string;
 	requirements: string[];
 	acceptanceCriteria: string[];
+	dependencies: string[];
+	outputs: string[];
 	priority: TaskPriority;
 	classification: string;
 	phase: string;
@@ -102,6 +104,8 @@ function parsePreparedDefinition(raw: string, task: PreparableTask): PreparedTas
 		context: asString(parsed.context, ""),
 		requirements: asStringArray(parsed.requirements),
 		acceptanceCriteria: asStringArray(parsed.acceptanceCriteria),
+		dependencies: asStringArray(parsed.dependencies),
+		outputs: asStringArray(parsed.outputs),
 		priority: isValidPriority(parsed.priority) ? parsed.priority : task.priority || "normal",
 		classification: asString(parsed.classification, task.classification || ""),
 		phase: asString(parsed.phase, task.phase || ""),
@@ -121,6 +125,8 @@ function fallbackFromTask(task: PreparableTask, extraDescription?: string): Prep
 		context: "",
 		requirements: [],
 		acceptanceCriteria: [],
+		dependencies: [],
+		outputs: [],
 		priority: task.priority || "normal",
 		classification: task.classification || "",
 		phase: task.phase || "",
@@ -157,6 +163,8 @@ Return ONLY a JSON object (no markdown fences, no commentary) with these exact k
 - context: relevant implementation context, constraints, and helpful pointers
 - requirements: an array of concrete, verifiable requirements
 - acceptanceCriteria: an array of specific conditions that define "done"
+- dependencies: an array of task IDs or plan references that must be complete first (use [] when none)
+- outputs: an array of concrete files, artifacts, or user-visible results this task must produce
 - priority: one of "critical", "high", "normal", or "low"
 - classification: the task classification such as "architect", "development", "qa", or "documentation"
 - phase: the project phase this belongs to, if known

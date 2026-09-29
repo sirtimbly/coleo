@@ -32,6 +32,26 @@ const activeArm = {
 	updatedAt: "2026-08-02T12:00:00.000Z",
 };
 
+test("Settings only offers the supported harness when old defaults select a legacy harness", async ({ page }) => {
+	await installMockApi(page);
+	await page.route("**/api/workbench/profiles", (route) => route.fulfill({ json: { profiles: [] } }));
+	let savedHarness: string | undefined;
+	await page.route("**/api/config/defaults", (route) => {
+		const defaults = { harness: "opencode", provider: "openai", model: "gpt-5", contextBudget: 128000 };
+		if (route.request().method() === "PATCH") {
+			savedHarness = route.request().postDataJSON().harness;
+			return route.fulfill({ json: { defaults: { ...defaults, harness: savedHarness } } });
+		}
+		return route.fulfill({ json: { defaults } });
+	});
+	await page.goto("/settings");
+	const harness = page.getByLabel("Harness", { exact: true });
+	await expect(harness.locator("option")).toHaveText(["opencode-api"]);
+	await expect(harness).toHaveValue("opencode-api");
+	await page.getByRole("button", { name: "Save Arm Defaults", exact: true }).click();
+	await expect.poll(() => savedHarness).toBe("opencode-api");
+});
+
 test("shows fleet status and assignments in the Arms projection", async ({ page }) => {
 	await installMockApi(page, { arms: [activeArm] });
 	await page.goto("/arms");
@@ -109,7 +129,7 @@ test("keeps refresh available when the arm host returns an empty catalog", async
 
 const testHost = {
 	agentId: "test-host", hostname: "Test host",
-	capabilities: ["opencode-api", "workspace-rpc", "repository-onboarding", "opencode-provider-auth"],
+	capabilities: ["opencode-api", "opencode", "opencode-tui", "custom", "workspace-rpc", "repository-onboarding", "opencode-provider-auth"],
 };
 const testProviders = [{
 	id: "openai", name: "OpenAI", connected: true,
@@ -177,10 +197,10 @@ test("automatically detects a host disconnect and preserves the form through rec
 	await expect(page.getByRole("button", { name: "Spawn Arm", exact: true })).toBeEnabled();
 });
 
-test("blocks a host with only service capabilities instead of offering them as harnesses", async ({ page }) => {
+test("blocks a host with only unsupported harnesses and service capabilities", async ({ page }) => {
 	await installMockApi(page);
 	await page.route("**/api/agents", (route) => route.fulfill({ json: {
-		agents: [{ ...testHost, capabilities: ["workspace-rpc", "repository-onboarding", "opencode-provider-auth"] }],
+		agents: [{ ...testHost, capabilities: ["opencode", "opencode-tui", "workspace-rpc", "repository-onboarding", "opencode-provider-auth"] }],
 	} }));
 	await page.goto("/arms?spawn=1");
 	await expect(page.getByRole("heading", { name: "This host has no supported harnesses" })).toBeVisible();
@@ -215,23 +235,29 @@ test("ignores the previous host catalog when switching hosts and explains requir
 	await expect(page.getByRole("button", { name: "Spawn Arm", exact: true })).toBeDisabled();
 });
 
-test("shows spawning progress and an actionable failure while keeping the entered name", async ({ page }) => {
+for (const [status, detail] of [
+  [400, "Model check failed: this model is not supported for this account. Choose another model."],
+  [504, "The Arm Host did not confirm startup: Command timed out after 210000ms. Check the arm status before retrying."],
+] as const) {
+test(`keeps spawn open and shows detailed startup error ${status}`, async ({ page }) => {
 	await installMissingArmCatalog(page);
 	await page.route("**/api/opencode/agents/test-host/providers", (route) => route.fulfill({ json: { providers: testProviders } }));
 	let releaseSpawn = () => {};
 	const spawnReady = new Promise<void>((resolve) => { releaseSpawn = resolve; });
 	await page.route("**/api/arms/*/spawn", async (route) => {
 		await spawnReady;
-		await route.fulfill({ status: 502, json: { error: "The arm host could not start this arm. Try again." } });
+		await route.fulfill({ status, json: { error: detail } });
 	});
 	await page.goto("/arms?spawn=1");
 	await page.getByLabel("Arm name", { exact: true }).fill("retry-arm");
 	await page.getByRole("button", { name: "Spawn Arm", exact: true }).click();
-	await expect(page.getByRole("button", { name: "Starting...", exact: true })).toBeDisabled();
+	await expect(page.getByRole("button", { name: "Checking & starting…", exact: true })).toBeDisabled();
+	await expect(page.getByText("Checking model access and starting retry-arm…", { exact: true })).toBeVisible();
 	await expect(page.getByLabel("Arm name", { exact: true })).toBeDisabled();
 	await expect(page.getByLabel("Arm host", { exact: true })).toBeDisabled();
 	releaseSpawn();
-	await expect(page.locator(".spawn-arm-panel").getByRole("alert")).toContainText("The arm host could not start this arm. Try again.");
+	await expect(page.locator(".spawn-arm-panel").getByRole("alert")).toContainText(detail);
 	await expect(page.getByLabel("Arm name", { exact: true })).toHaveValue("retry-arm");
 	await expect(page.getByRole("button", { name: "Spawn Arm", exact: true })).toBeEnabled();
 });
+}

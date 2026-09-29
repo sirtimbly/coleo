@@ -11,7 +11,6 @@ import {
 	ContentItem,
 	GoldenLayout,
 	LayoutConfig,
-	type RootItemConfig,
 	type ResolvedLayoutConfig,
 	Stack,
 	type StackItemConfig,
@@ -28,6 +27,7 @@ import {
 	Save,
 	Search,
 } from "lucide-react";
+import { splitRootStack } from "./split-root-stack";
 import { WorkspaceRoutePanel } from "./WorkspaceRoutePanel";
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -486,43 +486,8 @@ export function GoldenWorkspace() {
 				return;
 			}
 
-			// Check if root is a stack - if so, we need to convert it to a row with two stacks
 			const rootItem = layout.rootItem;
-			if (rootItem && ContentItem.isStack(rootItem)) {
-				// Save current stack's content and active tab index
-				const currentStackContent = rootItem.contentItems.map((item) => ({
-					type: "component",
-					componentType: WORKSPACE_COMPONENT_TYPE,
-					title: (item as ComponentItem).title,
-					componentState: (item as ComponentItem).container.state,
-				}));
-
-				// Get the active tab index from the root stack (which contains all tabs)
-				const activeComponentItem = rootItem.getActiveComponentItem();
-				const activeItemIndex = activeComponentItem
-					? rootItem.contentItems.indexOf(activeComponentItem)
-					: 0;
-
-				// Create new row layout with two stacks
-				const newLayout: LayoutConfig = {
-					root: {
-						type: "row",
-						content: [
-							{
-								type: "stack",
-								content: currentStackContent,
-								activeItemIndex: Math.max(0, activeItemIndex),
-							},
-							createStackConfig(panelState),
-						],
-					} as unknown as RootItemConfig,
-					settings: {
-						reorderEnabled: true,
-						popoutWholeStack: false,
-					},
-				};
-
-				layout.loadLayout(newLayout);
+			if (splitRootStack(layout, createStackConfig(panelState))) {
 				focusPanelByRoute(panelState);
 				return;
 			}
@@ -570,35 +535,7 @@ export function GoldenWorkspace() {
 			const panelTitle = title ?? getAppRouteTitle(pathname, search);
 			const rootItem = layout.rootItem;
 
-			if (rootItem && ContentItem.isStack(rootItem)) {
-				const currentStackContent = rootItem.contentItems.map((item) => ({
-					type: "component" as const,
-					componentType: WORKSPACE_COMPONENT_TYPE,
-					title: (item as ComponentItem).title,
-					componentState: (item as ComponentItem).container.state,
-				}));
-				const activeComponentItem = rootItem.getActiveComponentItem();
-				const activeItemIndex = activeComponentItem
-					? rootItem.contentItems.indexOf(activeComponentItem)
-					: 0;
-
-				layout.loadLayout({
-					root: {
-						type: "row",
-						content: [
-							{
-								type: "stack",
-								content: currentStackContent,
-								activeItemIndex: Math.max(0, activeItemIndex),
-							},
-							createStackConfig(panelState),
-						],
-					} as unknown as RootItemConfig,
-					settings: {
-						reorderEnabled: true,
-						popoutWholeStack: false,
-					},
-				});
+			if (splitRootStack(layout, createStackConfig(panelState))) {
 				focusPanelByRoute(panelState);
 				return;
 			}

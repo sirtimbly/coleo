@@ -10,7 +10,7 @@ const __dirname = dirname(realpathSync(fileURLToPath(import.meta.url)));
  * Get the path to brain templates in the installed package
  * This resolves relative to the compiled code location
  */
-function getPackageTemplatesDir(): string {
+export function getPackageTemplatesDir(): string {
   const candidates = [
     // Source layout: src/brain/template-manager.ts -> src/brain/templates
     join(__dirname, "templates"),

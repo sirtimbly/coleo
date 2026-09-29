@@ -1,0 +1,2144 @@
+{
+  "since": "2026-09-22T00:59:40Z",
+  "until": "2026-09-22T01:59:40Z",
+  "evaluations": 57,
+  "actionModes": {
+    "log_discovery": "off",
+    "update_task": "off",
+    "prompt_arm": "off",
+    "stop_arm": "off"
+  },
+  "methodology": "Offline routing-request sizes using current local prompts and action switches, held constant across variants. Not a model-quality or latency test. No execution or API calls.",
+  "limitations": [
+    "Historical prompts/switches were not persisted; reconstructed query sizes may differ from original requests.",
+    "Existing 2500-character truncation and 1000-event cap already lost evidence; coverage flags remain unchanged.",
+    "Drop variants remove possible failure, progress and action evidence. Transport removal can lose text when final messages are absent.",
+    "Only routing-request size measured; detail questions can add more input.",
+    "Overlapping polls are not independent samples."
+  ],
+  "summary": {
+    "original": {
+      "withinBudget": 33,
+      "rescuedHistoricalErrors": 0,
+      "largestQueryChars": 958644
+    },
+    "drop_tools": {
+      "withinBudget": 33,
+      "rescuedHistoricalErrors": 0,
+      "largestQueryChars": 706587
+    },
+    "compact_tools": {
+      "withinBudget": 33,
+      "rescuedHistoricalErrors": 0,
+      "largestQueryChars": 783510
+    },
+    "drop_tools_and_transport": {
+      "withinBudget": 34,
+      "rescuedHistoricalErrors": 1,
+      "largestQueryChars": 300570
+    }
+  },
+  "largest": {
+    "id": "0e6253c2-75a9-4ec2-8893-64e133bde69a",
+    "at": "2026-09-22T01:40:27.711Z",
+    "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+    "coverageComplete": false,
+    "toolEvents": 182,
+    "truncatedToolEvents": 39,
+    "candidates": 58,
+    "sizes": {
+      "original": {
+        "snapshotChars": 918621,
+        "queryChars": 958644,
+        "events": 961,
+        "withinBudget": false
+      },
+      "drop_tools": {
+        "snapshotChars": 662455,
+        "queryChars": 702478,
+        "events": 779,
+        "withinBudget": false
+      },
+      "compact_tools": {
+        "snapshotChars": 743487,
+        "queryChars": 783510,
+        "events": 961,
+        "withinBudget": false
+      },
+      "drop_tools_and_transport": {
+        "snapshotChars": 256183,
+        "queryChars": 296206,
+        "events": 165,
+        "withinBudget": false
+      }
+    },
+    "eventTypes": {
+      "tool part updates": {
+        "count": 182,
+        "chars": 255984
+      },
+      "message.part.updated": {
+        "count": 122,
+        "chars": 150384
+      },
+      "message.updated": {
+        "count": 102,
+        "chars": 126353
+      },
+      "session.status": {
+        "count": 80,
+        "chars": 29520
+      },
+      "session.updated": {
+        "count": 44,
+        "chars": 42344
+      },
+      "session.diff": {
+        "count": 20,
+        "chars": 8240
+      },
+      "message.part.delta": {
+        "count": 368,
+        "chars": 199201
+      },
+      "task_created": {
+        "count": 5,
+        "chars": 2172
+      },
+      "file.edited": {
+        "count": 4,
+        "chars": 1532
+      },
+      "file.watcher.updated": {
+        "count": 20,
+        "chars": 8822
+      },
+      "arm.status_changed": {
+        "count": 8,
+        "chars": 1775
+      },
+      "task_updated": {
+        "count": 2,
+        "chars": 2067
+      },
+      "prompt_sent": {
+        "count": 2,
+        "chars": 636
+      },
+      "task_assigned": {
+        "count": 1,
+        "chars": 192
+      },
+      "auto_assigned_watchers": {
+        "count": 1,
+        "chars": 175
+      }
+    },
+    "fields": {
+      "window": 111,
+      "entities": 56550,
+      "events": 830359,
+      "brainActions": 9162,
+      "evaluations": 2,
+      "discoveries": 20482,
+      "coverage": 1864
+    }
+  },
+  "measurements": [
+    {
+      "id": "fc6ec789-fd29-4a70-93cb-4e240875d963",
+      "at": "2026-09-22T01:00:12.600Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 36,
+      "sizes": {
+        "original": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "9e645390-c2a4-40e7-8fa2-2a4c72e800cf",
+      "at": "2026-09-22T01:01:05.287Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 36,
+      "sizes": {
+        "original": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "0c311070-a3fb-4799-9aac-b82ffca313c6",
+      "at": "2026-09-22T01:01:51.013Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 36,
+      "sizes": {
+        "original": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "1938e6f2-8b7c-4299-9f0a-e51ea040b858",
+      "at": "2026-09-22T01:02:24.072Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 36,
+      "sizes": {
+        "original": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "ac772589-3e20-49f3-9066-0cd34bbefe39",
+      "at": "2026-09-22T01:02:56.864Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 36,
+      "sizes": {
+        "original": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "11718a74-f008-4852-b8b8-8d390d6894b2",
+      "at": "2026-09-22T01:03:30.685Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 36,
+      "sizes": {
+        "original": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "01893415-1281-4f44-a968-faef5add3cbe",
+      "at": "2026-09-22T01:04:03.370Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 36,
+      "sizes": {
+        "original": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "707681d2-4ca5-4f9b-8633-823d4b699b8e",
+      "at": "2026-09-22T01:04:41.790Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 36,
+      "sizes": {
+        "original": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 45898,
+          "queryChars": 71236,
+          "events": 0,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "08d59440-bf49-4987-83aa-14e1a68c7be6",
+      "at": "2026-09-22T01:05:25.521Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 40,
+      "sizes": {
+        "original": {
+          "snapshotChars": 46338,
+          "queryChars": 74329,
+          "events": 1,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 46338,
+          "queryChars": 74329,
+          "events": 1,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 46338,
+          "queryChars": 74329,
+          "events": 1,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 46338,
+          "queryChars": 74329,
+          "events": 1,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "a0b22d7a-1772-4269-a303-235aec10c205",
+      "at": "2026-09-22T01:06:55.174Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 41,
+      "sizes": {
+        "original": {
+          "snapshotChars": 48762,
+          "queryChars": 77390,
+          "events": 6,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 48762,
+          "queryChars": 77390,
+          "events": 6,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 48762,
+          "queryChars": 77390,
+          "events": 6,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 48762,
+          "queryChars": 77390,
+          "events": 6,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "e862810a-26a1-4d4f-9820-fa428280a665",
+      "at": "2026-09-22T01:07:53.388Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 42,
+      "sizes": {
+        "original": {
+          "snapshotChars": 51622,
+          "queryChars": 80895,
+          "events": 10,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 51622,
+          "queryChars": 80895,
+          "events": 10,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 51622,
+          "queryChars": 80895,
+          "events": 10,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 51622,
+          "queryChars": 80895,
+          "events": 10,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "aa138453-139d-4154-8ea2-4c73256e7442",
+      "at": "2026-09-22T01:08:37.256Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 42,
+      "sizes": {
+        "original": {
+          "snapshotChars": 51622,
+          "queryChars": 80895,
+          "events": 10,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 51622,
+          "queryChars": 80895,
+          "events": 10,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 51622,
+          "queryChars": 80895,
+          "events": 10,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 51622,
+          "queryChars": 80895,
+          "events": 10,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "e9b661fc-3eed-4d45-a785-567788999fc7",
+      "at": "2026-09-22T01:09:11.181Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 42,
+      "sizes": {
+        "original": {
+          "snapshotChars": 51622,
+          "queryChars": 80895,
+          "events": 10,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 51622,
+          "queryChars": 80895,
+          "events": 10,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 51622,
+          "queryChars": 80895,
+          "events": 10,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 51622,
+          "queryChars": 80895,
+          "events": 10,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "cfb09b9c-5d61-4bfc-8f9a-d1cabbd9c09b",
+      "at": "2026-09-22T01:09:55.696Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 46,
+      "sizes": {
+        "original": {
+          "snapshotChars": 62127,
+          "queryChars": 94128,
+          "events": 12,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 62127,
+          "queryChars": 94128,
+          "events": 12,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 62127,
+          "queryChars": 94128,
+          "events": 12,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 62127,
+          "queryChars": 94128,
+          "events": 12,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "365bf770-e9fd-4b7c-995d-eee3afaf9df6",
+      "at": "2026-09-22T01:10:29.261Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 46,
+      "sizes": {
+        "original": {
+          "snapshotChars": 61854,
+          "queryChars": 93855,
+          "events": 11,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 61854,
+          "queryChars": 93855,
+          "events": 11,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 61854,
+          "queryChars": 93855,
+          "events": 11,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 61854,
+          "queryChars": 93855,
+          "events": 11,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "c694b325-78d8-4cbf-881f-9da66ab8e4c1",
+      "at": "2026-09-22T01:11:08.077Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 46,
+      "sizes": {
+        "original": {
+          "snapshotChars": 66648,
+          "queryChars": 98649,
+          "events": 16,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 66648,
+          "queryChars": 98649,
+          "events": 16,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 66648,
+          "queryChars": 98649,
+          "events": 16,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 66648,
+          "queryChars": 98649,
+          "events": 16,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "1a423609-f6f8-4f4c-b859-2244a965bfb5",
+      "at": "2026-09-22T01:11:47.817Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 46,
+      "sizes": {
+        "original": {
+          "snapshotChars": 67616,
+          "queryChars": 99617,
+          "events": 18,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 67616,
+          "queryChars": 99617,
+          "events": 18,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 67616,
+          "queryChars": 99617,
+          "events": 18,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 67616,
+          "queryChars": 99617,
+          "events": 18,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "17689033-c525-4d6c-a4bc-f52de41ee604",
+      "at": "2026-09-22T01:12:24.575Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 46,
+      "sizes": {
+        "original": {
+          "snapshotChars": 69177,
+          "queryChars": 101186,
+          "events": 19,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 69177,
+          "queryChars": 101186,
+          "events": 19,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 69177,
+          "queryChars": 101186,
+          "events": 19,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 69177,
+          "queryChars": 101186,
+          "events": 19,
+          "withinBudget": false
+        }
+      }
+    },
+    {
+      "id": "87d758e0-bdad-4761-92d3-f27e4fb9fcc4",
+      "at": "2026-09-22T01:12:56.456Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 46,
+      "sizes": {
+        "original": {
+          "snapshotChars": 68397,
+          "queryChars": 100406,
+          "events": 15,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 68397,
+          "queryChars": 100406,
+          "events": 15,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 68397,
+          "queryChars": 100406,
+          "events": 15,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 68397,
+          "queryChars": 100406,
+          "events": 15,
+          "withinBudget": false
+        }
+      }
+    },
+    {
+      "id": "fec94aeb-ecf1-4a64-a227-a4a8e19048e7",
+      "at": "2026-09-22T01:13:28.358Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 46,
+      "sizes": {
+        "original": {
+          "snapshotChars": 68397,
+          "queryChars": 100406,
+          "events": 15,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 68397,
+          "queryChars": 100406,
+          "events": 15,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 68397,
+          "queryChars": 100406,
+          "events": 15,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 68397,
+          "queryChars": 100406,
+          "events": 15,
+          "withinBudget": false
+        }
+      }
+    },
+    {
+      "id": "e1869bee-3627-434e-8dc4-cde6331ef97c",
+      "at": "2026-09-22T01:13:59.985Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 46,
+      "sizes": {
+        "original": {
+          "snapshotChars": 68397,
+          "queryChars": 100406,
+          "events": 15,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 68397,
+          "queryChars": 100406,
+          "events": 15,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 68397,
+          "queryChars": 100406,
+          "events": 15,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 68397,
+          "queryChars": 100406,
+          "events": 15,
+          "withinBudget": false
+        }
+      }
+    },
+    {
+      "id": "b33122b1-2d0b-4224-899b-d59183495233",
+      "at": "2026-09-22T01:14:33.873Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 46,
+      "sizes": {
+        "original": {
+          "snapshotChars": 68397,
+          "queryChars": 100406,
+          "events": 15,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 68397,
+          "queryChars": 100406,
+          "events": 15,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 68397,
+          "queryChars": 100406,
+          "events": 15,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 68397,
+          "queryChars": 100406,
+          "events": 15,
+          "withinBudget": false
+        }
+      }
+    },
+    {
+      "id": "a96d5b27-675a-4e99-879f-c44ed8e237aa",
+      "at": "2026-09-22T01:15:05.976Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 44,
+      "sizes": {
+        "original": {
+          "snapshotChars": 59879,
+          "queryChars": 90522,
+          "events": 13,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 59879,
+          "queryChars": 90522,
+          "events": 13,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 59879,
+          "queryChars": 90522,
+          "events": 13,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 59879,
+          "queryChars": 90522,
+          "events": 13,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "3a9fa118-d72c-437c-a785-5ad6fbb51062",
+      "at": "2026-09-22T01:15:38.273Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 44,
+      "sizes": {
+        "original": {
+          "snapshotChars": 59879,
+          "queryChars": 90522,
+          "events": 13,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 59879,
+          "queryChars": 90522,
+          "events": 13,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 59879,
+          "queryChars": 90522,
+          "events": 13,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 59879,
+          "queryChars": 90522,
+          "events": 13,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "c22c02f0-89c8-4bf4-81fc-057ae4b9f57d",
+      "at": "2026-09-22T01:16:10.815Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 43,
+      "sizes": {
+        "original": {
+          "snapshotChars": 52039,
+          "queryChars": 82037,
+          "events": 6,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 52039,
+          "queryChars": 82037,
+          "events": 6,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 52039,
+          "queryChars": 82037,
+          "events": 6,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 52039,
+          "queryChars": 82037,
+          "events": 6,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "14779665-f0f3-4b28-a975-95a5d25da579",
+      "at": "2026-09-22T01:16:49.778Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 43,
+      "sizes": {
+        "original": {
+          "snapshotChars": 51072,
+          "queryChars": 81070,
+          "events": 4,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 51072,
+          "queryChars": 81070,
+          "events": 4,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 51072,
+          "queryChars": 81070,
+          "events": 4,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 51072,
+          "queryChars": 81070,
+          "events": 4,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "fbaeec58-b487-4b15-868b-6989d5f86493",
+      "at": "2026-09-22T01:17:23.105Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 43,
+      "sizes": {
+        "original": {
+          "snapshotChars": 51072,
+          "queryChars": 81070,
+          "events": 4,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 51072,
+          "queryChars": 81070,
+          "events": 4,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 51072,
+          "queryChars": 81070,
+          "events": 4,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 51072,
+          "queryChars": 81070,
+          "events": 4,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "c0c235f2-53ef-484c-800c-de89ad17a298",
+      "at": "2026-09-22T01:17:54.747Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 43,
+      "sizes": {
+        "original": {
+          "snapshotChars": 50293,
+          "queryChars": 80291,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 50293,
+          "queryChars": 80291,
+          "events": 0,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 50293,
+          "queryChars": 80291,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 50293,
+          "queryChars": 80291,
+          "events": 0,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "27b54970-1fde-49da-831f-037c6951727c",
+      "at": "2026-09-22T01:18:26.547Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 43,
+      "sizes": {
+        "original": {
+          "snapshotChars": 50293,
+          "queryChars": 80291,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 50293,
+          "queryChars": 80291,
+          "events": 0,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 50293,
+          "queryChars": 80291,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 50293,
+          "queryChars": 80291,
+          "events": 0,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "2a99c353-68bc-4901-80c3-ca9597f6acdd",
+      "at": "2026-09-22T01:19:08.666Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 43,
+      "sizes": {
+        "original": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "97491dbc-78c5-4af0-bb4d-cd445280edbf",
+      "at": "2026-09-22T01:19:41.448Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 43,
+      "sizes": {
+        "original": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "9ad4d4d9-4848-4acd-a84e-00f73816c6ad",
+      "at": "2026-09-22T01:20:55.763Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 43,
+      "sizes": {
+        "original": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "9c071869-bdc5-4015-9882-42e26eae54a1",
+      "at": "2026-09-22T01:21:42.468Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 43,
+      "sizes": {
+        "original": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "402852e5-8096-4e32-aab8-a3efe49cb96c",
+      "at": "2026-09-22T01:22:31.179Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 43,
+      "sizes": {
+        "original": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "9dfa783f-cf96-49ba-a3e9-05e1111737d6",
+      "at": "2026-09-22T01:23:04.271Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 43,
+      "sizes": {
+        "original": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 51321,
+          "queryChars": 81319,
+          "events": 0,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "aeef0db9-9bf4-484e-9830-f28657c2d1e3",
+      "at": "2026-09-22T01:24:22.795Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 43,
+      "sizes": {
+        "original": {
+          "snapshotChars": 50293,
+          "queryChars": 80291,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 50293,
+          "queryChars": 80291,
+          "events": 0,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 50293,
+          "queryChars": 80291,
+          "events": 0,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 50293,
+          "queryChars": 80291,
+          "events": 0,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "f970f8ab-fa64-4ee1-9b33-bda51b204ac7",
+      "at": "2026-09-22T01:25:22.692Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 43,
+      "sizes": {
+        "original": {
+          "snapshotChars": 50773,
+          "queryChars": 80771,
+          "events": 2,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 50773,
+          "queryChars": 80771,
+          "events": 2,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 50773,
+          "queryChars": 80771,
+          "events": 2,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 50773,
+          "queryChars": 80771,
+          "events": 2,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "e53e40e9-e9a8-4bd0-9a0f-f7af38e31936",
+      "at": "2026-09-22T01:27:18.837Z",
+      "historicalError": null,
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 43,
+      "sizes": {
+        "original": {
+          "snapshotChars": 50773,
+          "queryChars": 80771,
+          "events": 2,
+          "withinBudget": true
+        },
+        "drop_tools": {
+          "snapshotChars": 50773,
+          "queryChars": 80771,
+          "events": 2,
+          "withinBudget": true
+        },
+        "compact_tools": {
+          "snapshotChars": 50773,
+          "queryChars": 80771,
+          "events": 2,
+          "withinBudget": true
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 50773,
+          "queryChars": 80771,
+          "events": 2,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "4e5e7c99-a079-4242-bd88-8162f76c1680",
+      "at": "2026-09-22T01:28:43.783Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": true,
+      "toolEvents": 0,
+      "truncatedToolEvents": 0,
+      "candidates": 44,
+      "sizes": {
+        "original": {
+          "snapshotChars": 71212,
+          "queryChars": 101855,
+          "events": 25,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 71212,
+          "queryChars": 101855,
+          "events": 25,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 71212,
+          "queryChars": 101855,
+          "events": 25,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 62947,
+          "queryChars": 93590,
+          "events": 14,
+          "withinBudget": true
+        }
+      }
+    },
+    {
+      "id": "00cf577f-fc80-4688-bbe2-fc84d0db35fc",
+      "at": "2026-09-22T01:29:28.188Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": false,
+      "toolEvents": 19,
+      "truncatedToolEvents": 5,
+      "candidates": 44,
+      "sizes": {
+        "original": {
+          "snapshotChars": 163189,
+          "queryChars": 193832,
+          "events": 160,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 136950,
+          "queryChars": 167593,
+          "events": 141,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 143886,
+          "queryChars": 174529,
+          "events": 160,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 94512,
+          "queryChars": 125155,
+          "events": 74,
+          "withinBudget": false
+        }
+      }
+    },
+    {
+      "id": "a1e9bccf-8127-488e-a05b-ab8957109b65",
+      "at": "2026-09-22T01:30:07.196Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": false,
+      "toolEvents": 52,
+      "truncatedToolEvents": 12,
+      "candidates": 44,
+      "sizes": {
+        "original": {
+          "snapshotChars": 341772,
+          "queryChars": 372415,
+          "events": 399,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 269925,
+          "queryChars": 300568,
+          "events": 347,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 290328,
+          "queryChars": 320971,
+          "events": 399,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 125632,
+          "queryChars": 156275,
+          "events": 105,
+          "withinBudget": false
+        }
+      }
+    },
+    {
+      "id": "5e99d125-4d4a-46fa-a66a-9d56af6f8c27",
+      "at": "2026-09-22T01:30:50.713Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": false,
+      "toolEvents": 84,
+      "truncatedToolEvents": 21,
+      "candidates": 45,
+      "sizes": {
+        "original": {
+          "snapshotChars": 458605,
+          "queryChars": 489893,
+          "events": 531,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 341492,
+          "queryChars": 372780,
+          "events": 447,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 373999,
+          "queryChars": 405287,
+          "events": 531,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 149899,
+          "queryChars": 181187,
+          "events": 128,
+          "withinBudget": false
+        }
+      }
+    },
+    {
+      "id": "54e798da-b10a-4250-811e-1b91cb967dcb",
+      "at": "2026-09-22T01:31:34.296Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": false,
+      "toolEvents": 147,
+      "truncatedToolEvents": 36,
+      "candidates": 47,
+      "sizes": {
+        "original": {
+          "snapshotChars": 594880,
+          "queryChars": 627532,
+          "events": 641,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 390678,
+          "queryChars": 423330,
+          "events": 494,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 448056,
+          "queryChars": 480708,
+          "events": 641,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 179192,
+          "queryChars": 211844,
+          "events": 145,
+          "withinBudget": false
+        }
+      }
+    },
+    {
+      "id": "71431c62-aa44-484c-8cbe-02e97d60e39c",
+      "at": "2026-09-22T01:32:18.718Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": false,
+      "toolEvents": 178,
+      "truncatedToolEvents": 39,
+      "candidates": 47,
+      "sizes": {
+        "original": {
+          "snapshotChars": 700695,
+          "queryChars": 733347,
+          "events": 764,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 460646,
+          "queryChars": 493298,
+          "events": 586,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 531547,
+          "queryChars": 564199,
+          "events": 764,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 199180,
+          "queryChars": 231832,
+          "events": 159,
+          "withinBudget": false
+        }
+      }
+    },
+    {
+      "id": "a40f747d-8414-49b4-9613-01cde6f7dd09",
+      "at": "2026-09-22T01:33:08.990Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": false,
+      "toolEvents": 212,
+      "truncatedToolEvents": 48,
+      "candidates": 47,
+      "sizes": {
+        "original": {
+          "snapshotChars": 811569,
+          "queryChars": 844221,
+          "events": 879,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 520813,
+          "queryChars": 553465,
+          "events": 667,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 607278,
+          "queryChars": 639930,
+          "events": 879,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 217124,
+          "queryChars": 249776,
+          "events": 176,
+          "withinBudget": false
+        }
+      }
+    },
+    {
+      "id": "500ec99a-4c9c-4b36-a6af-ca35940a0f2e",
+      "at": "2026-09-22T01:34:31.297Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": false,
+      "toolEvents": 181,
+      "truncatedToolEvents": 38,
+      "candidates": 47,
+      "sizes": {
+        "original": {
+          "snapshotChars": 698080,
+          "queryChars": 730732,
+          "events": 726,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 449909,
+          "queryChars": 482561,
+          "events": 545,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 525965,
+          "queryChars": 558617,
+          "events": 726,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 178784,
+          "queryChars": 211436,
+          "events": 109,
+          "withinBudget": false
+        }
+      }
+    },
+    {
+      "id": "d58d82bb-550f-4ce0-86c9-da387ec3290b",
+      "at": "2026-09-22T01:35:40.212Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": false,
+      "toolEvents": 198,
+      "truncatedToolEvents": 41,
+      "candidates": 48,
+      "sizes": {
+        "original": {
+          "snapshotChars": 622137,
+          "queryChars": 655508,
+          "events": 550,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 350815,
+          "queryChars": 384186,
+          "events": 352,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 435188,
+          "queryChars": 468559,
+          "events": 550,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 176430,
+          "queryChars": 209801,
+          "events": 103,
+          "withinBudget": false
+        }
+      }
+    },
+    {
+      "id": "b86cfaab-f058-489b-8c9d-747fe498ecdf",
+      "at": "2026-09-22T01:36:13.716Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": false,
+      "toolEvents": 151,
+      "truncatedToolEvents": 27,
+      "candidates": 50,
+      "sizes": {
+        "original": {
+          "snapshotChars": 675420,
+          "queryChars": 710087,
+          "events": 682,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 470518,
+          "queryChars": 505185,
+          "events": 531,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 537037,
+          "queryChars": 571704,
+          "events": 682,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 195373,
+          "queryChars": 230040,
+          "events": 119,
+          "withinBudget": false
+        }
+      }
+    },
+    {
+      "id": "438f79ee-5a8f-443e-a0e5-2f8180bdae3e",
+      "at": "2026-09-22T01:36:48.333Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": false,
+      "toolEvents": 132,
+      "truncatedToolEvents": 27,
+      "candidates": 49,
+      "sizes": {
+        "original": {
+          "snapshotChars": 716386,
+          "queryChars": 750370,
+          "events": 768,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 533235,
+          "queryChars": 567219,
+          "events": 636,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 591254,
+          "queryChars": 625238,
+          "events": 768,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 201305,
+          "queryChars": 235289,
+          "events": 130,
+          "withinBudget": false
+        }
+      }
+    },
+    {
+      "id": "6fc23536-e277-4aa5-8fd6-c5b04dd63bdc",
+      "at": "2026-09-22T01:37:21.901Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": false,
+      "toolEvents": 153,
+      "truncatedToolEvents": 32,
+      "candidates": 53,
+      "sizes": {
+        "original": {
+          "snapshotChars": 786514,
+          "queryChars": 823226,
+          "events": 820,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 571583,
+          "queryChars": 608295,
+          "events": 667,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 638839,
+          "queryChars": 675551,
+          "events": 820,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 224773,
+          "queryChars": 261485,
+          "events": 141,
+          "withinBudget": false
+        }
+      }
+    },
+    {
+      "id": "13f36550-9860-4f08-8fcb-90bcf27076f0",
+      "at": "2026-09-22T01:38:00.174Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": false,
+      "toolEvents": 145,
+      "truncatedToolEvents": 30,
+      "candidates": 53,
+      "sizes": {
+        "original": {
+          "snapshotChars": 798228,
+          "queryChars": 834940,
+          "events": 842,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 594066,
+          "queryChars": 630778,
+          "events": 697,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 657861,
+          "queryChars": 694573,
+          "events": 842,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 230985,
+          "queryChars": 267697,
+          "events": 148,
+          "withinBudget": false
+        }
+      }
+    },
+    {
+      "id": "f8b8d3d6-8efd-4c0a-88af-64420994d63d",
+      "at": "2026-09-22T01:38:43.105Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": false,
+      "toolEvents": 136,
+      "truncatedToolEvents": 31,
+      "candidates": 55,
+      "sizes": {
+        "original": {
+          "snapshotChars": 862501,
+          "queryChars": 900509,
+          "events": 968,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 668579,
+          "queryChars": 706587,
+          "events": 832,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 727704,
+          "queryChars": 765712,
+          "events": 968,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 231419,
+          "queryChars": 269427,
+          "events": 151,
+          "withinBudget": false
+        }
+      }
+    },
+    {
+      "id": "bec4d6af-979f-418a-98df-31822e061322",
+      "at": "2026-09-22T01:39:17.982Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": false,
+      "toolEvents": 150,
+      "truncatedToolEvents": 38,
+      "candidates": 55,
+      "sizes": {
+        "original": {
+          "snapshotChars": 868936,
+          "queryChars": 906944,
+          "events": 969,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 653532,
+          "queryChars": 691540,
+          "events": 819,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 716104,
+          "queryChars": 754112,
+          "events": 969,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 230855,
+          "queryChars": 268863,
+          "events": 147,
+          "withinBudget": false
+        }
+      }
+    },
+    {
+      "id": "f9439c63-b845-4036-bac3-dce50ff3bd2d",
+      "at": "2026-09-22T01:39:52.514Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": false,
+      "toolEvents": 183,
+      "truncatedToolEvents": 44,
+      "candidates": 57,
+      "sizes": {
+        "original": {
+          "snapshotChars": 907110,
+          "queryChars": 946482,
+          "events": 968,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 645563,
+          "queryChars": 684935,
+          "events": 785,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 724298,
+          "queryChars": 763670,
+          "events": 968,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 236805,
+          "queryChars": 276177,
+          "events": 144,
+          "withinBudget": false
+        }
+      }
+    },
+    {
+      "id": "0e6253c2-75a9-4ec2-8893-64e133bde69a",
+      "at": "2026-09-22T01:40:27.711Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": false,
+      "toolEvents": 182,
+      "truncatedToolEvents": 39,
+      "candidates": 58,
+      "sizes": {
+        "original": {
+          "snapshotChars": 918621,
+          "queryChars": 958644,
+          "events": 961,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 662455,
+          "queryChars": 702478,
+          "events": 779,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 743487,
+          "queryChars": 783510,
+          "events": 961,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 256183,
+          "queryChars": 296206,
+          "events": 165,
+          "withinBudget": false
+        }
+      }
+    },
+    {
+      "id": "66a34274-be33-4a92-b805-396293f1dd75",
+      "at": "2026-09-22T01:41:01.570Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": false,
+      "toolEvents": 174,
+      "truncatedToolEvents": 38,
+      "candidates": 58,
+      "sizes": {
+        "original": {
+          "snapshotChars": 909023,
+          "queryChars": 949008,
+          "events": 961,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 665157,
+          "queryChars": 705142,
+          "events": 787,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 741762,
+          "queryChars": 781747,
+          "events": 961,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 260585,
+          "queryChars": 300570,
+          "events": 175,
+          "withinBudget": false
+        }
+      }
+    },
+    {
+      "id": "fd450a2f-7cb6-4599-9654-f7ba5bded391",
+      "at": "2026-09-22T01:41:47.675Z",
+      "historicalError": "Swarm query exceeds the conservative 100k-character budget; narrow the window or arm scope",
+      "coverageComplete": false,
+      "toolEvents": 167,
+      "truncatedToolEvents": 31,
+      "candidates": 57,
+      "sizes": {
+        "original": {
+          "snapshotChars": 880844,
+          "queryChars": 920184,
+          "events": 960,
+          "withinBudget": false
+        },
+        "drop_tools": {
+          "snapshotChars": 654334,
+          "queryChars": 693674,
+          "events": 793,
+          "withinBudget": false
+        },
+        "compact_tools": {
+          "snapshotChars": 729455,
+          "queryChars": 768795,
+          "events": 960,
+          "withinBudget": false
+        },
+        "drop_tools_and_transport": {
+          "snapshotChars": 247892,
+          "queryChars": 287232,
+          "events": 172,
+          "withinBudget": false
+        }
+      }
+    }
+  ]
+}

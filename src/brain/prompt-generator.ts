@@ -22,6 +22,7 @@ import {
 	isValidationTaskSubject,
 	isVerificationTaskSubject,
 } from "./task-subjects";
+import { getClassificationPrompt } from "./classification-prompts";
 
 export interface PromptContext {
 	projectRoot: string;
@@ -46,6 +47,7 @@ export interface TaskDeterminationResult {
 }
 
 export interface TaskDeterminationOptions {
+	armId?: string;
 	excludeTaskIds?: string[];
 	excludeVerificationForTaskIds?: string[];
 }
@@ -196,6 +198,7 @@ interface DeterminationStepResult {
 }
 
 interface NormalizedTaskDeterminationOptions {
+	armId?: string;
 	excludedTaskIds: Set<string>;
 	excludeVerificationForTaskIds: Set<string>;
 }
@@ -250,6 +253,7 @@ function pickExistingActiveTask(
 			limit: 200,
 		})
 		.filter((task) => !task.consensusStatus || task.consensusStatus !== "reached")
+		.filter((task) => !options.armId || task.assignedTo === options.armId)
 		.filter((task) => !shouldExcludeTask(task, options))
 		.sort((a, b) => {
 			const rank = (status: string): number => {
@@ -285,7 +289,7 @@ function pickExistingActiveTask(
 			id: task.id,
 			subject: task.subject,
 			description: task.description,
-			classification: task.domain || "development",
+			classification: task.classification || task.domain || "development",
 			priority: task.priority,
 			domain: task.domain || undefined,
 		},
@@ -327,18 +331,9 @@ function tryUnblockDependencies(
 
 		if (unmetDeps.length === 0) {
 			db.updateTask(blockedTask.id, { dependencyBlocked: false });
-
-			return {
-				task: {
-					id: blockedTask.id,
-					subject: blockedTask.subject,
-					description: blockedTask.description,
-					classification: blockedTask.domain || "development",
-					priority: blockedTask.priority,
-					domain: blockedTask.domain || undefined,
-				},
-				reasoning: `Dependencies resolved. Unblocked: ${blockedTask.priority} - ${blockedTask.subject}`,
-			};
+			// Re-enter the global queue after unblocking; the newly available task
+			// may still be outside the claim policy's permitted front window.
+			return getNextPendingTask(db, "", options);
 		}
 	}
 
@@ -351,15 +346,16 @@ function tryUnblockDependencies(
  */
 function getNextPendingTask(
 	db: BrainDb,
-	phaseLabel: string,
+	_phaseLabel: string,
 	options: NormalizedTaskDeterminationOptions,
 ): DeterminationStepResult | null {
-	const phaseValue = phaseLabel || "";
 	const task = db
 		.listTasks({
 			statuses: ["pending"],
 			dependencyBlocked: false,
-			phase: phaseValue || undefined,
+			// Claim ranking is global, so a phase preference must not recommend
+			// a task that the same database will reject as outside claim_top_k.
+			unassignedOnly: true,
 			sort: "order_key_asc",
 			limit: 200,
 		})
@@ -472,7 +468,7 @@ function normalizeTaskDeterminationOptions(
 			.map((id) => id.trim())
 			.filter((id) => id.length > 0),
 	);
-	return { excludedTaskIds, excludeVerificationForTaskIds };
+	return { armId: options.armId, excludedTaskIds, excludeVerificationForTaskIds };
 }
 
 function shouldExcludeTask(
@@ -1289,6 +1285,7 @@ function mapBugStatusToTaskStatus(status: string): Task["status"] {
 }
 
 function generateInstructions(task: Task): string {
+	const classification = task.classification?.toLowerCase() || task.domain?.toLowerCase() || "development";
 	const domain = task.domain?.toLowerCase() || "";
 	const subject = task.subject.toLowerCase();
 	const isBugTask =
@@ -1343,34 +1340,8 @@ ${task.description}
 		);
 	}
 
-	if (domain === "docs" || subject.includes("doc")) {
-		return (
-			baseInstructions +
-			`
-
-## Documentation-Specific
-
-- Focus on feature docs, API docs, and capabilities docs
-- Do NOT update conceptual or architectural docs
-- Match docs to actual code implementation
-- Add "Future Work" notes for planned but unimplemented features`
-		);
-	}
-
-	if (domain === "testing" || subject.includes("test")) {
-		return (
-			baseInstructions +
-			`
-
-## Testing-Specific
-
-- search for existing tests, read comments, and find code that should have been tested that other agents left behind.
-- Write tests that verify the implementation
-- Consider edge cases
-- Ensure tests are maintainable
-- Run existing tests to verify nothing is broken`
-		);
-	}
+	if (domain === "docs" || subject.includes("doc")) return baseInstructions + getClassificationPrompt("documentation");
+	if (domain === "testing" || subject.includes("test")) return baseInstructions + getClassificationPrompt("qa");
 
 	if (domain === "refactoring" || subject.includes("refactor")) {
 		return (
@@ -1391,7 +1362,7 @@ ${task.description}
 		);
 	}
 
-	return baseInstructions;
+	return baseInstructions + getClassificationPrompt(classification);
 }
 
 function buildContextBundle(
@@ -1516,6 +1487,7 @@ export function formatContextBundle(result: ContextBundleResult): string {
 }
 
 export const __promptTestables = {
+	generateInstructions,
 	readCurrentPlan,
 	extractDependenciesFromPhase,
 	collectDependenciesForTask,

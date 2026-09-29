@@ -90,6 +90,15 @@ async function writeServiceInfo(info: ServiceInfo): Promise<void> {
   await writeFile(pidFile, JSON.stringify(info, null, 2));
 }
 
+/** Foreground services participate in the same lifecycle tracking as daemons. */
+export async function registerServiceProcess(service: ServiceType, pid = process.pid): Promise<void> {
+  if (!isProcessRunning(pid)) throw new Error(`Cannot register stopped ${service} process ${pid}`);
+  const existing = await readServiceInfo(service);
+  if (existing?.pid === pid) return;
+  const { command, cwd } = getServiceCommand(service);
+  await writeServiceInfo({ type: service, pid, startedAt: new Date().toISOString(), command, cwd });
+}
+
 /**
  * Remove PID file for a service
  */
@@ -228,12 +237,21 @@ export async function startService(
   
   // Wait a moment for the actual process to start
   await new Promise(resolve => setTimeout(resolve, 2000));
+
+  // The foreground entry point registers itself after binding successfully.
+  // Prefer that PID over matching a command line (which may use relative paths).
+  const registeredStatus = await getServiceStatus(service);
+  if (registeredStatus.running) return registeredStatus;
   
   // Find the PID of the started process
   // We need to find it by looking for the command pattern
   const pidResult = await findProcessByCommand(command, cwd);
   
   if (!pidResult) {
+    const log = await readFile(logFile, "utf8").catch(() => "");
+    if (log.includes("EADDRINUSE")) {
+      throw new Error(`Failed to start ${service}: its listening port is already in use. Check ${logFile} for details.`);
+    }
     throw new Error(`Failed to start ${service}: could not find process. Check ${logFile} for details.`);
   }
   

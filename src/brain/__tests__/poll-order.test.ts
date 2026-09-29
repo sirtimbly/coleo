@@ -14,6 +14,13 @@ describe("Brain poll order", () => {
 		const record = (name: string): void => {
 			calls.push(name);
 		};
+		(brain as unknown as { apiRequest: (path: string) => Promise<unknown> }).apiRequest = async (path) => {
+			if (path === "/api/tasks/handoff") {
+				record("activatePreparedTaskHandoffs");
+				return { handoffs: [] };
+			}
+			return null;
+		};
 
 		(
 			brain as unknown as {
@@ -140,13 +147,14 @@ describe("Brain poll order", () => {
 			"processArmQueue",
 			"processOperationalSignals",
 			"checkResolvedBugsAndResumeTasks",
+			"activatePreparedTaskHandoffs",
 			"checkArms",
 			"loadTasks",
+			"assignInitialTasks",
 			"processArmAssistantOutputs",
 			"loadTasks",
 			"assignTasks",
 			"reviewBlockedTasks",
-			"assignInitialTasks",
 			"processInbox",
 			"checkDocUpdateTrigger",
 			"reEvaluatePlanProgress",
@@ -177,6 +185,10 @@ describe("Brain poll order", () => {
 		privateBrain.processHumanMail = async () => calls.push("processHumanMail");
 		privateBrain.processArmQueue = async () => calls.push("processArmQueue");
 		privateBrain.processOperationalSignals = async () => calls.push("processOperationalSignals");
+		privateBrain.apiRequest = async (path: string) => {
+			if (path === "/api/tasks/handoff") calls.push("activatePreparedTaskHandoffs");
+			return null;
+		};
 		privateBrain.saveState = async () => calls.push("saveState");
 		privateBrain.notifyObservatory = async () => calls.push("notifyObservatory");
 

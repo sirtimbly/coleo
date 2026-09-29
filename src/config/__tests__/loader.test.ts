@@ -52,7 +52,7 @@ describe("config loader", () => {
           version: 1,
           brain: { poll_interval_ms: 1234 },
           mail: { from_address: "ops@example.test", digest_schedule: "daily" },
-          defaults: { harness: "opencode", provider: "openai", model: "gpt-4o" },
+          defaults: { harness: "opencode-api", provider: "openai", model: "gpt-4o" },
         },
         dir
       );
@@ -81,7 +81,7 @@ describe("config loader", () => {
       gitea: { url: "https://gitea.test", token: "tok", defaultOrg: "org", defaultRepo: "repo" },
       terminal: { emulator: "tmux" },
       refactoring: { fileSizeThreshold: 500, enabled: true },
-      defaults: { harness: "opencode", provider: "openai", model: "gpt-4o", contextBudget: 8000 },
+      defaults: { harness: "opencode-api", provider: "openai", model: "gpt-4o", contextBudget: 8000 },
     });
 
     expect(toml.version).toBe(2);
@@ -130,7 +130,7 @@ describe("config loader", () => {
             model: "gpt-5",
             api_key: "brain-key",
           },
-          defaults: { harness: "opencode", provider: "openai", model: "gpt-4o" },
+          defaults: { harness: "opencode-api", provider: "openai", model: "gpt-4o" },
         },
         dir
       );
@@ -191,7 +191,7 @@ describe("config loader", () => {
         {
           version: 1,
           brain: { poll_interval_ms: 1000, max_arms: 2 },
-          defaults: { harness: "opencode", provider: "openai", model: "gpt-4o" },
+          defaults: { harness: "opencode-api", provider: "openai", model: "gpt-4o" },
         },
         dir
       );

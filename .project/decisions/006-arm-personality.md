@@ -1,7 +1,7 @@
 # ADR-006: Arm Personality and Convictions
 
-**Status**: Accepted  
-**Date**: 2025-01-13  
+**Status**: DEPRECATED
+**Date**: 2025-09-21
 **Deciders**: Human
 
 ## Context
@@ -36,8 +36,8 @@ ALTER TABLE arms ADD COLUMN parent_arm_id TEXT REFERENCES arms(id);
 A natural language description of how the arm operates. Updated by the arm itself as it learns:
 
 ```
-Methodical and security-conscious. Prefers explicit error handling 
-over silent failures. Likes typed interfaces and clear boundaries 
+Methodical and security-conscious. Prefers explicit error handling
+over silent failures. Likes typed interfaces and clear boundaries
 between modules. Suspicious of magic.
 ```
 

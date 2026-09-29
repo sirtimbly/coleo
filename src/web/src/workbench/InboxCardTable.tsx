@@ -113,8 +113,7 @@ function createExpanderIcon(): SVGSVGElement {
 	return icon;
 }
 
-const stateFormatter: Formatter = (cell) => {
-	const data = cell.getRow().getData() as InboxTableRow;
+function renderState(data: InboxTableRow): HTMLElement {
 	const wrapper = document.createElement("span");
 	wrapper.className = "coleo-inbox-state";
 	const dot = document.createElement("span");
@@ -128,10 +127,11 @@ const stateFormatter: Formatter = (cell) => {
 	dot.setAttribute("aria-hidden", "true");
 	wrapper.append(dot, textElement("span", "", data.state));
 	return wrapper;
-};
+}
 
-const subjectFormatter: Formatter = (cell) => {
-	const data = cell.getRow().getData() as InboxTableRow;
+const stateFormatter: Formatter = (cell) => renderState(cell.getRow().getData() as InboxTableRow);
+
+function renderSubject(data: InboxTableRow): HTMLElement {
 	const wrapper = document.createElement("span");
 	wrapper.className = "coleo-inbox-subject";
 	wrapper.append(
@@ -139,7 +139,9 @@ const subjectFormatter: Formatter = (cell) => {
 		textElement("span", "coleo-inbox-subject-summary", data.summary),
 	);
 	return wrapper;
-};
+}
+
+const subjectFormatter: Formatter = (cell) => renderSubject(cell.getRow().getData() as InboxTableRow);
 
 const timeFormatter: Formatter = (cell) => {
 	const data = cell.getRow().getData() as InboxTableRow;
@@ -165,6 +167,7 @@ export function InboxCardTable({
 }) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const tableRef = useRef<Tabulator | null>(null);
+	const syncRef = useRef<(() => void) | null>(null);
 	const expandedIdsRef = useRef(new Set<string>());
 	const mountedCardsRef = useRef(new Map<HTMLElement, MountedCard>());
 	const runtimeRef = useRef<InboxCardTableRuntime>({
@@ -221,6 +224,8 @@ export function InboxCardTable({
 			if (!item) return;
 			const existing = mountedCards.get(element);
 			if (existing?.id === data.id) {
+				// Tabulator may rebuild a row during a virtual redraw; retain its React root.
+				if (existing.host.parentElement !== element) element.append(existing.host);
 				existing.root.render(
 					<ScreenErrorBoundary name="this card" resetKey={data.id}>
 						<BoundaryContent render={() => runtimeRef.current.renderCard(item)} />
@@ -378,21 +383,74 @@ export function InboxCardTable({
 			});
 			table = instance;
 			tableRef.current = instance;
+			let ready = false;
+			let syncing = false;
+			let pending = false;
+			let applied = new Map([...runtimeRef.current.itemsById.values()].map((item) => [item.id, projectRow(item)]));
+			const sync = async () => {
+				if (!ready || disposed) return;
+				if (syncing) { pending = true; return; }
+				syncing = true;
+				try {
+					do {
+						pending = false;
+						const next = new Map([...runtimeRef.current.itemsById.values()].map((item) => [item.id, projectRow(item)]));
+						const removed = [...applied.keys()].filter((id) => !next.has(id));
+						for (const [element, mounted] of mountedCards) {
+							if (!next.has(mounted.id)) unmountCard(element);
+						}
+						for (const id of removed) expandedIdsRef.current.delete(id);
+						if (removed.length) await instance.deleteRow(removed);
+						if (disposed) return;
+						const added = [...next.values()].filter((row) => !applied.has(row.id));
+						const changed = [...next.values()].filter((row) => applied.has(row.id) && JSON.stringify(row) !== JSON.stringify(applied.get(row.id)));
+						if (changed.length) {
+							await instance.updateData(changed);
+							if (disposed) return;
+							// These formatters also read fields outside their column's value.
+							for (const data of changed) {
+								const row = instance.getRow(data.id);
+								if (!row) continue;
+								const subject = row.getCell("title");
+								const state = row.getCell("state");
+								if (subject) subject.getElement().replaceChildren(renderSubject(data));
+								if (state) state.getElement().replaceChildren(renderState(data));
+							}
+						}
+						if (disposed) return;
+						if (added.length) await instance.addData(added);
+						if (disposed) return;
+						applied = next;
+						for (const id of expandedIdsRef.current) {
+							const row = instance.getRow(id);
+							if (row) renderExpandedCard(row);
+						}
+					} while (pending && !disposed);
+				} catch (error) {
+					if (!disposed) console.error("Could not update inbox rows", error);
+				} finally {
+					syncing = false;
+				}
+			};
+			syncRef.current = () => { void sync(); };
+			instance.on("tableBuilt", () => { ready = true; void sync(); });
+
 			instance.on("rowClick", (event, row) => {
 				const target = event.target;
-				if (target instanceof Element && target.closest("button, a, input, select, textarea")) return;
+				if (target instanceof Element && target.closest(".coleo-inbox-card-detail, button, a, input, select, textarea")) return;
 				toggleRow(row);
 			});
-			instance.on("rowDblClick", (_event, row) => {
+			instance.on("rowDblClick", (event, row) => {
+				if (event.target instanceof Element && event.target.closest(".coleo-inbox-card-detail")) return;
 				const data = readRow(row);
 				const item = data ? runtimeRef.current.itemsById.get(data.id) : undefined;
 				if (item) runtimeRef.current.onOpen(item);
 			});
 			resizeObserver = new ResizeObserver(() => {
-				if (disposed || redrawFrame !== null) return;
+				if (!ready || disposed || redrawFrame !== null) return;
 				redrawFrame = window.requestAnimationFrame(() => {
 					redrawFrame = null;
-					if (!disposed) instance.redraw(true);
+					if (ready && !disposed) instance.redraw(true);
 				});
 			});
 			resizeObserver.observe(container);
@@ -400,6 +458,7 @@ export function InboxCardTable({
 
 		return () => {
 			disposed = true;
+			syncRef.current = null;
 			resizeObserver?.disconnect();
 			if (redrawFrame !== null) window.cancelAnimationFrame(redrawFrame);
 			for (const element of [...mountedCards.keys()]) unmountCard(element);
@@ -409,19 +468,8 @@ export function InboxCardTable({
 	}, []);
 
 	useEffect(() => {
-		const table = tableRef.current;
-		if (!table) return;
-		const mountedCards = mountedCardsRef.current;
-		for (const mounted of mountedCards.values()) {
-			disposeMountedCard(mounted);
-		}
-		mountedCards.clear();
-		const itemIds = new Set(items.map((item) => item.id));
-		for (const id of expandedIdsRef.current) {
-			if (!itemIds.has(id)) expandedIdsRef.current.delete(id);
-		}
-		void table.replaceData(items.map(projectRow));
-	}, [items]);
+		syncRef.current?.();
+	}, [items, renderCard]);
 
 	return (
 		<div

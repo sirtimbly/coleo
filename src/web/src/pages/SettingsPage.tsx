@@ -7,6 +7,7 @@
 import { useState, useEffect, useId } from 'react';
 import { Button, Select, Label, ListBox } from '@heroui/react';
 import { LayoutPanelTop, Monitor, Moon, PanelsTopLeft, Sun } from 'lucide-react';
+import { SUPPORTED_HARNESSES } from "../../../harness/supported";
 import { api, useTheme } from '@/lib';
 import type { ColeoConfig, OpenCodeProvider } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components';
@@ -25,8 +26,6 @@ const themeOptions = [
   { value: 'dark', label: 'Dark', icon: Moon },
   { value: 'system', label: 'System', icon: Monitor },
 ] as const;
-
-const armHarnesses = ['opencode', 'opencode-api', 'opencode-tui'] as const;
 
 export function SettingsPage() {
   usePageTitle('Coleo Observatory - Settings');
@@ -79,7 +78,7 @@ export function SettingsPage() {
         setToAddress(mailRes.mail.toAddress || '');
       }
       setBrainApiKeyConfigured(brainRes.brain.apiKeyConfigured);
-      setArmDefaults(defaultsRes.defaults);
+      setArmDefaults({ ...defaultsRes.defaults, harness: 'opencode-api' });
       setOpenCodeProviders(providersRes.providers);
       setLoading(false);
     }).catch(() => {
@@ -290,8 +289,9 @@ export function SettingsPage() {
                 onChange={(event) => setArmDefaults((current) => ({ ...current, harness: event.target.value }))}
                 className="w-full rounded-md border border-border bg-surface px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
               >
-                {armHarnesses.map((harness) => <option key={harness} value={harness}>{harness}</option>)}
+                {SUPPORTED_HARNESSES.map((harness) => <option key={harness} value={harness}>{harness}</option>)}
               </select>
+              <p className="mt-1 text-xs text-muted-foreground">Only opencode-api is currently supported.</p>
             </div>
 
             <div>

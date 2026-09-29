@@ -7,6 +7,7 @@
 
 import { mkdir, appendFile, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { subjectToken } from "../nats/subject-token";
 import type { HarnessSession, SpawnConfig, SendPromptOptions } from "./types";
 import { harnessRegistry } from "./registry";
 import type { AgentHarness } from "./types";
@@ -15,6 +16,7 @@ import type { OpenCodeApiHarness, ArmEventCallback } from "./opencode-api";
 import type { OpenCodeTuiHarness, ArmDeathCallback } from "./opencode-tui";
 import { truncateLargeFields } from "./event-stream";
 import { getProjectRuntimeEnvironment } from "../project-scope";
+import { verifySpawnModel } from "./model-preflight";
 
 export type LogCallback = (armId: string, data: string) => void;
 export type EventCallback = (armId: string, event: string, data: unknown) => void;
@@ -99,7 +101,7 @@ export class HarnessManager {
     // Publish to JetStream for persistence (only if initialized)
     if (eventStore.isInitialized()) {
       try {
-        const subject = `coleo.events.arm.${armId}.${event}`;
+        const subject = `coleo.events.arm.${subjectToken(armId)}.${event}`;
         await eventStore.publishEvent(subject, {
           type: event,
           armId,
@@ -192,6 +194,7 @@ export class HarnessManager {
 
     // Spawn the session
     console.log(`[harness-manager] Spawning ${armId} via ${agent} harness...`);
+    await verifySpawnModel(agent, options.provider, options.model);
     const session = await harness.spawn(spawnConfig);
 
     // Set up logging

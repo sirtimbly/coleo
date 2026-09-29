@@ -1,5 +1,5 @@
 {
-  "fetchedAt": "2026-09-18T18:05:30.728Z",
+  "fetchedAt": "2026-09-22T15:37:00.049Z",
   "providers": [
     {
       "id": "cerebras",
@@ -111,7 +111,7 @@
             "output": 0.15,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemma-3-12b-it"
           },
           "cost": 0.19999999999999998
@@ -124,7 +124,7 @@
             "output": 0.44999999999999996,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemma-3-27b-it"
           },
           "cost": 0.5299999999999999
@@ -137,7 +137,7 @@
             "output": 0.09999999999999999,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemma-3-4b-it"
           },
           "cost": 0.15
@@ -229,7 +229,7 @@
             "output": 0.6,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-oss-120b"
           },
           "cost": 0.75
@@ -242,7 +242,7 @@
             "output": 0.13,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-oss-20b"
           },
           "cost": 0.16
@@ -456,7 +456,7 @@
             "output": 2.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-2.5-flash"
           },
           "cost": 2.8
@@ -469,7 +469,7 @@
             "output": 2.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-2.5-flash-image"
           },
           "cost": 2.8
@@ -482,7 +482,7 @@
             "output": 0.39999999999999997,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-2.5-flash-lite"
           },
           "cost": 0.49999999999999994
@@ -499,7 +499,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-2.5-pro"
           },
           "cost": 11.25
@@ -516,7 +516,7 @@
             "output": 3,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3-flash-preview"
           },
           "cost": 3.5
@@ -529,7 +529,7 @@
             "output": 12,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3-pro-image"
           },
           "cost": 14
@@ -542,7 +542,7 @@
             "output": 12,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3-pro-image-preview"
           },
           "cost": 14
@@ -555,7 +555,7 @@
             "output": 3,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.1-flash-image"
           },
           "cost": 3.5
@@ -568,7 +568,7 @@
             "output": 3,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.1-flash-image-preview"
           },
           "cost": 3.5
@@ -581,7 +581,7 @@
             "output": 1.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.1-flash-lite"
           },
           "cost": 1.75
@@ -594,7 +594,7 @@
             "output": 1.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.1-flash-lite-image"
           },
           "cost": 1.75
@@ -615,7 +615,7 @@
             "output": 12,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.1-pro-preview"
           },
           "cost": 14
@@ -628,7 +628,7 @@
             "output": 12,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.1-pro-preview-customtools"
           },
           "cost": 14
@@ -641,7 +641,7 @@
             "output": 9,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.5-flash"
           },
           "cost": 10.5
@@ -654,7 +654,7 @@
             "output": 2.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.5-flash-lite"
           },
           "cost": 2.8
@@ -671,7 +671,7 @@
             "output": 3.75,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.6-flash"
           },
           "cost": 4.5
@@ -684,7 +684,7 @@
             "output": 3.75,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.7-flash"
           },
           "cost": 4.5
@@ -697,7 +697,7 @@
             "output": 3.75,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.8-flash"
           },
           "cost": 4.5
@@ -730,7 +730,7 @@
             "output": 0.3,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemma-4-26b-a4b-it"
           },
           "cost": 0.39
@@ -743,7 +743,7 @@
             "output": 0.33999999999999997,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemma-4-31b-it"
           },
           "cost": 0.42999999999999994
@@ -756,7 +756,7 @@
             "output": 0,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/lyria-3-clip-preview"
           },
           "cost": 0
@@ -769,7 +769,7 @@
             "output": 0,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/lyria-3-pro-preview"
           },
           "cost": 0
@@ -800,7 +800,7 @@
             "output": 50,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "~anthropic/claude-fable-latest"
           },
           "cost": 60
@@ -813,7 +813,7 @@
             "output": 5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "~anthropic/claude-haiku-latest"
           },
           "cost": 6
@@ -826,7 +826,7 @@
             "output": 25,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "~anthropic/claude-opus-latest"
           },
           "cost": 30
@@ -839,7 +839,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "~anthropic/claude-sonnet-latest"
           },
           "cost": 12
@@ -848,40 +848,40 @@
           "id": "~deepseek/deepseek-flash-latest",
           "name": "~deepseek/deepseek-flash-latest",
           "pricing": {
-            "input": 0.15,
-            "output": 0.6,
+            "input": 0.12,
+            "output": 0.48,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "~deepseek/deepseek-flash-latest"
           },
-          "cost": 0.75
+          "cost": 0.6
         },
         {
           "id": "~deepseek/deepseek-pro-latest",
           "name": "~deepseek/deepseek-pro-latest",
           "pricing": {
-            "input": 0.57816,
-            "output": 1.73448,
+            "input": 0.57024,
+            "output": 1.7107199999999998,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "~deepseek/deepseek-pro-latest"
           },
-          "cost": 2.31264
+          "cost": 2.28096
         },
         {
           "id": "~deepseek/deepseek-v4-flash-latest",
           "name": "~deepseek/deepseek-v4-flash-latest",
           "pricing": {
-            "input": 0.055,
-            "output": 0.165,
+            "input": 0.04,
+            "output": 0.16,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "~deepseek/deepseek-v4-flash-latest"
           },
-          "cost": 0.22
+          "cost": 0.2
         },
         {
           "id": "~google/gemini-flash-latest",
@@ -891,7 +891,7 @@
             "output": 3.75,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "~google/gemini-flash-latest"
           },
           "cost": 4.5
@@ -904,7 +904,7 @@
             "output": 12,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "~google/gemini-pro-latest"
           },
           "cost": 14
@@ -913,14 +913,14 @@
           "id": "~moonshotai/kimi-latest",
           "name": "~moonshotai/kimi-latest",
           "pricing": {
-            "input": 2.0999999999999996,
-            "output": 10.950000000000001,
+            "input": 1.7,
+            "output": 8.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "~moonshotai/kimi-latest"
           },
-          "cost": 13.05
+          "cost": 10.2
         },
         {
           "id": "~openai/gpt-astra-latest",
@@ -930,7 +930,7 @@
             "output": 50,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "~openai/gpt-astra-latest"
           },
           "cost": 60
@@ -943,7 +943,7 @@
             "output": 1.2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "~openai/gpt-luna-latest"
           },
           "cost": 1.4
@@ -956,7 +956,7 @@
             "output": 4.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "~openai/gpt-mini-latest"
           },
           "cost": 5.25
@@ -969,7 +969,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "~openai/gpt-sol-latest"
           },
           "cost": 12
@@ -982,7 +982,7 @@
             "output": 12,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "~openai/gpt-terra-latest"
           },
           "cost": 14
@@ -991,14 +991,14 @@
           "id": "~x-ai/grok-latest",
           "name": "~x-ai/grok-latest",
           "pricing": {
-            "input": 2,
-            "output": 6,
+            "input": 1.5999999999999999,
+            "output": 4.8,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "~x-ai/grok-latest"
           },
-          "cost": 8
+          "cost": 6.3999999999999995
         },
         {
           "id": "~z-ai/glm-flash-latest",
@@ -1008,7 +1008,7 @@
             "output": 0.25,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "~z-ai/glm-flash-latest"
           },
           "cost": 0.325
@@ -1017,14 +1017,14 @@
           "id": "~z-ai/glm-latest",
           "name": "~z-ai/glm-latest",
           "pricing": {
-            "input": 0.8987999999999999,
-            "output": 2.8248,
+            "input": 0.7728,
+            "output": 2.4288,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "~z-ai/glm-latest"
           },
-          "cost": 3.7236000000000002
+          "cost": 3.2016
         },
         {
           "id": "aion-labs/aion-2.0",
@@ -1034,7 +1034,7 @@
             "output": 1.5999999999999999,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "aion-labs/aion-2.0"
           },
           "cost": 2.4
@@ -1047,7 +1047,7 @@
             "output": 6,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "aion-labs/aion-3.0"
           },
           "cost": 9
@@ -1060,7 +1060,7 @@
             "output": 1.4,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "aion-labs/aion-3.0-mini"
           },
           "cost": 2.0999999999999996
@@ -1073,7 +1073,7 @@
             "output": 1.5999999999999999,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "aion-labs/aion-rp-llama-3.1-8b"
           },
           "cost": 2.4
@@ -1086,7 +1086,7 @@
             "output": 2.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "amazon/nova-2-lite-v1"
           },
           "cost": 2.8
@@ -1099,7 +1099,7 @@
             "output": 0.24,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "amazon/nova-lite-v1"
           },
           "cost": 0.3
@@ -1112,7 +1112,7 @@
             "output": 0.14,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "amazon/nova-micro-v1"
           },
           "cost": 0.17500000000000002
@@ -1125,7 +1125,7 @@
             "output": 12.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "amazon/nova-premier-v1"
           },
           "cost": 15
@@ -1138,7 +1138,7 @@
             "output": 3.1999999999999997,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "amazon/nova-pro-v1"
           },
           "cost": 3.9999999999999996
@@ -1151,7 +1151,7 @@
             "output": 5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "anthracite-org/magnum-v4-72b"
           },
           "cost": 7.5
@@ -1164,7 +1164,7 @@
             "output": 1.25,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "anthropic/claude-3-haiku"
           },
           "cost": 1.5
@@ -1177,7 +1177,7 @@
             "output": 50,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "anthropic/claude-fable-5"
           },
           "cost": 60
@@ -1190,7 +1190,7 @@
             "output": 50,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "anthropic/claude-fable-5.1"
           },
           "cost": 60
@@ -1203,23 +1203,10 @@
             "output": 5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "anthropic/claude-haiku-4.5"
           },
           "cost": 6
-        },
-        {
-          "id": "anthropic/claude-opus-4",
-          "name": "anthropic/claude-opus-4",
-          "pricing": {
-            "input": 15,
-            "output": 75,
-            "source": "openrouter",
-            "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
-            "matchedModel": "anthropic/claude-opus-4"
-          },
-          "cost": 90
         },
         {
           "id": "anthropic/claude-opus-4.1",
@@ -1229,7 +1216,7 @@
             "output": 75,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "anthropic/claude-opus-4.1"
           },
           "cost": 90
@@ -1242,7 +1229,7 @@
             "output": 25,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "anthropic/claude-opus-4.5"
           },
           "cost": 30
@@ -1255,7 +1242,7 @@
             "output": 25,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "anthropic/claude-opus-4.6"
           },
           "cost": 30
@@ -1268,7 +1255,7 @@
             "output": 25,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "anthropic/claude-opus-4.7"
           },
           "cost": 30
@@ -1281,7 +1268,7 @@
             "output": 25,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "anthropic/claude-opus-4.8"
           },
           "cost": 30
@@ -1294,7 +1281,7 @@
             "output": 25,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "anthropic/claude-opus-5"
           },
           "cost": 30
@@ -1307,7 +1294,7 @@
             "output": 15,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "anthropic/claude-sonnet-4"
           },
           "cost": 18
@@ -1320,7 +1307,7 @@
             "output": 15,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "anthropic/claude-sonnet-4.5"
           },
           "cost": 18
@@ -1333,7 +1320,7 @@
             "output": 15,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "anthropic/claude-sonnet-4.6"
           },
           "cost": 18
@@ -1346,7 +1333,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "anthropic/claude-sonnet-5"
           },
           "cost": 12
@@ -1359,7 +1346,7 @@
             "output": 0.7999999999999999,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "arcee-ai/trinity-large-thinking"
           },
           "cost": 1.0499999999999998
@@ -1372,7 +1359,7 @@
             "output": 1.25,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "baidu/ernie-4.5-vl-424b-a47b"
           },
           "cost": 1.67
@@ -1385,7 +1372,7 @@
             "output": 2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "bytedance-seed/seed-1.6"
           },
           "cost": 2.25
@@ -1398,7 +1385,7 @@
             "output": 0.3,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "bytedance-seed/seed-1.6-flash"
           },
           "cost": 0.375
@@ -1411,7 +1398,7 @@
             "output": 2.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "bytedance-seed/seed-2-1-turbo"
           },
           "cost": 3
@@ -1424,7 +1411,7 @@
             "output": 3,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "bytedance-seed/seed-2.0-code"
           },
           "cost": 3.5
@@ -1437,7 +1424,7 @@
             "output": 2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "bytedance-seed/seed-2.0-lite"
           },
           "cost": 2.25
@@ -1450,7 +1437,7 @@
             "output": 0.39999999999999997,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "bytedance-seed/seed-2.0-mini"
           },
           "cost": 0.49999999999999994
@@ -1463,7 +1450,7 @@
             "output": 0.19999999999999998,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "bytedance/ui-tars-1.5-7b"
           },
           "cost": 0.3
@@ -1476,7 +1463,7 @@
             "output": 0.8999999999999999,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "cognitivecomputations/dolphin-mistral-24b-venice-edition"
           },
           "cost": 1.0999999999999999
@@ -1489,7 +1476,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "cohere/command-a"
           },
           "cost": 12.5
@@ -1502,7 +1489,7 @@
             "output": 0.6,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "cohere/command-r-08-2024"
           },
           "cost": 0.75
@@ -1515,7 +1502,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "cohere/command-r-plus-08-2024"
           },
           "cost": 12.5
@@ -1528,7 +1515,7 @@
             "output": 0.15,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "cohere/command-r7b-12-2024"
           },
           "cost": 0.1875
@@ -1541,7 +1528,7 @@
             "output": 0,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "cohere/north-mini-code:free"
           },
           "cost": 0
@@ -1554,7 +1541,7 @@
             "output": 0.8899999999999999,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "deepseek/deepseek-chat"
           },
           "cost": 1.21
@@ -1567,7 +1554,7 @@
             "output": 1,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "deepseek/deepseek-chat-v3-0324"
           },
           "cost": 1.25
@@ -1580,7 +1567,7 @@
             "output": 0.95,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "deepseek/deepseek-chat-v3.1"
           },
           "cost": 1.2
@@ -1593,7 +1580,7 @@
             "output": 2.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "deepseek/deepseek-r1"
           },
           "cost": 3.2
@@ -1606,7 +1593,7 @@
             "output": 2.1500000000000004,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "deepseek/deepseek-r1-0528"
           },
           "cost": 2.6500000000000004
@@ -1619,7 +1606,7 @@
             "output": 0.7999999999999999,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "deepseek/deepseek-r1-distill-llama-70b"
           },
           "cost": 1.5999999999999999
@@ -1632,7 +1619,7 @@
             "output": 1,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "deepseek/deepseek-v3.1-terminus"
           },
           "cost": 1.27
@@ -1645,7 +1632,7 @@
             "output": 0.39999999999999997,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "deepseek/deepseek-v3.2"
           },
           "cost": 0.6689999999999999
@@ -1658,7 +1645,7 @@
             "output": 0.41,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "deepseek/deepseek-v3.2-exp"
           },
           "cost": 0.6799999999999999
@@ -1667,79 +1654,66 @@
           "id": "deepseek/deepseek-v4-flash",
           "name": "deepseek/deepseek-v4-flash",
           "pricing": {
-            "input": 0.04956,
-            "output": 0.09912,
+            "input": 0.055439999999999996,
+            "output": 0.11087999999999999,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "deepseek/deepseek-v4-flash"
           },
-          "cost": 0.14868
+          "cost": 0.16632
         },
         {
           "id": "deepseek/deepseek-v4-flash-0731",
           "name": "deepseek/deepseek-v4-flash-0731",
           "pricing": {
-            "input": 0.06,
-            "output": 0.12,
+            "input": 0.04,
+            "output": 0.16,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "deepseek/deepseek-v4-flash-0731"
           },
-          "cost": 0.18
-        },
-        {
-          "id": "deepseek/deepseek-v4-flash-0731:free",
-          "name": "deepseek/deepseek-v4-flash-0731:free",
-          "pricing": {
-            "input": 0,
-            "output": 0,
-            "source": "openrouter",
-            "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
-            "matchedModel": "deepseek/deepseek-v4-flash-0731:free"
-          },
-          "cost": 0
+          "cost": 0.2
         },
         {
           "id": "deepseek/deepseek-v4-flash-vision-exp",
           "name": "deepseek/deepseek-v4-flash-vision-exp",
           "pricing": {
-            "input": 0.21559999999999999,
-            "output": 0.6468,
+            "input": 0.22,
+            "output": 0.66,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "deepseek/deepseek-v4-flash-vision-exp"
           },
-          "cost": 0.8624
+          "cost": 0.88
         },
         {
           "id": "deepseek/deepseek-v4-pro",
           "name": "deepseek/deepseek-v4-pro",
           "pricing": {
-            "input": 1.5999999999999999,
-            "output": 3.1999999999999997,
+            "input": 0.927768,
+            "output": 1.855536,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "deepseek/deepseek-v4-pro"
           },
-          "cost": 4.8
+          "cost": 2.7833040000000002
         },
         {
           "id": "deepseek/deepseek-v4-pro-0813",
           "name": "deepseek/deepseek-v4-pro-0813",
           "pricing": {
-            "input": 0.57816,
-            "output": 1.73448,
+            "input": 0.57024,
+            "output": 1.7107199999999998,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "deepseek/deepseek-v4-pro-0813"
           },
-          "cost": 2.31264
+          "cost": 2.28096
         },
         {
           "id": "deepseek/deepseek-v4.1-flash",
@@ -1749,7 +1723,7 @@
             "output": 0.6,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "deepseek/deepseek-v4.1-flash"
           },
           "cost": 0.75
@@ -1762,7 +1736,7 @@
             "output": 0,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "dots-studio/dots-3-note-preview:free"
           },
           "cost": 0
@@ -1775,7 +1749,7 @@
             "output": 2.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-2.5-flash"
           },
           "cost": 2.8
@@ -1788,7 +1762,7 @@
             "output": 2.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-2.5-flash-image"
           },
           "cost": 2.8
@@ -1801,7 +1775,7 @@
             "output": 0.39999999999999997,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-2.5-flash-lite"
           },
           "cost": 0.49999999999999994
@@ -1814,7 +1788,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-2.5-pro"
           },
           "cost": 11.25
@@ -1827,7 +1801,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-2.5-pro-preview"
           },
           "cost": 11.25
@@ -1840,7 +1814,7 @@
             "output": 3,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3-flash-preview"
           },
           "cost": 3.5
@@ -1853,7 +1827,7 @@
             "output": 12,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3-pro-image"
           },
           "cost": 14
@@ -1866,7 +1840,7 @@
             "output": 12,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3-pro-image-preview"
           },
           "cost": 14
@@ -1879,7 +1853,7 @@
             "output": 3,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.1-flash-image"
           },
           "cost": 3.5
@@ -1892,7 +1866,7 @@
             "output": 3,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.1-flash-image-preview"
           },
           "cost": 3.5
@@ -1905,7 +1879,7 @@
             "output": 1.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.1-flash-lite"
           },
           "cost": 1.75
@@ -1918,7 +1892,7 @@
             "output": 1.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.1-flash-lite-image"
           },
           "cost": 1.75
@@ -1931,7 +1905,7 @@
             "output": 1.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.1-flash-lite-preview"
           },
           "cost": 1.75
@@ -1944,7 +1918,7 @@
             "output": 12,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.1-pro-preview"
           },
           "cost": 14
@@ -1957,7 +1931,7 @@
             "output": 12,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.1-pro-preview-customtools"
           },
           "cost": 14
@@ -1970,7 +1944,7 @@
             "output": 9,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.5-flash"
           },
           "cost": 10.5
@@ -1983,7 +1957,7 @@
             "output": 2.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.5-flash-lite"
           },
           "cost": 2.8
@@ -1996,7 +1970,7 @@
             "output": 3.75,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.6-flash"
           },
           "cost": 4.5
@@ -2009,7 +1983,7 @@
             "output": 3.75,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.7-flash"
           },
           "cost": 4.5
@@ -2022,7 +1996,7 @@
             "output": 3.75,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.8-flash"
           },
           "cost": 4.5
@@ -2035,7 +2009,7 @@
             "output": 0.65,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemma-2-27b-it"
           },
           "cost": 1.3
@@ -2048,7 +2022,7 @@
             "output": 0.15,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemma-3-12b-it"
           },
           "cost": 0.19999999999999998
@@ -2061,7 +2035,7 @@
             "output": 0.44999999999999996,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemma-3-27b-it"
           },
           "cost": 0.5299999999999999
@@ -2074,7 +2048,7 @@
             "output": 0.09999999999999999,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemma-3-4b-it"
           },
           "cost": 0.15
@@ -2087,7 +2061,7 @@
             "output": 0.3,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemma-4-26b-a4b-it"
           },
           "cost": 0.39
@@ -2100,7 +2074,7 @@
             "output": 0.33999999999999997,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemma-4-31b-it"
           },
           "cost": 0.42999999999999994
@@ -2113,7 +2087,7 @@
             "output": 0,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/lyria-3-clip-preview"
           },
           "cost": 0
@@ -2126,7 +2100,7 @@
             "output": 0,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/lyria-3-pro-preview"
           },
           "cost": 0
@@ -2139,7 +2113,7 @@
             "output": 0.11,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "gryphe/mythomax-l2-13b"
           },
           "cost": 0.19
@@ -2152,7 +2126,7 @@
             "output": 0.112,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "ibm-granite/granite-4.0-h-micro"
           },
           "cost": 0.129
@@ -2165,7 +2139,7 @@
             "output": 0.25,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "ibm-granite/granite-4.2-8b"
           },
           "cost": 0.31
@@ -2178,7 +2152,7 @@
             "output": 0.75,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "inception/mercury-2"
           },
           "cost": 1
@@ -2191,7 +2165,7 @@
             "output": 0.15,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "inception/mercury-2.5"
           },
           "cost": 0.19
@@ -2204,7 +2178,7 @@
             "output": 0.063,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "inclusionai/ling-3.0-flash"
           },
           "cost": 0.08399999999999999
@@ -2217,7 +2191,7 @@
             "output": 0.18,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "inclusionai/ling-3.0-flash-fin"
           },
           "cost": 0.24
@@ -2230,7 +2204,7 @@
             "output": 0,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "inclusionai/ling-3.0-flash-fin:free"
           },
           "cost": 0
@@ -2243,7 +2217,7 @@
             "output": 0,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "inclusionai/ling-3.0-flash-sante:free"
           },
           "cost": 0
@@ -2256,7 +2230,7 @@
             "output": 0.18,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "inclusionai/ling-3.0-flash-vl"
           },
           "cost": 0.24
@@ -2269,7 +2243,7 @@
             "output": 0,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "inclusionai/ling-3.0-flash-vl:free"
           },
           "cost": 0
@@ -2282,7 +2256,7 @@
             "output": 0.22999999999999998,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "inference-net/schematron-v2-small"
           },
           "cost": 0.27999999999999997
@@ -2295,7 +2269,7 @@
             "output": 0.15,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "inference-net/schematron-v2-turbo"
           },
           "cost": 0.18
@@ -2321,19 +2295,6 @@
           "name": "kilo-auto/small"
         },
         {
-          "id": "kwaipilot/kat-coder-pro-v2",
-          "name": "kwaipilot/kat-coder-pro-v2",
-          "pricing": {
-            "input": 0.3,
-            "output": 1.2,
-            "source": "openrouter",
-            "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
-            "matchedModel": "kwaipilot/kat-coder-pro-v2"
-          },
-          "cost": 1.5
-        },
-        {
           "id": "kwaipilot/kat-coder-pro-v2.5",
           "name": "kwaipilot/kat-coder-pro-v2.5",
           "pricing": {
@@ -2341,7 +2302,7 @@
             "output": 2.96,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "kwaipilot/kat-coder-pro-v2.5"
           },
           "cost": 3.7
@@ -2354,7 +2315,7 @@
             "output": 0,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "liquid/lfm-2.5-2.6b:free"
           },
           "cost": 0
@@ -2367,7 +2328,7 @@
             "output": 0.75,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "mancer/weaver"
           },
           "cost": 1.15
@@ -2380,7 +2341,7 @@
             "output": 1.2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "meituan/longcat-2.0"
           },
           "cost": 1.5
@@ -2393,7 +2354,7 @@
             "output": 0.39999999999999997,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "meta-llama/llama-3.1-70b-instruct"
           },
           "cost": 0.7999999999999999
@@ -2406,7 +2367,7 @@
             "output": 0.08,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "meta-llama/llama-3.1-8b-instruct"
           },
           "cost": 0.13
@@ -2419,7 +2380,7 @@
             "output": 0.201,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "meta-llama/llama-3.2-1b-instruct"
           },
           "cost": 0.228
@@ -2432,7 +2393,7 @@
             "output": 0.33,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "meta-llama/llama-3.2-3b-instruct"
           },
           "cost": 0.38
@@ -2445,7 +2406,7 @@
             "output": 0.32,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "meta-llama/llama-3.3-70b-instruct"
           },
           "cost": 0.42
@@ -2454,14 +2415,14 @@
           "id": "meta-llama/llama-4-maverick",
           "name": "meta-llama/llama-4-maverick",
           "pricing": {
-            "input": 0.1875,
-            "output": 0.6525,
+            "input": 0.19999999999999998,
+            "output": 0.7999999999999999,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "meta-llama/llama-4-maverick"
           },
-          "cost": 0.84
+          "cost": 0.9999999999999999
         },
         {
           "id": "meta-llama/llama-4-scout",
@@ -2471,7 +2432,7 @@
             "output": 0.3,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "meta-llama/llama-4-scout"
           },
           "cost": 0.39999999999999997
@@ -2484,7 +2445,7 @@
             "output": 0.18,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "meta-llama/llama-guard-4-12b"
           },
           "cost": 0.36
@@ -2493,14 +2454,14 @@
           "id": "meta/muse-glimmer-30b",
           "name": "meta/muse-glimmer-30b",
           "pricing": {
-            "input": 0.35,
-            "output": 1.5,
+            "input": 0.3,
+            "output": 1.2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "meta/muse-glimmer-30b"
           },
-          "cost": 1.85
+          "cost": 1.5
         },
         {
           "id": "meta/muse-spark-1.1",
@@ -2510,7 +2471,7 @@
             "output": 4.25,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "meta/muse-spark-1.1"
           },
           "cost": 5.5
@@ -2523,7 +2484,7 @@
             "output": 4.25,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "meta/muse-spark-1.2"
           },
           "cost": 5.5
@@ -2536,7 +2497,7 @@
             "output": 0.19999999999999998,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "meta/muse-spark-1.2-contributor"
           },
           "cost": 0.3
@@ -2549,7 +2510,7 @@
             "output": 4.25,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "meta/muse-spark-1.3"
           },
           "cost": 5.5
@@ -2562,7 +2523,7 @@
             "output": 0.19999999999999998,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "meta/muse-spark-1.3-contributor"
           },
           "cost": 0.3
@@ -2575,7 +2536,7 @@
             "output": 0.14,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "microsoft/phi-4"
           },
           "cost": 0.21000000000000002
@@ -2588,7 +2549,7 @@
             "output": 0.62,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "microsoft/wizardlm-2-8x22b"
           },
           "cost": 1.24
@@ -2601,7 +2562,7 @@
             "output": 1.1,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "minimax/minimax-01"
           },
           "cost": 1.3
@@ -2614,7 +2575,7 @@
             "output": 2.2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "minimax/minimax-m1"
           },
           "cost": 2.6
@@ -2627,7 +2588,7 @@
             "output": 1.02,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "minimax/minimax-m2"
           },
           "cost": 1.275
@@ -2640,7 +2601,7 @@
             "output": 1.2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "minimax/minimax-m2-her"
           },
           "cost": 1.5
@@ -2653,7 +2614,7 @@
             "output": 1.2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "minimax/minimax-m2.1"
           },
           "cost": 1.5
@@ -2666,7 +2627,7 @@
             "output": 1.08,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "minimax/minimax-m2.5"
           },
           "cost": 1.35
@@ -2679,7 +2640,7 @@
             "output": 1.2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "minimax/minimax-m2.7"
           },
           "cost": 1.5
@@ -2692,7 +2653,7 @@
             "output": 1.2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "minimax/minimax-m3"
           },
           "cost": 1.5
@@ -2705,7 +2666,7 @@
             "output": 0.8999999999999999,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "mistralai/codestral-2508"
           },
           "cost": 1.2
@@ -2718,7 +2679,7 @@
             "output": 2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "mistralai/devstral-2512"
           },
           "cost": 2.4
@@ -2731,7 +2692,7 @@
             "output": 0.19999999999999998,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "mistralai/ministral-14b-2512"
           },
           "cost": 0.39999999999999997
@@ -2744,7 +2705,7 @@
             "output": 0.09999999999999999,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "mistralai/ministral-3b-2512"
           },
           "cost": 0.19999999999999998
@@ -2757,7 +2718,7 @@
             "output": 0.15,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "mistralai/ministral-8b-2512"
           },
           "cost": 0.3
@@ -2770,7 +2731,7 @@
             "output": 6,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "mistralai/mistral-large"
           },
           "cost": 8
@@ -2783,7 +2744,7 @@
             "output": 6,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "mistralai/mistral-large-2407"
           },
           "cost": 8
@@ -2796,7 +2757,7 @@
             "output": 2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "mistralai/mistral-medium-3"
           },
           "cost": 2.4
@@ -2809,7 +2770,7 @@
             "output": 7.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "mistralai/mistral-medium-3-5"
           },
           "cost": 9
@@ -2822,7 +2783,7 @@
             "output": 2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "mistralai/mistral-medium-3.1"
           },
           "cost": 2.4
@@ -2835,7 +2796,7 @@
             "output": 0.03,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "mistralai/mistral-nemo"
           },
           "cost": 0.049
@@ -2848,7 +2809,7 @@
             "output": 0.6,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "mistralai/mistral-saba"
           },
           "cost": 0.7999999999999999
@@ -2861,7 +2822,7 @@
             "output": 0.08,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "mistralai/mistral-small-24b-instruct-2501"
           },
           "cost": 0.13
@@ -2874,7 +2835,7 @@
             "output": 0.6,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "mistralai/mistral-small-2603"
           },
           "cost": 0.75
@@ -2887,7 +2848,7 @@
             "output": 0.5549999999999999,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "mistralai/mistral-small-3.1-24b-instruct"
           },
           "cost": 0.9059999999999999
@@ -2900,7 +2861,7 @@
             "output": 0.25,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "mistralai/mistral-small-3.2-24b-instruct"
           },
           "cost": 0.34375
@@ -2913,7 +2874,7 @@
             "output": 6,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "mistralai/mixtral-8x22b-instruct"
           },
           "cost": 8
@@ -2926,7 +2887,7 @@
             "output": 0.3,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "mistralai/voxtral-small-24b-2507"
           },
           "cost": 0.39999999999999997
@@ -2939,7 +2900,7 @@
             "output": 2.3,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "moonshotai/kimi-k2"
           },
           "cost": 2.87
@@ -2952,7 +2913,7 @@
             "output": 2.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "moonshotai/kimi-k2-0905"
           },
           "cost": 3.1
@@ -2965,7 +2926,7 @@
             "output": 2.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "moonshotai/kimi-k2-thinking"
           },
           "cost": 3.1
@@ -2978,7 +2939,7 @@
             "output": 2.25,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "moonshotai/kimi-k2.5"
           },
           "cost": 2.7
@@ -2991,7 +2952,7 @@
             "output": 4,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "moonshotai/kimi-k2.6"
           },
           "cost": 4.95
@@ -3004,7 +2965,7 @@
             "output": 3.21,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "moonshotai/kimi-k2.7-code"
           },
           "cost": 3.9162
@@ -3013,14 +2974,14 @@
           "id": "moonshotai/kimi-k3",
           "name": "moonshotai/kimi-k3",
           "pricing": {
-            "input": 2.0999999999999996,
-            "output": 10.950000000000001,
+            "input": 3,
+            "output": 15,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "moonshotai/kimi-k3"
           },
-          "cost": 13.05
+          "cost": 18
         },
         {
           "id": "morph/morph-v3-fast",
@@ -3030,7 +2991,7 @@
             "output": 1.2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "morph/morph-v3-fast"
           },
           "cost": 2
@@ -3043,10 +3004,14 @@
             "output": 1.9,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "morph/morph-v3-large"
           },
           "cost": 2.8
+        },
+        {
+          "id": "nex-agi/nex-n2.5-mini",
+          "name": "nex-agi/nex-n2.5-mini"
         },
         {
           "id": "nex-agi/nex-n2.5-mini:free",
@@ -3056,10 +3021,14 @@
             "output": 0,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "nex-agi/nex-n2.5-mini:free"
           },
           "cost": 0
+        },
+        {
+          "id": "nex-agi/nex-n2.5-pro",
+          "name": "nex-agi/nex-n2.5-pro"
         },
         {
           "id": "nex-agi/nex-n2.5-pro:free",
@@ -3069,7 +3038,7 @@
             "output": 0,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "nex-agi/nex-n2.5-pro:free"
           },
           "cost": 0
@@ -3082,7 +3051,7 @@
             "output": 1,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "nousresearch/hermes-3-llama-3.1-405b"
           },
           "cost": 2
@@ -3095,7 +3064,7 @@
             "output": 0.7,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "nousresearch/hermes-3-llama-3.1-70b"
           },
           "cost": 1.4
@@ -3108,7 +3077,7 @@
             "output": 3,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "nousresearch/hermes-4-405b"
           },
           "cost": 4
@@ -3121,7 +3090,7 @@
             "output": 0.24,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "nvidia/nemotron-3-nano-30b-a3b"
           },
           "cost": 0.3
@@ -3134,7 +3103,7 @@
             "output": 0,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
           },
           "cost": 0
@@ -3147,7 +3116,7 @@
             "output": 0.44999999999999996,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "nvidia/nemotron-3-super-120b-a12b"
           },
           "cost": 0.5299999999999999
@@ -3160,7 +3129,7 @@
             "output": 0,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "nvidia/nemotron-3-super-120b-a12b:free"
           },
           "cost": 0
@@ -3169,14 +3138,14 @@
           "id": "nvidia/nemotron-3-ultra-550b-a55b",
           "name": "nvidia/nemotron-3-ultra-550b-a55b",
           "pricing": {
-            "input": 0.625,
-            "output": 3.125,
+            "input": 0.6,
+            "output": 2.4,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "nvidia/nemotron-3-ultra-550b-a55b"
           },
-          "cost": 3.75
+          "cost": 3
         },
         {
           "id": "nvidia/nemotron-3-ultra-550b-a55b:free",
@@ -3186,7 +3155,7 @@
             "output": 0,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "nvidia/nemotron-3-ultra-550b-a55b:free"
           },
           "cost": 0
@@ -3199,7 +3168,7 @@
             "output": 0.19999999999999998,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "nvidia/nemotron-3.5-content-safety"
           },
           "cost": 0.39999999999999997
@@ -3212,7 +3181,7 @@
             "output": 0,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "nvidia/nemotron-3.5-content-safety:free"
           },
           "cost": 0
@@ -3221,14 +3190,14 @@
           "id": "nvidia/nemotron-3.5-lightning",
           "name": "nvidia/nemotron-3.5-lightning",
           "pricing": {
-            "input": 0.08,
+            "input": 0.07,
             "output": 0.19999999999999998,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "nvidia/nemotron-3.5-lightning"
           },
-          "cost": 0.27999999999999997
+          "cost": 0.27
         },
         {
           "id": "nvidia/nemotron-3.5-lightning:free",
@@ -3238,7 +3207,7 @@
             "output": 0,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "nvidia/nemotron-3.5-lightning:free"
           },
           "cost": 0
@@ -3251,7 +3220,7 @@
             "output": 1.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-3.5-turbo"
           },
           "cost": 2
@@ -3264,7 +3233,7 @@
             "output": 2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-3.5-turbo-0613"
           },
           "cost": 3
@@ -3277,7 +3246,7 @@
             "output": 4,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-3.5-turbo-16k"
           },
           "cost": 7
@@ -3290,7 +3259,7 @@
             "output": 2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-3.5-turbo-instruct"
           },
           "cost": 3.5
@@ -3303,7 +3272,7 @@
             "output": 60,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-4"
           },
           "cost": 90
@@ -3316,7 +3285,7 @@
             "output": 30,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-4-turbo"
           },
           "cost": 40
@@ -3329,7 +3298,7 @@
             "output": 8,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-4.1"
           },
           "cost": 10
@@ -3342,7 +3311,7 @@
             "output": 1.5999999999999999,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-4.1-mini"
           },
           "cost": 1.9999999999999998
@@ -3355,7 +3324,7 @@
             "output": 0.39999999999999997,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-4.1-nano"
           },
           "cost": 0.49999999999999994
@@ -3368,7 +3337,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-4o"
           },
           "cost": 12.5
@@ -3381,7 +3350,7 @@
             "output": 15,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-4o-2024-05-13"
           },
           "cost": 20
@@ -3394,7 +3363,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-4o-2024-08-06"
           },
           "cost": 12.5
@@ -3407,7 +3376,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-4o-2024-11-20"
           },
           "cost": 12.5
@@ -3420,7 +3389,7 @@
             "output": 0.6,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-4o-mini"
           },
           "cost": 0.75
@@ -3433,7 +3402,7 @@
             "output": 0.6,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-4o-mini-2024-07-18"
           },
           "cost": 0.75
@@ -3446,7 +3415,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5"
           },
           "cost": 11.25
@@ -3459,7 +3428,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5-image"
           },
           "cost": 20
@@ -3472,7 +3441,7 @@
             "output": 2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5-image-mini"
           },
           "cost": 4.5
@@ -3485,7 +3454,7 @@
             "output": 2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5-mini"
           },
           "cost": 2.25
@@ -3498,7 +3467,7 @@
             "output": 0.39999999999999997,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5-nano"
           },
           "cost": 0.44999999999999996
@@ -3511,7 +3480,7 @@
             "output": 120,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5-pro"
           },
           "cost": 135
@@ -3524,7 +3493,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.1"
           },
           "cost": 11.25
@@ -3537,7 +3506,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.1-codex"
           },
           "cost": 11.25
@@ -3550,7 +3519,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.1-codex-max"
           },
           "cost": 11.25
@@ -3563,7 +3532,7 @@
             "output": 2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.1-codex-mini"
           },
           "cost": 2.25
@@ -3576,7 +3545,7 @@
             "output": 14,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.2"
           },
           "cost": 15.75
@@ -3589,7 +3558,7 @@
             "output": 14,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.2-chat"
           },
           "cost": 15.75
@@ -3602,7 +3571,7 @@
             "output": 14,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.2-codex"
           },
           "cost": 15.75
@@ -3615,7 +3584,7 @@
             "output": 168,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.2-pro"
           },
           "cost": 189
@@ -3628,7 +3597,7 @@
             "output": 14,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.3-codex"
           },
           "cost": 15.75
@@ -3641,7 +3610,7 @@
             "output": 15,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.4"
           },
           "cost": 17.5
@@ -3654,7 +3623,7 @@
             "output": 15,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.4-image-2"
           },
           "cost": 23
@@ -3667,7 +3636,7 @@
             "output": 4.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.4-mini"
           },
           "cost": 5.25
@@ -3680,7 +3649,7 @@
             "output": 1.25,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.4-nano"
           },
           "cost": 1.45
@@ -3693,7 +3662,7 @@
             "output": 180,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.4-pro"
           },
           "cost": 210
@@ -3706,7 +3675,7 @@
             "output": 30,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.5"
           },
           "cost": 35
@@ -3719,7 +3688,7 @@
             "output": 180,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.5-pro"
           },
           "cost": 210
@@ -3732,7 +3701,7 @@
             "output": 1.2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.6-luna"
           },
           "cost": 1.4
@@ -3745,7 +3714,7 @@
             "output": 1.2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.6-luna-pro"
           },
           "cost": 1.4
@@ -3758,14 +3727,10 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.6-sol"
           },
           "cost": 12
-        },
-        {
-          "id": "openai/gpt-5.6-sol-discounted",
-          "name": "openai/gpt-5.6-sol-discounted"
         },
         {
           "id": "openai/gpt-5.6-sol-pro",
@@ -3775,7 +3740,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.6-sol-pro"
           },
           "cost": 12
@@ -3788,7 +3753,7 @@
             "output": 12,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.6-terra"
           },
           "cost": 14
@@ -3801,7 +3766,7 @@
             "output": 12,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.6-terra-pro"
           },
           "cost": 14
@@ -3814,7 +3779,7 @@
             "output": 50,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-6-astra"
           },
           "cost": 60
@@ -3827,7 +3792,7 @@
             "output": 50,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-6-astra-pro"
           },
           "cost": 60
@@ -3840,7 +3805,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-audio"
           },
           "cost": 12.5
@@ -3853,7 +3818,7 @@
             "output": 2.4,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-audio-mini"
           },
           "cost": 3
@@ -3866,7 +3831,7 @@
             "output": 30,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-chat-latest"
           },
           "cost": 35
@@ -3879,7 +3844,7 @@
             "output": 0.6,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-oss-120b"
           },
           "cost": 0.75
@@ -3892,7 +3857,7 @@
             "output": 0.13,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-oss-20b"
           },
           "cost": 0.16
@@ -3905,7 +3870,7 @@
             "output": 0.3,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-oss-safeguard-20b"
           },
           "cost": 0.375
@@ -3918,7 +3883,7 @@
             "output": 60,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/o1"
           },
           "cost": 75
@@ -3931,7 +3896,7 @@
             "output": 600,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/o1-pro"
           },
           "cost": 750
@@ -3944,7 +3909,7 @@
             "output": 8,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/o3"
           },
           "cost": 10
@@ -3957,7 +3922,7 @@
             "output": 4.4,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/o3-mini"
           },
           "cost": 5.5
@@ -3970,7 +3935,7 @@
             "output": 4.4,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/o3-mini-high"
           },
           "cost": 5.5
@@ -3983,7 +3948,7 @@
             "output": 80,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/o3-pro"
           },
           "cost": 100
@@ -3996,7 +3961,7 @@
             "output": 4.4,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/o4-mini"
           },
           "cost": 5.5
@@ -4009,7 +3974,7 @@
             "output": 4.4,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/o4-mini-high"
           },
           "cost": 5.5
@@ -4030,7 +3995,7 @@
             "output": 0,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openrouter/free"
           },
           "cost": 0
@@ -4047,7 +4012,7 @@
             "output": 1.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "perceptron/perceptron-mk1"
           },
           "cost": 1.65
@@ -4060,7 +4025,7 @@
             "output": 1,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "perplexity/sonar"
           },
           "cost": 2
@@ -4073,7 +4038,7 @@
             "output": 8,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "perplexity/sonar-deep-research"
           },
           "cost": 10
@@ -4086,7 +4051,7 @@
             "output": 15,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "perplexity/sonar-pro"
           },
           "cost": 18
@@ -4099,7 +4064,7 @@
             "output": 15,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "perplexity/sonar-pro-search"
           },
           "cost": 18
@@ -4112,7 +4077,7 @@
             "output": 8,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "perplexity/sonar-reasoning-pro"
           },
           "cost": 10
@@ -4125,7 +4090,7 @@
             "output": 0.18,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "poolside/laguna-s-2.1"
           },
           "cost": 0.27
@@ -4138,7 +4103,7 @@
             "output": 0,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "poolside/laguna-s-2.1:free"
           },
           "cost": 0
@@ -4151,7 +4116,7 @@
             "output": 0.12,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "poolside/laguna-xs-2.1"
           },
           "cost": 0.18
@@ -4164,10 +4129,23 @@
             "output": 0,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "poolside/laguna-xs-2.1:free"
           },
           "cost": 0
+        },
+        {
+          "id": "prism-ml/ternary-bonsai-2-27b",
+          "name": "prism-ml/ternary-bonsai-2-27b",
+          "pricing": {
+            "input": 0.075,
+            "output": 0.5,
+            "source": "openrouter",
+            "estimated": true,
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
+            "matchedModel": "prism-ml/ternary-bonsai-2-27b"
+          },
+          "cost": 0.575
         },
         {
           "id": "qwen/qwen-2.5-72b-instruct",
@@ -4177,7 +4155,7 @@
             "output": 0.39999999999999997,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen-2.5-72b-instruct"
           },
           "cost": 0.76
@@ -4190,7 +4168,7 @@
             "output": 0.19999999999999998,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen-2.5-7b-instruct"
           },
           "cost": 0.3
@@ -4203,7 +4181,7 @@
             "output": 1,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen-2.5-coder-32b-instruct"
           },
           "cost": 1.6600000000000001
@@ -4216,7 +4194,7 @@
             "output": 0.78,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen-plus"
           },
           "cost": 1.04
@@ -4229,7 +4207,7 @@
             "output": 0.78,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen-plus-2025-07-28"
           },
           "cost": 1.04
@@ -4242,7 +4220,7 @@
             "output": 1,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen2.5-vl-72b-instruct"
           },
           "cost": 1.7999999999999998
@@ -4255,7 +4233,7 @@
             "output": 0.24,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-14b"
           },
           "cost": 0.36
@@ -4268,7 +4246,7 @@
             "output": 1.8199999999999998,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-235b-a22b"
           },
           "cost": 2.275
@@ -4281,7 +4259,7 @@
             "output": 0.35,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-235b-a22b-2507"
           },
           "cost": 0.4375
@@ -4294,7 +4272,7 @@
             "output": 2.3,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-235b-a22b-thinking-2507"
           },
           "cost": 2.53
@@ -4307,7 +4285,7 @@
             "output": 0.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-30b-a3b"
           },
           "cost": 0.62
@@ -4320,7 +4298,7 @@
             "output": 0.19305,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-30b-a3b-instruct-2507"
           },
           "cost": 0.2412
@@ -4333,7 +4311,7 @@
             "output": 2.4,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-30b-a3b-thinking-2507"
           },
           "cost": 2.6
@@ -4346,7 +4324,7 @@
             "output": 0.28,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-32b"
           },
           "cost": 0.36000000000000004
@@ -4359,7 +4337,7 @@
             "output": 0.45499999999999996,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-8b"
           },
           "cost": 0.572
@@ -4372,7 +4350,7 @@
             "output": 1,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-coder"
           },
           "cost": 1.3
@@ -4385,7 +4363,7 @@
             "output": 0.28,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-coder-30b-a3b-instruct"
           },
           "cost": 0.35000000000000003
@@ -4398,7 +4376,7 @@
             "output": 0.975,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-coder-flash"
           },
           "cost": 1.17
@@ -4411,7 +4389,7 @@
             "output": 0.7999999999999999,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-coder-next"
           },
           "cost": 0.9199999999999999
@@ -4424,7 +4402,7 @@
             "output": 3.25,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-coder-plus"
           },
           "cost": 3.9
@@ -4437,7 +4415,7 @@
             "output": 3.9,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-max"
           },
           "cost": 4.68
@@ -4450,7 +4428,7 @@
             "output": 3.9,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-max-thinking"
           },
           "cost": 4.68
@@ -4463,7 +4441,7 @@
             "output": 1.1,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-next-80b-a3b-instruct"
           },
           "cost": 1.1900000000000002
@@ -4476,7 +4454,7 @@
             "output": 1.2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-next-80b-a3b-thinking"
           },
           "cost": 1.3499999999999999
@@ -4489,7 +4467,7 @@
             "output": 1.9,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-vl-235b-a22b-instruct"
           },
           "cost": 2.11
@@ -4502,7 +4480,7 @@
             "output": 4,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-vl-235b-a22b-thinking"
           },
           "cost": 4.4
@@ -4515,7 +4493,7 @@
             "output": 0.52,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-vl-30b-a3b-instruct"
           },
           "cost": 0.65
@@ -4528,7 +4506,7 @@
             "output": 2.4,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-vl-30b-a3b-thinking"
           },
           "cost": 2.6
@@ -4541,7 +4519,7 @@
             "output": 0.41600000000000004,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-vl-32b-instruct"
           },
           "cost": 0.52
@@ -4554,7 +4532,7 @@
             "output": 0.45499999999999996,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-vl-8b-instruct"
           },
           "cost": 0.572
@@ -4567,7 +4545,7 @@
             "output": 2.0999999999999996,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3-vl-8b-thinking"
           },
           "cost": 2.28
@@ -4580,7 +4558,7 @@
             "output": 2.08,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3.5-122b-a10b"
           },
           "cost": 2.34
@@ -4593,7 +4571,7 @@
             "output": 1.56,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3.5-27b"
           },
           "cost": 1.7550000000000001
@@ -4602,14 +4580,14 @@
           "id": "qwen/qwen3.5-35b-a3b",
           "name": "qwen/qwen3.5-35b-a3b",
           "pricing": {
-            "input": 0.1625,
-            "output": 1.3,
+            "input": 0.3125,
+            "output": 1.25,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3.5-35b-a3b"
           },
-          "cost": 1.4625000000000001
+          "cost": 1.5625
         },
         {
           "id": "qwen/qwen3.5-397b-a17b",
@@ -4619,7 +4597,7 @@
             "output": 3.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3.5-397b-a17b"
           },
           "cost": 4.05
@@ -4632,7 +4610,7 @@
             "output": 0.15,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3.5-9b"
           },
           "cost": 0.25
@@ -4645,7 +4623,7 @@
             "output": 0.26,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3.5-flash-02-23"
           },
           "cost": 0.325
@@ -4658,7 +4636,7 @@
             "output": 1.56,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3.5-plus-02-15"
           },
           "cost": 1.82
@@ -4671,7 +4649,7 @@
             "output": 1.7999999999999998,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3.5-plus-20260420"
           },
           "cost": 2.0999999999999996
@@ -4684,7 +4662,7 @@
             "output": 2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3.6-27b"
           },
           "cost": 2.3
@@ -4693,14 +4671,14 @@
           "id": "qwen/qwen3.6-35b-a3b",
           "name": "qwen/qwen3.6-35b-a3b",
           "pricing": {
-            "input": 0.09999999999999999,
-            "output": 0.8999999999999999,
+            "input": 0.15,
+            "output": 1,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3.6-35b-a3b"
           },
-          "cost": 0.9999999999999999
+          "cost": 1.15
         },
         {
           "id": "qwen/qwen3.6-flash",
@@ -4710,7 +4688,7 @@
             "output": 1.125,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3.6-flash"
           },
           "cost": 1.3125
@@ -4723,7 +4701,7 @@
             "output": 6.162,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3.6-max-preview"
           },
           "cost": 7.189
@@ -4736,7 +4714,7 @@
             "output": 1.95,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3.6-plus"
           },
           "cost": 2.275
@@ -4749,7 +4727,7 @@
             "output": 0.13,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3.7-flash"
           },
           "cost": 0.16
@@ -4762,7 +4740,7 @@
             "output": 4.425,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3.7-max"
           },
           "cost": 5.9
@@ -4775,7 +4753,7 @@
             "output": 1.28,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3.7-plus"
           },
           "cost": 1.6
@@ -4788,7 +4766,7 @@
             "output": 6,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3.8-2.4t-a95b"
           },
           "cost": 8
@@ -4797,14 +4775,14 @@
           "id": "qwen/qwen3.8-27b",
           "name": "qwen/qwen3.8-27b",
           "pricing": {
-            "input": 0.21400000000000002,
-            "output": 2.5500000000000003,
+            "input": 0.42,
+            "output": 3,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3.8-27b"
           },
-          "cost": 2.7640000000000002
+          "cost": 3.42
         },
         {
           "id": "qwen/qwen3.8-27b:free",
@@ -4814,7 +4792,7 @@
             "output": 0,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3.8-27b:free"
           },
           "cost": 0
@@ -4827,7 +4805,7 @@
             "output": 0.47,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3.8-flash"
           },
           "cost": 0.62
@@ -4840,7 +4818,7 @@
             "output": 6,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3.8-max-0902"
           },
           "cost": 8
@@ -4853,7 +4831,7 @@
             "output": 0.09999999999999999,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "rekaai/reka-edge"
           },
           "cost": 0.19999999999999998
@@ -4866,7 +4844,7 @@
             "output": 0.19999999999999998,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "rekaai/reka-flash-3"
           },
           "cost": 0.3
@@ -4879,7 +4857,7 @@
             "output": 1.25,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "relace/relace-apply-3"
           },
           "cost": 2.1
@@ -4892,7 +4870,7 @@
             "output": 3,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "relace/relace-search"
           },
           "cost": 4
@@ -4905,7 +4883,7 @@
             "output": 6,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "sakana/fugu-max"
           },
           "cost": 8
@@ -4918,7 +4896,7 @@
             "output": 30,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "sakana/fugu-ultra"
           },
           "cost": 35
@@ -4931,7 +4909,7 @@
             "output": 30,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "sakana/fugu-ultra-v2"
           },
           "cost": 35
@@ -4944,7 +4922,7 @@
             "output": 4,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "sakana/sakana-namazu"
           },
           "cost": 4.95
@@ -4957,7 +4935,7 @@
             "output": 0.049999999999999996,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "sao10k/l3-lunaris-8b"
           },
           "cost": 0.09
@@ -4970,7 +4948,7 @@
             "output": 0.85,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "sao10k/l3.1-euryale-70b"
           },
           "cost": 1.7
@@ -4983,7 +4961,7 @@
             "output": 0.75,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "sao10k/l3.3-euryale-70b"
           },
           "cost": 1.4
@@ -5016,7 +4994,7 @@
             "output": 0.3,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "stepfun/step-3.5-flash"
           },
           "cost": 0.39999999999999997
@@ -5029,7 +5007,7 @@
             "output": 1.15,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "stepfun/step-3.7-flash"
           },
           "cost": 1.3499999999999999
@@ -5046,7 +5024,7 @@
             "output": 0.5700000000000001,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "tencent/hunyuan-a13b-instruct"
           },
           "cost": 0.7100000000000001
@@ -5059,7 +5037,7 @@
             "output": 0.17700000000000002,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "tencent/hy-mt2-1.8b"
           },
           "cost": 0.22100000000000003
@@ -5072,7 +5050,7 @@
             "output": 0.295,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "tencent/hy-mt2-30b-a3b"
           },
           "cost": 0.369
@@ -5085,7 +5063,7 @@
             "output": 0.295,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "tencent/hy-mt2-7b"
           },
           "cost": 0.369
@@ -5098,7 +5076,7 @@
             "output": 0.33,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "tencent/hy3"
           },
           "cost": 0.41250000000000003
@@ -5111,7 +5089,7 @@
             "output": 0.6,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "tencent/hy3-preview"
           },
           "cost": 0.78
@@ -5124,7 +5102,7 @@
             "output": 2.501,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "tencent/hy4-preview"
           },
           "cost": 3.335
@@ -5137,7 +5115,7 @@
             "output": 0.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "thedrummer/cydonia-24b-v4.1"
           },
           "cost": 0.8
@@ -5150,7 +5128,7 @@
             "output": 0.7999999999999999,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "thedrummer/skyfall-36b-v2"
           },
           "cost": 1.35
@@ -5163,7 +5141,7 @@
             "output": 0.39999999999999997,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "thedrummer/unslopnemo-12b"
           },
           "cost": 0.7999999999999999
@@ -5176,7 +5154,7 @@
             "output": 4.05,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "thinkingmachines/inkling"
           },
           "cost": 5.05
@@ -5189,7 +5167,7 @@
             "output": 1.2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "thinkingmachines/inkling-small"
           },
           "cost": 1.65
@@ -5202,7 +5180,7 @@
             "output": 0,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "thinkingmachines/inkling-small:free"
           },
           "cost": 0
@@ -5215,7 +5193,7 @@
             "output": 7.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "unbiased/pareto"
           },
           "cost": 10
@@ -5228,7 +5206,7 @@
             "output": 0.65,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "undi95/remm-slerp-l2-13b"
           },
           "cost": 1
@@ -5241,7 +5219,7 @@
             "output": 0.6,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "upstage/solar-pro-3"
           },
           "cost": 0.75
@@ -5254,7 +5232,7 @@
             "output": 0.36,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "upstage/solar-pro4"
           },
           "cost": 0.44999999999999996
@@ -5267,7 +5245,7 @@
             "output": 6,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "writer/palmyra-x5"
           },
           "cost": 6.6
@@ -5280,7 +5258,7 @@
             "output": 2.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "x-ai/grok-4.20"
           },
           "cost": 3.75
@@ -5293,7 +5271,7 @@
             "output": 2.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "x-ai/grok-4.20-multi-agent"
           },
           "cost": 3.75
@@ -5306,7 +5284,7 @@
             "output": 2.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "x-ai/grok-4.3"
           },
           "cost": 3.75
@@ -5319,7 +5297,7 @@
             "output": 6,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "x-ai/grok-4.5"
           },
           "cost": 8
@@ -5332,10 +5310,23 @@
             "output": 6,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "x-ai/grok-4.6"
           },
           "cost": 8
+        },
+        {
+          "id": "x-ai/grok-4.7",
+          "name": "x-ai/grok-4.7",
+          "pricing": {
+            "input": 1.5999999999999999,
+            "output": 4.8,
+            "source": "openrouter",
+            "estimated": true,
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
+            "matchedModel": "x-ai/grok-4.7"
+          },
+          "cost": 6.3999999999999995
         },
         {
           "id": "x-ai/grok-build-0.1",
@@ -5345,7 +5336,7 @@
             "output": 2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "x-ai/grok-build-0.1"
           },
           "cost": 3
@@ -5358,7 +5349,7 @@
             "output": 0.28,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "xiaomi/mimo-v2.5"
           },
           "cost": 0.42000000000000004
@@ -5371,10 +5362,22 @@
             "output": 0.87,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "xiaomi/mimo-v2.5-pro"
           },
           "cost": 1.305
+        },
+        {
+          "id": "xiaomi/mimo-v2.6-flash",
+          "name": "xiaomi/mimo-v2.6-flash"
+        },
+        {
+          "id": "xiaomi/mimo-v2.6-pro",
+          "name": "xiaomi/mimo-v2.6-pro"
+        },
+        {
+          "id": "xiaomi/mimo-v2.6-pro-ultraspeed",
+          "name": "xiaomi/mimo-v2.6-pro-ultraspeed"
         },
         {
           "id": "z-ai/glm-4.5",
@@ -5384,7 +5387,7 @@
             "output": 2.2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "z-ai/glm-4.5"
           },
           "cost": 2.8000000000000003
@@ -5397,7 +5400,7 @@
             "output": 0.85,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "z-ai/glm-4.5-air"
           },
           "cost": 0.98
@@ -5410,7 +5413,7 @@
             "output": 1.7999999999999998,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "z-ai/glm-4.5v"
           },
           "cost": 2.4
@@ -5423,7 +5426,7 @@
             "output": 1.75,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "z-ai/glm-4.6"
           },
           "cost": 2.18
@@ -5436,7 +5439,7 @@
             "output": 0.8999999999999999,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "z-ai/glm-4.6v"
           },
           "cost": 1.2
@@ -5449,7 +5452,7 @@
             "output": 1.75,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "z-ai/glm-4.7"
           },
           "cost": 2.15
@@ -5462,7 +5465,7 @@
             "output": 0.39999999999999997,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "z-ai/glm-4.7-flash"
           },
           "cost": 0.46049999999999996
@@ -5475,7 +5478,7 @@
             "output": 1.92,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "z-ai/glm-5"
           },
           "cost": 2.52
@@ -5488,7 +5491,7 @@
             "output": 4,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "z-ai/glm-5-turbo"
           },
           "cost": 5.2
@@ -5501,7 +5504,7 @@
             "output": 3.036,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "z-ai/glm-5.1"
           },
           "cost": 4.002
@@ -5510,14 +5513,14 @@
           "id": "z-ai/glm-5.2",
           "name": "z-ai/glm-5.2",
           "pricing": {
-            "input": 0.5544,
-            "output": 1.7424,
+            "input": 0.6496,
+            "output": 2.0416,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "z-ai/glm-5.2"
           },
-          "cost": 2.2968
+          "cost": 2.6912
         },
         {
           "id": "z-ai/glm-5.2:free",
@@ -5527,7 +5530,7 @@
             "output": 0,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "z-ai/glm-5.2:free"
           },
           "cost": 0
@@ -5540,7 +5543,7 @@
             "output": 2.8600000000000003,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "z-ai/glm-5.3"
           },
           "cost": 3.7700000000000005
@@ -5549,14 +5552,27 @@
           "id": "z-ai/glm-5.3-flash",
           "name": "z-ai/glm-5.3-flash",
           "pricing": {
-            "input": 0.09,
-            "output": 0.3,
+            "input": 0.075,
+            "output": 0.25,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "z-ai/glm-5.3-flash"
           },
-          "cost": 0.39
+          "cost": 0.325
+        },
+        {
+          "id": "z-ai/glm-5.3-flashx",
+          "name": "z-ai/glm-5.3-flashx",
+          "pricing": {
+            "input": 0.37,
+            "output": 1.25,
+            "source": "openrouter",
+            "estimated": true,
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
+            "matchedModel": "z-ai/glm-5.3-flashx"
+          },
+          "cost": 1.62
         },
         {
           "id": "z-ai/glm-5v-turbo",
@@ -5566,10 +5582,32 @@
             "output": 4,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "z-ai/glm-5v-turbo"
           },
           "cost": 5.2
+        }
+      ]
+    },
+    {
+      "id": "kimi-code-plan-global",
+      "name": "Kimi Code Plan Global",
+      "models": [
+        {
+          "id": "k3",
+          "name": "k3"
+        },
+        {
+          "id": "k3-256k",
+          "name": "k3-256k"
+        },
+        {
+          "id": "kimi-for-coding",
+          "name": "kimi-for-coding"
+        },
+        {
+          "id": "kimi-for-coding-highspeed",
+          "name": "kimi-for-coding-highspeed"
         }
       ]
     },
@@ -5585,7 +5623,7 @@
             "output": 4,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "moonshotai/kimi-k2.6"
           },
           "cost": 4.95
@@ -5598,7 +5636,7 @@
             "output": 3.21,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "moonshotai/kimi-k2.7-code"
           },
           "cost": 3.9162
@@ -5611,14 +5649,14 @@
           "id": "kimi-k3",
           "name": "kimi-k3",
           "pricing": {
-            "input": 2.0999999999999996,
-            "output": 10.950000000000001,
+            "input": 3,
+            "output": 15,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "moonshotai/kimi-k3"
           },
-          "cost": 13.05
+          "cost": 18
         }
       ]
     },
@@ -5638,7 +5676,7 @@
             "output": 15,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.4"
           },
           "cost": 17.5
@@ -5655,7 +5693,7 @@
             "output": 4.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.4-mini"
           },
           "cost": 5.25
@@ -5672,7 +5710,7 @@
             "output": 30,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.5"
           },
           "cost": 35
@@ -5689,7 +5727,7 @@
             "output": 1.2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.6-luna"
           },
           "cost": 1.4
@@ -5706,7 +5744,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.6-sol"
           },
           "cost": 12
@@ -5723,7 +5761,7 @@
             "output": 12,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.6-terra"
           },
           "cost": 14
@@ -5731,6 +5769,23 @@
         {
           "id": "gpt-5.6-terra-fast",
           "name": "gpt-5.6-terra-fast"
+        },
+        {
+          "id": "gpt-6-astra",
+          "name": "gpt-6-astra",
+          "pricing": {
+            "input": 10,
+            "output": 50,
+            "source": "openrouter",
+            "estimated": true,
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
+            "matchedModel": "openai/gpt-6-astra"
+          },
+          "cost": 60
+        },
+        {
+          "id": "gpt-6-astra-fast",
+          "name": "gpt-6-astra-fast"
         }
       ]
     },
@@ -5750,7 +5805,7 @@
             "output": 50,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "anthropic/claude-fable-5"
           },
           "cost": 60
@@ -5787,7 +5842,7 @@
             "output": 25,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "anthropic/claude-opus-5"
           },
           "cost": 30
@@ -5800,7 +5855,7 @@
             "output": 15,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "anthropic/claude-sonnet-4"
           },
           "cost": 18
@@ -5821,7 +5876,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "anthropic/claude-sonnet-5"
           },
           "cost": 12
@@ -5830,40 +5885,53 @@
           "id": "deepseek-v4-flash",
           "name": "deepseek-v4-flash",
           "pricing": {
-            "input": 0.04956,
-            "output": 0.09912,
+            "input": 0.055439999999999996,
+            "output": 0.11087999999999999,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "deepseek/deepseek-v4-flash"
           },
-          "cost": 0.14868
+          "cost": 0.16632
         },
         {
           "id": "deepseek-v4-flash-vision-exp",
           "name": "deepseek-v4-flash-vision-exp",
           "pricing": {
-            "input": 0.21559999999999999,
-            "output": 0.6468,
+            "input": 0.22,
+            "output": 0.66,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "deepseek/deepseek-v4-flash-vision-exp"
           },
-          "cost": 0.8624
+          "cost": 0.88
         },
         {
           "id": "deepseek-v4-pro",
           "name": "deepseek-v4-pro",
           "pricing": {
-            "input": 1.5999999999999999,
-            "output": 3.1999999999999997,
+            "input": 0.927768,
+            "output": 1.855536,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "deepseek/deepseek-v4-pro"
           },
-          "cost": 4.8
+          "cost": 2.7833040000000002
+        },
+        {
+          "id": "deepseek-v4.1-flash",
+          "name": "deepseek-v4.1-flash",
+          "pricing": {
+            "input": 0.15,
+            "output": 0.6,
+            "source": "openrouter",
+            "estimated": true,
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
+            "matchedModel": "deepseek/deepseek-v4.1-flash"
+          },
+          "cost": 0.75
         },
         {
           "id": "gemini-3-flash",
@@ -5881,7 +5949,7 @@
             "output": 9,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.5-flash"
           },
           "cost": 10.5
@@ -5894,7 +5962,7 @@
             "output": 2.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.5-flash-lite"
           },
           "cost": 2.8
@@ -5907,7 +5975,7 @@
             "output": 3.75,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.6-flash"
           },
           "cost": 4.5
@@ -5920,7 +5988,7 @@
             "output": 3.75,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.7-flash"
           },
           "cost": 4.5
@@ -5933,7 +6001,7 @@
             "output": 3.75,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "google/gemini-3.8-flash"
           },
           "cost": 4.5
@@ -5966,7 +6034,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5"
           },
           "cost": 11.25
@@ -5983,7 +6051,7 @@
             "output": 0.39999999999999997,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5-nano"
           },
           "cost": 0.44999999999999996
@@ -5996,7 +6064,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.1"
           },
           "cost": 11.25
@@ -6009,7 +6077,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.1-codex"
           },
           "cost": 11.25
@@ -6022,7 +6090,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.1-codex-max"
           },
           "cost": 11.25
@@ -6035,7 +6103,7 @@
             "output": 2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.1-codex-mini"
           },
           "cost": 2.25
@@ -6048,7 +6116,7 @@
             "output": 14,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.2"
           },
           "cost": 15.75
@@ -6061,7 +6129,7 @@
             "output": 14,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.2-codex"
           },
           "cost": 15.75
@@ -6074,7 +6142,7 @@
             "output": 14,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.3-codex"
           },
           "cost": 15.75
@@ -6091,7 +6159,7 @@
             "output": 15,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.4"
           },
           "cost": 17.5
@@ -6104,7 +6172,7 @@
             "output": 4.5,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.4-mini"
           },
           "cost": 5.25
@@ -6117,7 +6185,7 @@
             "output": 1.25,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.4-nano"
           },
           "cost": 1.45
@@ -6130,7 +6198,7 @@
             "output": 180,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.4-pro"
           },
           "cost": 210
@@ -6143,7 +6211,7 @@
             "output": 30,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.5"
           },
           "cost": 35
@@ -6156,7 +6224,7 @@
             "output": 180,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.5-pro"
           },
           "cost": 210
@@ -6169,7 +6237,7 @@
             "output": 1.2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.6-luna"
           },
           "cost": 1.4
@@ -6182,7 +6250,7 @@
             "output": 10,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.6-sol"
           },
           "cost": 12
@@ -6195,7 +6263,7 @@
             "output": 12,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-5.6-terra"
           },
           "cost": 14
@@ -6208,7 +6276,7 @@
             "output": 50,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "openai/gpt-6-astra"
           },
           "cost": 60
@@ -6221,7 +6289,7 @@
             "output": 6,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "x-ai/grok-4.5"
           },
           "cost": 8
@@ -6234,7 +6302,7 @@
             "output": 6,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "x-ai/grok-4.6"
           },
           "cost": 8
@@ -6247,14 +6315,10 @@
             "output": 2,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "x-ai/grok-build-0.1"
           },
           "cost": 3
-        },
-        {
-          "id": "jev-latest",
-          "name": "jev-latest"
         },
         {
           "id": "kimi-k2.5",
@@ -6277,8 +6341,8 @@
           "name": "ling-3.0-flash-fin-free"
         },
         {
-          "id": "mimo-v2.5-free",
-          "name": "mimo-v2.5-free"
+          "id": "mimo-v2.6-flash-free",
+          "name": "mimo-v2.6-flash-free"
         },
         {
           "id": "minimax-m2.5",
@@ -6328,10 +6392,23 @@
             "output": 1.95,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "qwen/qwen3.6-plus"
           },
           "cost": 2.275
+        },
+        {
+          "id": "qwen3.8-flash",
+          "name": "qwen3.8-flash",
+          "pricing": {
+            "input": 0.15,
+            "output": 0.47,
+            "source": "openrouter",
+            "estimated": true,
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
+            "matchedModel": "qwen/qwen3.8-flash"
+          },
+          "cost": 0.62
         }
       ]
     },
@@ -6347,7 +6424,7 @@
             "output": 1,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "perplexity/sonar"
           },
           "cost": 2
@@ -6360,7 +6437,7 @@
             "output": 8,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "perplexity/sonar-deep-research"
           },
           "cost": 10
@@ -6373,7 +6450,7 @@
             "output": 15,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "perplexity/sonar-pro"
           },
           "cost": 18
@@ -6386,7 +6463,7 @@
             "output": 8,
             "source": "openrouter",
             "estimated": true,
-            "fetchedAt": "2026-09-18T17:38:47.674Z",
+            "fetchedAt": "2026-09-21T17:49:04.982Z",
             "matchedModel": "perplexity/sonar-reasoning-pro"
           },
           "cost": 10
@@ -6400,6 +6477,7 @@
     "friendli",
     "google",
     "kilo",
+    "kimi-code-plan-global",
     "kimi-for-coding",
     "moonshotai",
     "openai",

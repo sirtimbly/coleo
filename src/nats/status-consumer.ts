@@ -7,6 +7,7 @@
 
 import { DeliverPolicy, AckPolicy } from "nats";
 import type { ConsumerInfo, JetStreamClient, JsMsg } from "nats";
+import { subjectToken, decodeSubjectToken } from "./subject-token";
 import { eventStore, EventStore, type EventData } from "./jetstream";
 
 export interface StatusEvent {
@@ -125,13 +126,13 @@ export class StatusEventsConsumer {
 				case "arm":
 					return [
 						entityId
-							? `coleo.events.arm.${entityId}.status_changed`
+							? `coleo.events.arm.${subjectToken(entityId)}.status_changed`
 							: "coleo.events.arm.*.status_changed",
 					];
 				case "task":
 					return [
 						entityId
-							? `coleo.events.task.${entityId}.status_changed`
+							? `coleo.events.task.${subjectToken(entityId)}.status_changed`
 							: "coleo.events.task.*.status_changed",
 					];
 				case "system":
@@ -320,7 +321,7 @@ export function parseEventSubject(subject: string): {
 		return { entityType: "system", entityId: "system", statusType: "system.status" };
 	}
 	if ((entityType === "arm" || entityType === "task") && parts.length >= 5) {
-		const entityId = parts[3];
+		const entityId = decodeSubjectToken(parts[3]!);
 		const leaf = parts.slice(4).join(".");
 		if (leaf === "status_changed") {
 			return {

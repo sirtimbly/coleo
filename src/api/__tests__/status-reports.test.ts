@@ -103,5 +103,81 @@ describe("Status Reports API", () => {
       const body = (await res.json()) as { error: string };
       expect(body.error).toBe("Task not found: missing-task");
     });
+
+    it("rejects an invalid status with 400 and persists nothing", async () => {
+      const res = await app.request("/api/status-reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          taskId: "task-1",
+          armId: "arm-1",
+          status: "done",
+          summary: "Invalid status value",
+        }),
+      });
+
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain("status");
+      const countRow = db.query("SELECT COUNT(*) as count FROM status_reports").get() as { count: number };
+      expect(countRow.count).toBe(0);
+    });
+
+    it("rejects an invalid testsStatus with 400 and persists nothing", async () => {
+      const res = await app.request("/api/status-reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          taskId: "task-1",
+          armId: "arm-1",
+          status: "on_track",
+          summary: "Bad tests status",
+          testsStatus: "green",
+        }),
+      });
+
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain("testsStatus");
+      const countRow = db.query("SELECT COUNT(*) as count FROM status_reports").get() as { count: number };
+      expect(countRow.count).toBe(0);
+    });
+
+    it("rejects non-string-array issues with 400 and persists nothing", async () => {
+      const res = await app.request("/api/status-reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          taskId: "task-1",
+          armId: "arm-1",
+          status: "issues_found",
+          summary: "Issues with wrong shape",
+          issues: { not: "an array" },
+        }),
+      });
+
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain("issues");
+      const countRow = db.query("SELECT COUNT(*) as count FROM status_reports").get() as { count: number };
+      expect(countRow.count).toBe(0);
+    });
+
+    it("rejects a whitespace-only summary with 400", async () => {
+      const res = await app.request("/api/status-reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          taskId: "task-1",
+          armId: "arm-1",
+          status: "on_track",
+          summary: "   ",
+        }),
+      });
+
+      expect(res.status).toBe(400);
+      const countRow = db.query("SELECT COUNT(*) as count FROM status_reports").get() as { count: number };
+      expect(countRow.count).toBe(0);
+    });
   });
 });

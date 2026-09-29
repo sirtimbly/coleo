@@ -1,3 +1,4 @@
+import { subjectToken } from "./subject-token";
 import type { TaskAttachment } from "../types";
 import type { RepositoryOnboardingOperation } from "../onboarding/types";
 import type { WorkspaceOperation } from "../workspace";
@@ -172,6 +173,7 @@ export interface CommandResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
+  errorCode?: "MODEL_CHECK_FAILED";
 }
 
 export interface SpawnResponse {
@@ -326,7 +328,7 @@ export const TOPICS = {
   agentResponse: (agentId: string, requestId: string) => `coleo.agent.${agentId}.response.${requestId}`,
   
   // Events from arms
-  armEvent: (armId: string) => `coleo.arm.${armId}.event`,
+  armEvent: (armId: string) => `coleo.arm.${subjectToken(armId)}.event`,
   
   // Brain message queue (arms → brain)
   BRAIN_MESSAGES: 'coleo.brain.messages',

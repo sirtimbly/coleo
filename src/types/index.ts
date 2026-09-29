@@ -396,6 +396,10 @@ export interface ColeoConfig {
 		pollIntervalMs: number;
 		maxArms: number;
 		armGracePeriodMinutes: number;
+		swarmEvaluationMode?: "off" | "shadow" | "execute";
+		swarmWindowPolls?: number;
+		responsibilityEnabled?: import("../brain/responsibilities").BrainResponsibilitySettings["responsibilityEnabled"];
+		swarmActionModes?: import("../brain/responsibilities").BrainResponsibilitySettings["swarmActionModes"];
 		provider: string;
 		model: string;
 		apiKey: string;

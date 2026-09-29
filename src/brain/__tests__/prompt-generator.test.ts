@@ -5,8 +5,53 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { __promptTestables, generateTaskDetermination } from "../prompt-generator";
 import { createSqliteBrainDb } from "../../db/brain-db-adapter";
+import { CLASSIFICATION_PROMPT_TEMPLATES, getClassificationPrompt, getClassificationTools } from "../classification-prompts";
 
 const NOW = new Date("2026-01-16T00:00:00Z").toISOString();
+
+describe("classification prompt templates", () => {
+	for (const classification of ["architect", "development", "qa", "documentation", "verify", "bug_fix", "default"]) {
+		it(`defines a scoped contract for ${classification}`, () => {
+			const prompt = getClassificationPrompt(classification);
+			expect(prompt).toContain("general-purpose arm");
+			expect(prompt).toContain("concrete verification evidence");
+			expect(prompt).toContain("Specific");
+			expect(prompt).toContain(CLASSIFICATION_PROMPT_TEMPLATES[classification]!);
+			expect(prompt).toContain("Relevant Tool Context");
+		});
+	}
+
+	it("falls back safely for unknown classifications", () => {
+		expect(getClassificationPrompt("custom-domain")).toContain(CLASSIFICATION_PROMPT_TEMPLATES.default!);
+	});
+
+	it("keeps universal tools while narrowing specialized context", () => {
+		const qaTools = getClassificationTools("qa");
+		expect(qaTools).toContain("complete_task");
+		expect(qaTools).toContain("report_bug");
+		expect(qaTools).not.toContain("update_documentation");
+		expect(getClassificationTools("unknown")).toContain("get_full_briefing");
+	});
+});
+
+describe("classification execution matrix", () => {
+	for (const classification of ["architect", "development", "qa", "documentation"]) {
+		it(`gives a general-purpose arm ${classification} instructions`, () => {
+			const instructions = __promptTestables.generateInstructions({
+				id: `task-${classification}`,
+				subject: `${classification} task`,
+				description: "Execute the assigned work",
+				status: "pending",
+				priority: "normal",
+				classification,
+				createdAt: new Date("2026-01-01T00:00:00Z"),
+				updatedAt: new Date("2026-01-01T00:00:00Z"),
+			});
+			expect(instructions).toContain("general-purpose arm");
+			expect(instructions.toLowerCase()).toContain(classification === "qa" ? "qa-specific" : `${classification}-specific`);
+		});
+	}
+});
 
 function createTestDb(): Database {
   const db = new Database(":memory:");
@@ -19,6 +64,7 @@ function createTestDb(): Database {
       priority TEXT NOT NULL,
       domain TEXT,
       phase TEXT,
+      assigned_to TEXT,
       assigned_arms TEXT DEFAULT '[]',
       consensus_status TEXT,
       dependency_blocked INTEGER DEFAULT 0,
@@ -202,6 +248,31 @@ describe("prompt-generator dependencies", () => {
     db.close();
   });
 
+  it("recommends the global claim queue head even when another phase dominates", async () => {
+    const db = createTestDb();
+    const brainDb = createSqliteBrainDb(db);
+    insertTask(db, { id: "queue-head", subject: "First dependency-ordered task", phase: "Phase 1", order_key: "a" });
+    for (let i = 0; i < 3; i++) {
+      insertTask(db, { id: `later-${i}`, subject: "Later phase task", phase: "Phase 19", order_key: `z${i}` });
+    }
+    const result = await generateTaskDetermination({ projectRoot: process.cwd(), coleoDir: process.cwd(), db: brainDb });
+    expect(result.task?.id).toBe("queue-head");
+    db.close();
+  });
+
+  it("does not recommend another Arm's active task to a new Arm", async () => {
+    const db = createTestDb();
+    const brainDb = createSqliteBrainDb(db);
+    insertTask(db, { id: "owned", subject: "Already claimed", status: "in_progress", phase: "Phase 1" });
+    db.run("UPDATE tasks SET assigned_to = 'other-arm' WHERE id = 'owned'");
+    insertTask(db, { id: "available", subject: "Next task", phase: "Phase 1", order_key: "a" });
+    const result = await generateTaskDetermination({ projectRoot: process.cwd(), coleoDir: process.cwd(), db: brainDb }, { armId: "new-arm" });
+    expect(result.task?.id).toBe("available");
+    const ownerResult = await generateTaskDetermination({ projectRoot: process.cwd(), coleoDir: process.cwd(), db: brainDb }, { armId: "other-arm" });
+    expect(ownerResult.task?.id).toBe("owned");
+    db.close();
+  });
+
   it("selects validation follow-ups instead of unassigned completing work", async () => {
     const db = createTestDb();
     const brainDb = createSqliteBrainDb(db);
@@ -291,7 +362,7 @@ describe("prompt-generator dependencies", () => {
     });
 
     expect(result.task?.id).toBe("phase-fresh-pending");
-    expect(result.reasoning).toContain("outside dominant phase Phase stale");
+    expect(result.reasoning).toContain("Returning next pending task from database");
 
     db.close();
   });

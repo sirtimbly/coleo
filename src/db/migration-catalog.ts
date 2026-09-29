@@ -1,3 +1,5 @@
+import { MIGRATION_071_SWARM_RECOMMENDATIONS } from "./migrations/swarm-recommendations";
+import { MIGRATION_070_SWARM_EVALUATIONS } from "./migrations/swarm-evaluations";
 import {
   MIGRATION_001,
   MIGRATION_002,
@@ -96,6 +98,7 @@ import {
   MIGRATION_068_WORKBENCH_CARD_INSTANCES,
 } from "./migrations/schema-05";
 import { addDraftTaskStatus } from "./migrations/task-draft-status";
+import { MIGRATION_072_TASK_HANDOFF } from "./migrations/task-handoff";
 import { normalizeArmContextDefaults } from "./migrations/arm-context-defaults";
 import type { Migration } from "./migration-runner";
 
@@ -170,6 +173,9 @@ export function getMigrations(): Migration[] {
 		["067_task_draft_status", MIGRATION_067_TASK_DRAFT_STATUS],
 		["068_workbench_card_instances", MIGRATION_068_WORKBENCH_CARD_INSTANCES],
 		["069_arm_context_defaults", "SELECT 1;"],
+		["070_swarm_evaluations", MIGRATION_070_SWARM_EVALUATIONS],
+		["071_swarm_recommendations", MIGRATION_071_SWARM_RECOMMENDATIONS],
+		["072_task_handoff", MIGRATION_072_TASK_HANDOFF],
 	];
   return migrations.map(([name, sql, columns]) => ({
     name, sql, columns,

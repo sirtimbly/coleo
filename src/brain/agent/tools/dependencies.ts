@@ -4,7 +4,6 @@
 
 import { BrainTool } from "./base";
 import type { ToolResult } from "./base";
-import { eventStore } from "../../../nats/jetstream";
 
 export interface DependencyReport {
   taskId: string;
@@ -59,20 +58,25 @@ export class ReportDependencyTool extends BrainTool {
         reason: input.reason,
       });
 
-      // Log the dependency report to JetStream
-      if (eventStore.isInitialized()) {
-        eventStore.publishEvent(`coleo.events.brain.dependency_reported`, {
-          type: "dependency_reported",
-          armId: "brain",
-          data: {
-            taskId: input.taskId,
-            dependsOnTaskId: input.dependsOnTaskId,
-            dependencyType: input.dependencyType || 'finish_to_start',
-            reason: input.reason,
-            autoDetected: false
-          },
-          timestamp: new Date().toISOString(),
-        }).catch(() => {});
+      // Report the dependency through the API boundary (best-effort).
+      if (this.context.publishEvent) {
+        try {
+          await this.context.publishEvent(`coleo.events.brain.dependency_reported`, {
+            type: "dependency_reported",
+            armId: "brain",
+            data: {
+              taskId: input.taskId,
+              dependsOnTaskId: input.dependsOnTaskId,
+              dependencyType: input.dependencyType || 'finish_to_start',
+              reason: input.reason,
+              autoDetected: false
+            },
+            timestamp: new Date().toISOString(),
+          });
+        } catch {
+          // Event publication is observability-only; the durable
+          // dependency record above is already written.
+        }
       }
 
       const result: DependencyReport = {

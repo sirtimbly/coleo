@@ -2015,7 +2015,7 @@ export function createMcpServer(): McpServer {
 
 				const result = await generateTaskDetermination(
 					ctx,
-					buildTaskDeterminationOptionsForArm(),
+					{ ...buildTaskDeterminationOptionsForArm(), armId: ARM_ID },
 				);
 				updateCompletionExclusionAfterDetermination(result);
 				const formatted = formatTaskDetermination(result);
@@ -2139,7 +2139,7 @@ export function createMcpServer(): McpServer {
 				// Step 1: Get task determination
 				const determination = await generateTaskDetermination(
 					ctx,
-					buildTaskDeterminationOptionsForArm(),
+					{ ...buildTaskDeterminationOptionsForArm(), armId: ARM_ID },
 				);
 				updateCompletionExclusionAfterDetermination(determination);
 				const determinationFormatted = formatTaskDetermination(determination);
@@ -2610,155 +2610,6 @@ export function createMcpServer(): McpServer {
 							type: "text" as const,
 							text: `Error starting ${service}: ${err}`,
 						},
-					],
-					isError: true,
-				};
-			}
-		},
-	);
-
-	// ============================================
-	// Task Preparation Agent and Handoff Tools
-	// ============================================
-
-	// prepare_task: Architect agent can prepare a detailed task definition from discussion
-	server.registerTool(
-		"prepare_task",
-		{
-			description:
-				"Prepare a detailed task definition for handoff. Use this after discussing task requirements to create a clean, actionable task that other arms can execute.",
-			inputSchema: {
-				subject: z.string().describe("Clear title for the task"),
-				description: z
-					.string()
-					.describe(
-						"Detailed description including context, requirements, and acceptance criteria",
-					),
-				priority: z
-					.enum(["low", "normal", "high"])
-					.optional()
-					.describe("Task priority (defaults to normal)"),
-				discussion_id: z
-					.string()
-					.optional()
-					.describe(
-						"ID of the discussion that informed this task preparation (if applicable)",
-					),
-				related_plan_id: z
-					.string()
-					.optional()
-					.describe(
-						"Plan document ID that this task relates to (if applicable)",
-					),
-				estimated_effort: z
-					.string()
-					.optional()
-					.describe("Estimate of effort (e.g., '2-3 hours', '1 day')"),
-			},
-		},
-		async ({
-			subject,
-			description,
-			priority = "normal",
-			discussion_id,
-			related_plan_id,
-			estimated_effort,
-		}) => {
-			try {
-				// Validate required fields
-				if (!subject?.trim()) {
-					return {
-						content: [{ type: "text", text: "Subject is required" }],
-					};
-				}
-				if (!description?.trim()) {
-					return {
-						content: [{ type: "text", text: "Description is required" }],
-					};
-				}
-
-				// Get writable database connection
-				const db = getDatabase(true);
-				if (!db) {
-					return {
-						content: [{ type: "text", text: "Database connection failed" }],
-						isError: true,
-					};
-				}
-
-				// Generate unique task ID
-				const taskId = `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-				// Build task description
-				const taskDescription = [
-					description,
-					estimated_effort ? `**Estimated Effort:** ${estimated_effort}` : "",
-				]
-					.filter(Boolean)
-					.join("\n\n");
-
-					// Insert task into database with prepared_by_arm_id
-					// TODO refactor this into the API server and the brain
-					db.run(
-						`INSERT INTO tasks (
-            id, subject, description, status, priority, classification,
-            domain, assigned_to, created_at, updated_at,
-            prepared_by_arm_id, prepared_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-						[
-							taskId,
-							subject,
-							taskDescription,
-							"pending",
-							priority,
-							"development", // Prepared tasks are typically development tasks
-							null, // domain (unscoped)
-							null, // unassigned so any arm can claim
-							new Date().toISOString(),
-							new Date().toISOString(),
-							ARM_ID,
-							new Date().toISOString(),
-						],
-					);
-
-				// Log activity
-				logActivity(ARM_ID, "prepare_task", taskId, {
-					subject,
-					priority,
-					discussion_id,
-					related_plan_id,
-					estimated_effort,
-				});
-
-				// Get the task for response
-				const task = db.query("SELECT * FROM tasks WHERE id = ?").get(taskId) as
-					| { id: string; subject: string; status: string; priority: string }
-					| undefined;
-
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text:
-								`Task prepared successfully!\n\n` +
-								`ID: ${task?.id || taskId}\n` +
-								`Subject: ${task?.subject || subject}\n` +
-								`Status: ${task?.status || "pending"}\n` +
-								`Priority: ${task?.priority || priority}\n` +
-								`Prepared by: ${ARM_ID}\n\n` +
-								`This task is now available for other arms to claim and execute.`,
-						},
-					],
-				};
-			} catch (err) {
-				const errorMsg = err instanceof Error ? err.message : String(err);
-				logActivity(ARM_ID, "prepare_task_error", undefined, {
-					error: errorMsg,
-				});
-				return {
-					content: [
-						{ type: "text", text: `Failed to prepare task: ${errorMsg}` },
 					],
 					isError: true,
 				};

@@ -3,6 +3,48 @@
 Coleo uses [Qdrant](https://qdrant.tech/) for vector storage and semantic search
 (status history, transcripts, arm context).
 
+## Production decision
+
+Qdrant is approved for the Cloudflare split-runtime control container only. It is
+not approved as a public managed endpoint or as an independently exposed service.
+The control image starts Qdrant on `127.0.0.1:6333`; the authenticated Coleo API
+is the only supported access path for clients and arms. `COLEO_API_KEY` protects
+the API, but it does not protect a directly reachable Qdrant endpoint.
+
+Production coupling requires all of the following:
+
+- Keep Qdrant loopback-only, with no public HTTP or gRPC port, and restrict
+  control-container and R2 credentials to the service identity. Do not use a
+  remote `COLEO_QDRANT_URL` unless Qdrant TLS and authentication are configured
+  separately and an architecture review approves that change.
+- Keep live Qdrant storage on the control container's local SSD. Store only
+  consistent Qdrant snapshots in the private `control/qdrant/` R2 prefix; never
+  sync the live storage directory. The entrypoint snapshots every five minutes
+  and on graceful shutdown, and restores the newest snapshot only to an empty
+  Qdrant storage directory.
+- Test a restore from the newest snapshot before release and after any Qdrant
+  image upgrade. Record the snapshot age and restore result in the deployment
+  runbook. A missing or stale snapshot blocks production rollout.
+- Run `bun run retention:status-history -- --dry-run`, review the per-event-type
+  result, then run the retention job on the production schedule. Retention must
+  match the workspace data-retention policy; `forever` is not an implicit
+  production default.
+- Treat Qdrant payloads and R2 snapshots as sensitive workspace data. Limit
+  access to the control service and backup operators, audit R2 access, and
+  delete snapshots according to the same retention policy.
+- Set and monitor a capacity budget for control-container disk/CPU/memory, R2
+  storage and request costs, and snapshot duration. A deployment must have an
+  owner and alert thresholds before it can rely on semantic search.
+
+Qdrant is optional infrastructure. An outage must leave SQLite, Maildir, task,
+and lifecycle writes intact: the search API falls back to keyword-only results,
+and the JetStream consumer acknowledges an event only after its Qdrant upsert
+succeeds, allowing later redelivery. Restore service by restarting the control
+container and validating Qdrant readiness and search; restore the latest
+snapshot when its local storage is empty. To roll back Qdrant entirely, disable
+semantic traffic and retain SQLite keyword search while the queued events remain
+available for reindexing after recovery.
+
 ## Quick start (local Docker)
 
 ```bash
