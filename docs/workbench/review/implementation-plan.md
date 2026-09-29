@@ -47,11 +47,11 @@ a complete shared framework, new toolbar syntax, or a second client.
 | Panel host: classic shell | Retire classic-only code; Golden Layout becomes the sole browser shell |
 | Future clients | Shared serializable contracts; CLI snapshot and TUI live slices before any native-app commitment |
 
-This resolves the review's architectural choices. Two interaction details were
-asked separately: immediate settings saves versus Apply, and toolbar text syntax.
-Unless changed during plan review, the proposed defaults below are immediate
-saves for completed changes and YAML as text notation. They are implementation
-defaults, not claims that Tim explicitly selected a parser or save gesture.
+This resolves the review's architectural choices. Tim has also selected
+**immediate settings saves, with no Apply button**. Toolbar text syntax remains
+open; the comparison in section 6 separates the toolbar language's semantics
+from its text notation. JSONC is now the working recommendation after checking
+the existing editor; YAML remains an alternative, not a selected format.
 
 ## 1. Make Messaging a coherent API projection
 
@@ -157,9 +157,11 @@ server response (or targeted reload) → updated panel state. “Reload” means
 affected query/settings, not the browser document or Golden Layout tree.
 Do not add a durable draft store, save-on-unmount machinery, or offline merge UI.
 
-Proposed interaction default: dropdown/toggle changes commit immediately;
-resizing commits on gesture completion, and text/number input commits on an
-explicit completion gesture. Avoid per-keystroke requests. Serialize changes to
+Selected interaction: dropdown/toggle changes commit immediately; resizing
+commits on gesture completion. Valid text/number changes save after a short
+typing pause or on blur, without an Apply button. Invalid intermediate input
+stays in the control with validation feedback. Avoid per-keystroke requests.
+Serialize changes to
 one settings record or disable its relevant controls during the round trip,
 so the ordinary single-user flow cannot overwrite itself. A failed save shows
 an error and retains the last confirmed configuration, with an explicit retry
@@ -274,10 +276,28 @@ through a React component. Separate reusable defaults from per-panel overrides.
 Editing a template must be an explicit action, not an incidental change to
 another open panel's toolbar.
 
-Proposed text default: a deliberately small YAML notation with named slots,
-widget IDs, labels, visibility, order, and typed options. JSON is the canonical
-wire/storage shape. A compact example of the intended model—not a parser
-already implemented—is:
+The toolbar DSL is the vocabulary and rules for slots, widget IDs, labels,
+visibility, order, typed bindings, and options. YAML or JSONC can express that
+DSL; a custom grammar is a separate choice. All formats compile to the same
+validated JSON wire/storage model, so syntax does not change UI capabilities.
+
+| Text notation | Advantage | Cost | Recommendation |
+| --- | --- | --- | --- |
+| JSONC | Close to the existing JSON editor/model; comments; established tree-editing tools | More punctuation; must enable comments consistently and handle them during visual edits | Start here for the smallest implementation step |
+| YAML | Less punctuation and readable nested layouts | Indentation/type rules and another source-editing path; restrict advanced YAML features | Prefer if frequent hand-authoring is a primary workflow |
+| Custom grammar | Can describe toolbar composition very compactly in product terms | Own the parser, diagnostics, formatting, editor support, and every language migration | Reconsider only if text authoring becomes a defining product interaction |
+
+The current editor already uses `jsonc-parser` to locate nodes, but shared
+validation still calls `JSON.parse`, and visual insertion serializes the whole
+model with `JSON.stringify`. It does not support comment-preserving JSONC
+round trips today. Microsoft's [JSONC parser](https://github.com/microsoft/node-jsonc-parser)
+provides tree and edit operations we can build on. Comments require deliberate
+source preservation; a plain parse/stringify round trip discards them. YAML
+would need the same care, plus a chosen restricted schema consistent with the
+[YAML specification](https://yaml.org/spec/1.2.2/).
+
+The earlier YAML example below illustrates the intended semantic model. It is
+not a selected syntax or an implemented parser:
 
 ```yaml
 schemaVersion: 1
@@ -301,6 +321,9 @@ slots:
 The visual editor supports no-code placement, reorder, visibility, labels,
 options, and preview. It does not edit another schema behind the text editor's
 back. Parse → validate → canonical model → preview/save is the shared pipeline.
+Visual changes save automatically. Valid text edits update the preview and save
+after a short pause; invalid intermediate text shows diagnostics while the last
+valid configuration stays active. No Apply button is required for either mode.
 Allowlist IDs and typed bindings; no JavaScript evaluation, arbitrary requests,
 or second executable templating language. Preview shows unsupported bindings
 explicitly. Narrow-panel overflow and keyboard access remain part of rendering.
@@ -315,8 +338,10 @@ import-bundle version boundaries as they are changed.
 **Acceptance:** visual → model → text → model preserves meaning and stable IDs;
 malformed documents and unknown/incompatible widgets yield actionable errors;
 legacy templates migrate; future versions leave saved data untouched; no
-round-trip promises about retaining YAML comments/whitespace unless separately
-implemented. Reuse the existing visual editor where it supports this model.
+round-trip promises about retaining comments/whitespace unless source-preserving
+edits are implemented and tested. Any source normalization must be explicit to
+the author, rather than silently deleting comments during visual edits. Reuse
+the existing visual editor where it supports this model.
 
 ## 7. Thin the host and prove reuse with another client
 
