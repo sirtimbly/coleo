@@ -158,7 +158,7 @@ export function SetupPage() {
     formatterError?: string;
   } | null>(null);
   const [openedModifiedAt, setOpenedModifiedAt] = useState<Map<string, string>>(() => new Map());
-  const requestedPathRef = useRef<string | null>(null);
+  const fileRequestRef = useRef(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -215,11 +215,11 @@ export function SetupPage() {
   };
 
   const loadFileIntoEditor = useCallback(async (path: string, linkedFile = false): Promise<boolean> => {
-    requestedPathRef.current = path;
+    const requestId = ++fileRequestRef.current;
     setEditorLoading(true);
     try {
       const { file } = await api.getProjectSetupFile(path);
-      if (requestedPathRef.current !== path) return false;
+      if (fileRequestRef.current !== requestId) return false;
       setOpenedModifiedAt((current) => new Map(current).set(file.path, file.modifiedAt));
       setEditor({
         path: file.path,
@@ -228,14 +228,15 @@ export function SetupPage() {
         savedContent: file.content,
         readOnly: file.readOnly === true,
       });
+      if (linkedFile) openedLinkRef.current = path;
       return true;
     } catch (err) {
-      if (requestedPathRef.current === path) {
+      if (fileRequestRef.current === requestId) {
         setError(err instanceof Error ? err.message : 'Failed to open the file', linkedFile ? path : null);
       }
       return false;
     } finally {
-      if (requestedPathRef.current === path) setEditorLoading(false);
+      if (fileRequestRef.current === requestId) setEditorLoading(false);
     }
   }, [setError]);
 
@@ -246,19 +247,21 @@ export function SetupPage() {
     if (linkAttemptRef.current?.path === requestedFile && linkAttemptRef.current.retry === linkRetry) return;
     const initialLink = linkAttemptRef.current === null && requestedFile === initialLinkedFile.current;
     if (!isOpenableFile(requestedFile)) { setError('This file cannot be edited here.'); return; }
-    if (!initialLink && dirty && !window.confirm('Discard your unsaved edits and open the linked file?')) return;
+    if (!initialLink && dirty && !window.confirm('Discard your unsaved edits and open the linked file?')) {
+      if (linkAttemptRef.current?.path === requestedFile) {
+        linkAttemptRef.current = { path: requestedFile, retry: linkRetry };
+      }
+      return;
+    }
     linkAttemptRef.current = { path: requestedFile, retry: linkRetry };
     setFileScope('all');
     setError(null);
-    void loadFileIntoEditor(requestedFile, true).then((loaded) => {
-      if (requestedPathRef.current !== requestedFile) return;
-      if (loaded) openedLinkRef.current = requestedFile;
-    });
+    void loadFileIntoEditor(requestedFile, true);
   }, [dirty, linkRetry, loadFileIntoEditor, loading, requestedFile, saving, setError, status]);
 
   const changeFileScope = (nextScope: SetupFileScope) => {
     if (!editor || !status || nextScope === fileScope || saving) return;
-    requestedPathRef.current = null;
+    fileRequestRef.current += 1;
     setEditorLoading(false);
     if (setupPathMatchesScope(editor.path, nextScope, CANONICAL_PLAN_PATH)) {
       setFileScope(nextScope);
@@ -282,7 +285,6 @@ export function SetupPage() {
     setResult(null);
     setError(null);
     if (targetPath === CANONICAL_PLAN_PATH) {
-      requestedPathRef.current = null;
       const canonicalPlan = status.canonicalPlan;
       setEditor(canonicalPlan ? {
         path: canonicalPlan.path,
@@ -330,7 +332,7 @@ export function SetupPage() {
   const createPlan = () => {
     if (!status || saving) return;
     if (dirty && !window.confirm('Discard your unsaved edits and start a new plan?')) return;
-    requestedPathRef.current = null;
+    fileRequestRef.current += 1;
     setEditorLoading(false);
     setEditor({
       path: CANONICAL_PLAN_PATH,
