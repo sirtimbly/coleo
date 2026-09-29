@@ -419,6 +419,62 @@ last valid definition active; an installed blueprint update cannot silently
 reset existing panels. Use one product-delivery example and a structurally
 different process example to expose accidental Coleo-specific assumptions.
 
+### Authoring assistance in the browser and local editors
+
+Good autocomplete is a release requirement for the text interface. Authoring
+support includes suggested keys and values, documented slots/widgets/commands,
+appropriate resource fields, snippets, hover descriptions, and useful
+diagnostics while a document is incomplete. Users should not need to memorize
+every registered identifier or leave their local editor to discover it.
+
+Generate or maintain a versioned JSON Schema from the same definition contracts
+and capability registry that drive validation and the visual palette. Test the
+schema and runtime parser against shared valid/invalid fixtures so they cannot
+quietly describe different languages. The schema is useful for YAML as well
+as JSONC; language syntax and schema are separate layers.
+
+For the browser, prototype a lazily loaded Monaco editor with a language worker.
+[monaco-yaml](https://github.com/remcohaszing/monaco-yaml) supports schema-based
+completion, hover, validation, and formatting. JSONC can use Monaco's JSON
+support and Microsoft's [JSON language service](https://github.com/microsoft/vscode-json-languageservice).
+The current toolbar text control is a textarea and needs a real editor adapter.
+Keep editor lifecycle isolated and preserve the cursor/undo stack while the
+preview and autosave update. Do not mount an editor worker for every normal
+resource panel or load it into initial navigation unnecessarily.
+
+For local editors, start with the existing
+[YAML language server](https://github.com/redhat-developer/yaml-language-server)
+and a file-pattern/schema association. VS Code can use its YAML extension;
+other compatible LSP clients can configure the same server. JSONC has existing
+[VS Code schema support](https://code.visualstudio.com/docs/languages/json).
+Ship a pinned schema with blueprint tooling and optionally a thin editor
+extension for automatic association and snippets; basic autocomplete must
+work offline without a running Coleo API. Test schema-dialect support in the
+chosen browser/local integrations rather than assuming every feature matches.
+
+Static schema support covers known structure, enums, and descriptions. Resource
+context, references to named views, and project-specific capabilities may need
+additional semantic analysis. Share that analysis in a headless authoring
+module: the web editor calls it in a worker, and a local language-server adapter
+exposes it through LSP. Add definition navigation, reference checks, and rename
+when this symbol model exists; do not promise them from JSON Schema alone.
+Start project suggestions from local definitions and a versioned capability
+snapshot. A connection to Coleo may refresh that snapshot, but it must not be
+required on every keystroke.
+
+A custom grammar can also support LSP and web completion, but requires its own
+parser/language service as well as these editor adapters. Prototype the same
+representative blueprint in both browser and local editor before committing to
+the notation. Existing YAML/JSONC language tooling strengthens the case for
+starting with a standard notation.
+
+**Acceptance:** in both editor environments, complete a panel kind, a semantic
+slot, a valid widget, and a resource-appropriate field; show hover documentation
+and precise diagnostics for an invalid binding; remain useful during partial
+typing and offline authoring; preserve editor selection/undo through autosave.
+Test project-reference assistance separately from the schema baseline. Keep
+the CLI validator consistent with the same valid/invalid documents.
+
 ## 7. Thin the host and prove reuse with another client
 
 Move route metadata and per-view relevance policy beside product contributions.
@@ -478,6 +534,7 @@ behavior before extraction, and update this checklist as evidence lands.
 | 4b | `feat(workbench): version toolbar definitions and migrations` | 4a | Legacy migration and atomic rejection of unsupported imports |
 | 4c | `feat(web): unify visual and text toolbar editing` | 4b; syntax decision | Meaning-preserving round trips and usable preview/errors |
 | 4d | `feat(workbench): load and validate file-authored blueprints` | 4a–4c; source/schema contract | Hand authoring, immediate visual write-through, safe reload, versioned distribution and panel overrides |
+| 4e | `feat(workbench): add blueprint authoring assistance` | 4b schema and capability registry; iterate alongside 4c–4d | Web and local-editor completions, hover, diagnostics, offline schema support, and shared semantic fixtures |
 | 5a | `refactor(web): separate workspace policy from renderer lifetime` | Relevant behavior coverage | Host/sheet/feature seams split without remount regressions |
 | 5b | `fix(web): consolidate remaining projection refresh owners` | 1b's proven controller | Tasks/Processes use one policy; no burst/order regressions |
 | 6 | `feat(cli): expose shared resource snapshots` then TUI live slice | 1a's stable contract; core where useful | Same query/action semantics across clients |
