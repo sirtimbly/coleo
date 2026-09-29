@@ -234,9 +234,9 @@ export function SetupPage() {
   useEffect(() => {
     if (loading || !status || !requestedFile || saving || openedLinkRef.current === requestedFile) return;
     const initialLink = openedLinkRef.current === null && requestedFile === initialLinkedFile.current;
-    openedLinkRef.current = requestedFile;
     if (!isOpenableFile(requestedFile)) { setError('This file cannot be edited here.'); return; }
     if (!initialLink && dirty && !window.confirm('Discard your unsaved edits and open the linked file?')) return;
+    openedLinkRef.current = requestedFile;
     setFileScope('all');
     setError(null);
     void loadFileIntoEditor(requestedFile);

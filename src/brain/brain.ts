@@ -1,6 +1,7 @@
 import { subjectToken } from "../nats/subject-token";
 import { builtinEnabled, type BuiltinResponsibility } from "./responsibilities";
 import { acquirePlanEvaluation } from "../project-setup/evaluation-lock";
+import { activatePreparedTaskHandoffs } from "./task-handoffs";
 /**
  * Brain - The central coordinator for Coleo
  *
@@ -982,6 +983,9 @@ export class Brain {
 			});
 			return;
 		}
+
+		// Prepared work becomes eligible only after planning and pause gates open.
+		await activatePreparedTaskHandoffs(this.apiRequest.bind(this), (message) => this.log(message));
 
 		// Steps 3-6 require API server for arm communication
 		if (infraHealth.canWorkWithArms) {

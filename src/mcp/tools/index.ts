@@ -9,6 +9,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 // Import tool categories
 import { registerTaskTools } from "./task-tools";
+import { registerPrepareTaskTool } from "./prepare-task";
 import { registerBugTools } from "./bug-tools";
 import { registerReportingTools } from "./reporting-tools";
 import { registerFileClaimTools } from "./file-claim-tools";
@@ -24,6 +25,7 @@ import { registerDevServerTools } from "./dev-server-tools";
  */
 export function registerAllTools(server: McpServer): void {
 	registerTaskTools(server);
+	registerPrepareTaskTool(server);
 	registerBugTools(server);
 	registerReportingTools(server);
 	registerFileClaimTools(server);

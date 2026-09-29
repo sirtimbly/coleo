@@ -13,6 +13,8 @@ import { eventStore } from "../../nats/jetstream";
 import { generateKeyBetween } from "../../lib/fractional-indexing";
 import { getServerWorkspaceAccess } from "../workspace-access";
 import { prepareTaskFromDiscussion } from "../services/task-preparation";
+import { createPreparedTask, activateTaskHandoff } from "../services/task-handoff";
+import { preparedTaskRequestSchema } from "../../types/task-handoff";
 import {
 	compileResourceListFilters,
 	matchesResourceListFilters,
@@ -75,25 +77,6 @@ function isBlockedTaskCategory(value: unknown): value is BlockedTaskCategory {
 		typeof value === "string" &&
 		BLOCKED_CATEGORIES.includes(value as BlockedTaskCategory)
 	);
-}
-
-function isCompletePreparedPayload(payload: unknown, task: { source_ref: string | null; plan_line_uid: string | null }): boolean {
-	if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
-	const value = payload as Record<string, unknown>;
-	const nonEmptyStrings = (entry: unknown): boolean =>
-		Array.isArray(entry) && entry.length > 0 && entry.every((item) => typeof item === "string" && item.trim().length > 0);
-	const explicitArray = (entry: unknown): boolean =>
-		Array.isArray(entry) && entry.every((item) => typeof item === "string" && item.trim().length > 0);
-	const contextReady = typeof value.context === "string"
-		? value.context.trim().length > 0
-		: Boolean(value.context && typeof value.context === "object" && !Array.isArray(value.context));
-	const provenance = typeof value.sourceRef === "string" && value.sourceRef.trim().length > 0
-		|| Boolean(task.source_ref || task.plan_line_uid);
-	return provenance
-		&& nonEmptyStrings(value.acceptanceCriteria)
-		&& explicitArray(value.dependencies)
-		&& contextReady
-		&& nonEmptyStrings(value.outputs);
 }
 
 function requireIsoDate(value: string, field: string): string {
@@ -700,6 +683,15 @@ export function createTasksRoutes() {
 		return c.json({ bin: typedBin, timeZone, start: startIso, end: endIso, buckets });
 	});
 
+	/** Atomically prepare a draft and queue its handoff for Brain activation. */
+	app.post("/prepared", async (c) => {
+		const parsed = preparedTaskRequestSchema.safeParse(await c.req.json());
+		if (!parsed.success) throw HttpError.badRequest(parsed.error.issues.map((issue) => issue.message).join("; "));
+		const result = createPreparedTask(c.get("db"), parsed.data);
+		broadcast("tasks", "task.handoff_queued", { taskId: result.task.id, handoffId: result.handoff.id });
+		return c.json(result, 201);
+	});
+
 	/**
 	 * Prepare a detailed task definition from a task's discussion history.
 	 * POST /api/tasks/:id/prepare
@@ -755,6 +747,11 @@ export function createTasksRoutes() {
 			prepared_at: string; queued_at: string; activated_at: string | null; payload: string;
 		} | null;
 		if (prior && prior.status === "queued") {
+			// Retain queue identity while allowing incomplete preparation to be repaired.
+			if (body.prepared !== undefined) {
+				db.run("UPDATE task_handoffs SET payload = ?, prepared_by = COALESCE(?, prepared_by), prepared_at = ? WHERE id = ?",
+					[payload, preparedBy, now, prior.id]);
+			}
 			return c.json({ handoff: { id: prior.id, taskId, status: prior.status, queuedAt: prior.queued_at } }, 200);
 		}
 		if (prior) {
@@ -792,35 +789,10 @@ export function createTasksRoutes() {
 	 * queueing and assignment remain distinct operations.
 	 */
 	app.post("/handoff/:id/activate", async (c) => {
-		const db = c.get("db");
 		const handoffId = c.req.param("id");
-		const handoff = db.query("SELECT task_id FROM task_handoffs WHERE id = ? AND status = 'queued'").get(handoffId) as { task_id: string } | null;
-		if (!handoff) throw HttpError.notFound(`Queued handoff not found: ${handoffId}`);
-		const task = db.query("SELECT id, status, dependency_blocked, source_ref, plan_line_uid FROM tasks WHERE id = ?").get(handoff.task_id) as { id: string; status: TaskStatus; dependency_blocked: number; source_ref: string | null; plan_line_uid: string | null } | null;
-		if (!task) throw HttpError.notFound(`Task not found: ${handoff.task_id}`);
-		let preparedPayload: unknown;
-		try {
-			preparedPayload = JSON.parse(String((db.query("SELECT payload FROM task_handoffs WHERE id = ?").get(handoffId) as { payload: string }).payload || "{}"));
-		} catch {
-			throw new HttpError(409, "Prepared task payload is invalid");
-		}
-		if (!isCompletePreparedPayload(preparedPayload, task)) {
-			throw new HttpError(409, "Prepared task must include canonical plan provenance, acceptance criteria, dependencies, context, and outputs");
-		}
-		if (task.dependency_blocked === 1) throw new HttpError(409, "Task dependencies are not satisfied");
-		const unmet = db.query(
-			`SELECT 1 FROM task_dependencies d
-			 JOIN tasks dependency ON dependency.id = d.depends_on_task_id
-			 WHERE d.task_id = ? AND dependency.status != 'completed' LIMIT 1`,
-		).get(task.id);
-		if (unmet) throw new HttpError(409, "Task dependencies are not satisfied");
-		const now = new Date().toISOString();
-		db.run("UPDATE task_handoffs SET status = 'activated', activated_at = ? WHERE id = ? AND status = 'queued'", [now, handoffId]);
-		if (task.status === "draft") {
-			db.run("UPDATE tasks SET status = 'pending', updated_at = ? WHERE id = ?", [now, task.id]);
-		}
-		broadcast("tasks", "task.handoff_activated", { taskId: task.id, handoffId });
-		return c.json({ handoff: { id: handoffId, taskId: task.id, status: "activated", activatedAt: now } });
+		const activated = activateTaskHandoff(c.get("db"), handoffId);
+		broadcast("tasks", "task.handoff_activated", { taskId: activated.taskId, handoffId });
+		return c.json({ handoff: { id: handoffId, ...activated, status: "activated" } });
 	});
 
 	/**

@@ -1,6 +1,47 @@
 import { expect, test } from '@playwright/test';
 import { installMockApi } from './support/fixtures';
 
+test('a cancelled deep link opens after the current document is saved', async ({ page }) => {
+  await installMockApi(page);
+  await page.addInitScript(() => localStorage.setItem('coleo_project_setup_help_dismissed', 'true'));
+  const canonicalPlan = {
+    path: '.project/plan.md', content: '# Plan\n', contentHash: 'original', size: 7,
+    modifiedAt: new Date().toISOString(),
+  };
+  const linkedFile = { ...canonicalPlan, path: '.project/decisions/review.md', content: '# Linked decision\n' };
+  await page.route('**/api/project-setup', (route) => route.fulfill({ json: {
+    required: false, completed: true, canonicalPlan, canonicalTaskCount: 1, taskCount: 0,
+    projectDocuments: [canonicalPlan, linkedFile], projectTree: [canonicalPlan.path, linkedFile.path],
+    candidates: [], defaultContent: '',
+  } }));
+  let linkedRequests = 0;
+  await page.route('**/api/project-setup/file?*', (route) => {
+    linkedRequests += 1;
+    return route.fulfill({ json: { file: linkedFile } });
+  });
+  await page.route('**/api/project-setup/file', (route) => {
+    const input = route.request().postDataJSON() as { content: string };
+    return route.fulfill({ json: { file: { ...canonicalPlan, content: input.content, contentHash: 'saved' } } });
+  });
+  await page.goto('/setup');
+  const editor = page.getByRole('textbox');
+  await expect(editor).toHaveValue(canonicalPlan.content);
+  await editor.fill('# Unsaved plan\n');
+  const confirmation = page.waitForEvent('dialog');
+  await page.evaluate((path) => {
+    window.history.pushState({}, '', `/setup?file=${encodeURIComponent(path)}`);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }, linkedFile.path);
+  const dialog = await confirmation;
+  expect(dialog.message()).toContain('Discard your unsaved edits');
+  await dialog.dismiss();
+  await expect(editor).toHaveValue('# Unsaved plan\n');
+  expect(linkedRequests).toBe(0);
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(editor).toHaveValue(linkedFile.content);
+  expect(linkedRequests).toBe(1);
+});
+
 for (const outcome of ['success', 'fallback', 'error'] as const) {
   test(`plan preparation progress and ${outcome} result`, async ({ page }, testInfo) => {
     await installMockApi(page);
