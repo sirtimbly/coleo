@@ -132,7 +132,6 @@ export function SetupPage() {
   const requestedFile = searchParams.get("file");
   const openedLinkRef = useRef<string | null>(null);
   const linkAttemptRef = useRef<{ path: string; retry: number } | null>(null);
-  const [failedLinkedFile, setFailedLinkedFile] = useState<string | null>(null);
   const [linkRetry, setLinkRetry] = useState(0);
   const initialLinkedFile = useRef(requestedFile);
   const [status, setStatus] = useState<ProjectSetupStatus | null>(null);
@@ -147,7 +146,11 @@ export function SetupPage() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [fileScope, setFileScope] = useState<SetupFileScope>('all');
   const [helpOpen, setHelpOpen] = useState(() => !hasDismissedProjectSetupHelp());
-  const [error, setError] = useState<string | null>(null);
+  const [editorError, setEditorError] = useState<{ message: string; linkedFile: string | null } | null>(null);
+  const error = editorError?.message ?? null;
+  const setError = useCallback((message: string | null, linkedFile: string | null = null) => {
+    setEditorError(message ? { message, linkedFile } : null);
+  }, []);
   const [hint, setHint] = useState<string | null>(null);
   const [result, setResult] = useState<{
     mode: 'ai' | 'structured';
@@ -174,7 +177,7 @@ export function SetupPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [setError]);
 
   useEffect(() => {
     markProjectSetupOpened();
@@ -211,7 +214,7 @@ export function SetupPage() {
     setHelpOpen(false);
   };
 
-  const loadFileIntoEditor = useCallback(async (path: string): Promise<boolean> => {
+  const loadFileIntoEditor = useCallback(async (path: string, linkedFile = false): Promise<boolean> => {
     requestedPathRef.current = path;
     setEditorLoading(true);
     try {
@@ -228,13 +231,13 @@ export function SetupPage() {
       return true;
     } catch (err) {
       if (requestedPathRef.current === path) {
-        setError(err instanceof Error ? err.message : 'Failed to open the file');
+        setError(err instanceof Error ? err.message : 'Failed to open the file', linkedFile ? path : null);
       }
       return false;
     } finally {
       if (requestedPathRef.current === path) setEditorLoading(false);
     }
-  }, []);
+  }, [setError]);
 
   useEffect(() => {
     if (loading || !status || !requestedFile || saving || openedLinkRef.current === requestedFile) return;
@@ -245,15 +248,13 @@ export function SetupPage() {
     if (!isOpenableFile(requestedFile)) { setError('This file cannot be edited here.'); return; }
     if (!initialLink && dirty && !window.confirm('Discard your unsaved edits and open the linked file?')) return;
     linkAttemptRef.current = { path: requestedFile, retry: linkRetry };
-    setFailedLinkedFile(null);
     setFileScope('all');
     setError(null);
-    void loadFileIntoEditor(requestedFile).then((loaded) => {
+    void loadFileIntoEditor(requestedFile, true).then((loaded) => {
       if (requestedPathRef.current !== requestedFile) return;
       if (loaded) openedLinkRef.current = requestedFile;
-      else setFailedLinkedFile(requestedFile);
     });
-  }, [dirty, linkRetry, loadFileIntoEditor, loading, requestedFile, saving, status]);
+  }, [dirty, linkRetry, loadFileIntoEditor, loading, requestedFile, saving, setError, status]);
 
   const changeFileScope = (nextScope: SetupFileScope) => {
     if (!editor || !status || nextScope === fileScope || saving) return;
@@ -593,7 +594,7 @@ export function SetupPage() {
           {error ? (
             <div role="alert" className="mt-2 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
               {error}
-              {failedLinkedFile === requestedFile && failedLinkedFile ? (
+              {editorError?.linkedFile === requestedFile && editorError.linkedFile ? (
                 <button
                   type="button"
                   onClick={() => setLinkRetry((current) => current + 1)}

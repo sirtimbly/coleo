@@ -47,6 +47,52 @@ for (const unsavedEdits of [false, true]) {
   });
 }
 
+for (const openAnotherFile of [false, true]) {
+  test(`unrelated save errors do not retry a failed deep link ${openAnotherFile ? 'after tree navigation' : 'in the current file'}`, async ({ page }) => {
+    await installMockApi(page);
+    await page.addInitScript(() => localStorage.setItem('coleo_project_setup_help_dismissed', 'true'));
+    const canonicalPlan = {
+      path: '.project/plan.md', content: '# Plan\n', contentHash: 'original', size: 7,
+      modifiedAt: new Date().toISOString(),
+    };
+    const linkedFile = { ...canonicalPlan, path: '.project/decisions/review.md' };
+    const otherFile = { ...canonicalPlan, path: 'notes.md', content: '# Notes\n' };
+    await page.route('**/api/project-setup', (route) => route.fulfill({ json: {
+      required: false, completed: true, canonicalPlan, canonicalTaskCount: 1, taskCount: 0,
+      projectDocuments: [canonicalPlan, linkedFile, otherFile],
+      projectTree: [canonicalPlan.path, linkedFile.path, otherFile.path], candidates: [], defaultContent: '',
+    } }));
+    let linkedRequests = 0;
+    await page.route('**/api/project-setup/file?*', (route) => {
+      if (new URL(route.request().url()).searchParams.get('path') === otherFile.path) {
+        return route.fulfill({ json: { file: otherFile } });
+      }
+      linkedRequests += 1;
+      return route.fulfill({ status: 503, json: { error: 'Temporary file outage' } });
+    });
+    await page.route('**/api/project-setup/file', (route) => route.fulfill({
+      status: 409, json: { error: 'File changed on disk' },
+    }));
+    await page.goto(`/setup?file=${encodeURIComponent(linkedFile.path)}`);
+    const originalUrl = page.url();
+    const editor = page.getByRole('textbox');
+    const retryButton = page.getByRole('button', { name: 'Retry opening file' });
+    await expect(retryButton).toBeVisible();
+    if (openAnotherFile) {
+      await page.getByRole('treeitem', { name: 'notes.md', exact: true }).click();
+      await expect(editor).toHaveValue(otherFile.content);
+      await expect(retryButton).toHaveCount(0);
+    }
+    await editor.fill('# Unsaved edits\n');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByRole('alert')).toHaveText('File changed on disk');
+    await expect(retryButton).toHaveCount(0);
+    await expect(editor).toHaveValue('# Unsaved edits\n');
+    expect(page.url()).toBe(originalUrl);
+    expect(linkedRequests).toBe(1);
+  });
+}
+
 test('a cancelled deep link opens after the current document is saved', async ({ page }) => {
   await installMockApi(page);
   await page.addInitScript(() => localStorage.setItem('coleo_project_setup_help_dismissed', 'true'));
