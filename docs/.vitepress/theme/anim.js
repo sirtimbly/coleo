@@ -375,6 +375,7 @@ import {
 		if (state.depthIcon) state.depthIcon.textContent = "💡";
 		state.depthControl.classList.toggle("dark-mode", !isLight);
 		// Toggle mode globally and on marketing root for CSS
+		document.documentElement.classList.toggle("dark", !isLight);
 		document.body.classList.toggle("light-mode", isLight);
 		document.body.classList.toggle("dark-mode", !isLight);
 		const mr = document.querySelector(".marketing-root");
