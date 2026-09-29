@@ -31,6 +31,10 @@ settings persistence, renderer boundaries, and the toolbar editor/DSL. CLI
 snapshots and a live TUI prove the shared contracts; SwiftUI/Perry remain later
 native-client options. There is no durable settings-draft system in this plan.
 
+Hand-authored process templates are now also a first-class goal. The plan's
+proposed **workbench blueprints** define coherent resource views and actions
+across clients, with authored files separate from independent panel settings.
+
 ## Reading the evidence
 
 - [The bench: tools and product recipes](./bench.md).

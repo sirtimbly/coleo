@@ -13,6 +13,13 @@ renderer can change without changing the resource's identity, query semantics,
 or permitted actions. The browser is the first client of these contracts;
 the CLI and TUI will be the next practical tests of their portability.
 
+Hand-authored files are also a first-class interface. Power users must be able
+to define and ship workbench templates for business processes and team
+structures without opening the browser. Those templates describe coherent
+resource views and actions that browser, CLI, TUI, and future native clients
+interpret according to their capabilities. Toolbar composition is one part of
+that definition, not the extent of the template model.
+
 Keep the bench metaphor, with five precise responsibilities:
 
 | Part | Owns | Does not own |
@@ -46,12 +53,15 @@ a complete shared framework, new toolbar syntax, or a second client.
 | Panel host: browser storage failure | Prevent fallback failures from blocking API persistence |
 | Panel host: classic shell | Retire classic-only code; Golden Layout becomes the sole browser shell |
 | Future clients | Shared serializable contracts; CLI snapshot and TUI live slices before any native-app commitment |
+| File-authored process templates | Versioned, portable definitions for resource views, actions, toolbars, and workspace starting points; editable without the browser |
 
 This resolves the review's architectural choices. Tim has also selected
 **immediate settings saves, with no Apply button**. Toolbar text syntax remains
 open; the comparison in section 6 separates the toolbar language's semantics
-from its text notation. JSONC is now the working recommendation after checking
-the existing editor; YAML remains an alternative, not a selected format.
+from its text notation. JSONC offers the shortest implementation path from the
+existing editor. With hand-authoring and distributable process templates now
+explicit product goals, restricted YAML deserves the first authoring prototype.
+No notation or parser has been selected yet.
 
 ## 1. Make Messaging a coherent API projection
 
@@ -283,8 +293,8 @@ validated JSON wire/storage model, so syntax does not change UI capabilities.
 
 | Text notation | Advantage | Cost | Recommendation |
 | --- | --- | --- | --- |
-| JSONC | Close to the existing JSON editor/model; comments; established tree-editing tools | More punctuation; must enable comments consistently and handle them during visual edits | Start here for the smallest implementation step |
-| YAML | Less punctuation and readable nested layouts | Indentation/type rules and another source-editing path; restrict advanced YAML features | Prefer if frequent hand-authoring is a primary workflow |
+| JSONC | Close to the existing JSON editor/model; comments; established tree-editing tools | More punctuation; must enable comments consistently and handle them during visual edits | Shortest implementation path; retain as the alternative in the authoring comparison |
+| YAML | Less punctuation and readable nested layouts | Indentation/type rules and another source-editing path; restrict advanced YAML features | Prototype first for the selected hand-authoring and process-template use case |
 | Custom grammar | Can describe toolbar composition very compactly in product terms | Own the parser, diagnostics, formatting, editor support, and every language migration | Reconsider only if text authoring becomes a defining product interaction |
 
 The current editor already uses `jsonc-parser` to locate nodes, but shared
@@ -342,6 +352,72 @@ round-trip promises about retaining comments/whitespace unless source-preserving
 edits are implemented and tested. Any source normalization must be explicit to
 the author, rather than silently deleting comments during visual edits. Reuse
 the existing visual editor where it supports this model.
+
+### Workbench blueprints: ship a way of working
+
+Use **workbench blueprint** as the proposed product name for a distributable
+process template. A blueprint describes a team's starting views and available
+actions over existing resources. A product-delivery blueprint might include
+triage, ready work, active work, and review collections; detail/form recipes;
+common commands; telemetry choices; and role-oriented starting workspaces.
+Role-oriented views organize work and do not grant permissions.
+
+Keep the first format declarative. Reference registered resource types, query
+fields, command IDs, and semantic widgets rather than embedding API URLs,
+executable code, or a new workflow engine. A blueprint may choose supported
+workflow options; inventing new resource lifecycles, automation rules, or
+storage schemas requires a separately scoped domain capability. Templates
+should expose which capabilities and versions they require.
+
+For example, a named `review-queue` view can mean the same resource filter,
+sort, fields, and actions everywhere. The browser presents a panel and toolbar;
+the CLI prints a snapshot with the selected fields and exposes applicable
+commands; the TUI uses a live list and key actions; a native client can choose
+native navigation and controls. Client hints may refine placement, but a
+meaningful view must not require a browser-only widget to be understandable.
+Unsupported capabilities produce a clear diagnostic or declared fallback.
+
+Proposed authority and lifecycle rules:
+
+- Authored blueprint files are the source of truth for reusable definitions.
+  Keep them in a project-owned, version-control-friendly directory, separate
+  from generated state. The exact path/extension follows the format decision.
+- The API validates and resolves files into a versioned runtime definition.
+  Its compiled representation is a derived cache. Every client obtains the
+  same resolved meaning from that service; the CLI also supports validation
+  of local files without opening the web app.
+- Workspace/panel settings remain separately persisted overrides. Instantiating
+  or duplicating a panel gives it independent state. Changing a filter does
+  not rewrite the source blueprint. A deliberate template-editing context
+  distinguishes editing a definition from configuring a live panel.
+- In that template-editing context, visual changes save immediately through
+  the API to the authored source. Preserve comments and stable IDs with source
+  edits. Use atomic writes and a source-content check so a file changed in an
+  external editor is not silently overwritten. This is a bounded file-write
+  guard, not the deferred collaborative settings system.
+- External file saves go through the same validation pipeline. Partial or
+  invalid edits produce path/line diagnostics; the last valid active definition
+  continues serving clients. Expose validation/reload from the CLI and detect
+  file changes locally. Do not require a web session to activate valid changes.
+- Give the document schema and the blueprint release separate versions. Pin
+  instantiated workspaces to a known blueprint revision; applying a newer
+  revision is deliberate and preserves independent panel overrides through an
+  explicit migration. Schema migrations must validate before replacing data.
+- Start distribution with ordinary files/directories that can be committed,
+  copied, and shipped with the application. No template marketplace, arbitrary
+  plugin execution, or package manager is required for the first release.
+
+The existing `.coleo/state/workbench/toolbar-templates` files are generated,
+read-only projections of database preferences. They are **not** the proposed
+authoring boundary. Introduce a distinct source-definition path and migration
+instead of making those generated files another competing editable authority.
+
+**Acceptance:** author and validate a blueprint without the web app; load the
+same named query in browser and CLI with matching semantics; demonstrate a TUI
+mapping; visual edits preserve authored comments; invalid file saves leave the
+last valid definition active; an installed blueprint update cannot silently
+reset existing panels. Use one product-delivery example and a structurally
+different process example to expose accidental Coleo-specific assumptions.
 
 ## 7. Thin the host and prove reuse with another client
 
@@ -401,6 +477,7 @@ behavior before extraction, and update this checklist as evidence lands.
 | 4a | `feat(workbench): define semantic panel and toolbar slots` | Control inventory; 2a, 3a | Existing controls mapped; visual layer has no profile lookup |
 | 4b | `feat(workbench): version toolbar definitions and migrations` | 4a | Legacy migration and atomic rejection of unsupported imports |
 | 4c | `feat(web): unify visual and text toolbar editing` | 4b; syntax decision | Meaning-preserving round trips and usable preview/errors |
+| 4d | `feat(workbench): load and validate file-authored blueprints` | 4a–4c; source/schema contract | Hand authoring, immediate visual write-through, safe reload, versioned distribution and panel overrides |
 | 5a | `refactor(web): separate workspace policy from renderer lifetime` | Relevant behavior coverage | Host/sheet/feature seams split without remount regressions |
 | 5b | `fix(web): consolidate remaining projection refresh owners` | 1b's proven controller | Tasks/Processes use one policy; no burst/order regressions |
 | 6 | `feat(cli): expose shared resource snapshots` then TUI live slice | 1a's stable contract; core where useful | Same query/action semantics across clients |
