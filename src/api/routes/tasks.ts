@@ -723,13 +723,6 @@ export function createTasksRoutes() {
 	app.post("/:id/handoff", async (c) => {
 		const db = c.get("db");
 		const taskId = c.req.param("id");
-		const existing = db.query("SELECT id, status FROM tasks WHERE id = ?").get(taskId) as
-			{ id: string; status: TaskStatus } | null;
-		if (!existing) throw HttpError.notFound(`Task not found: ${taskId}`);
-		if (!["draft", "pending"].includes(existing.status)) {
-			throw HttpError.badRequest("Only draft or pending tasks can be handed off");
-		}
-
 		const body = await c.req.json<{
 			prepared?: Record<string, unknown>;
 			preparedBy?: string;
@@ -737,6 +730,12 @@ export function createTasksRoutes() {
 		if (body.prepared !== undefined &&
 			(!body.prepared || typeof body.prepared !== "object" || Array.isArray(body.prepared))) {
 			throw HttpError.badRequest("prepared must be an object");
+		}
+		const existing = db.query("SELECT id, status FROM tasks WHERE id = ?").get(taskId) as
+			{ id: string; status: TaskStatus } | null;
+		if (!existing) throw HttpError.notFound(`Task not found: ${taskId}`);
+		if (existing.status !== "draft") {
+			throw HttpError.badRequest("Only draft tasks can be handed off");
 		}
 		const now = new Date().toISOString();
 		const handoffId = `handoff-${crypto.randomUUID()}`;

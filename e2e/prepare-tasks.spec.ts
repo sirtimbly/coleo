@@ -1,6 +1,52 @@
 import { expect, test } from '@playwright/test';
 import { installMockApi } from './support/fixtures';
 
+for (const unsavedEdits of [false, true]) {
+  test(`retries a failed linked file ${unsavedEdits ? 'with unsaved edits' : 'without changing the URL'}`, async ({ page }) => {
+    await installMockApi(page);
+    await page.addInitScript(() => localStorage.setItem('coleo_project_setup_help_dismissed', 'true'));
+    const canonicalPlan = {
+      path: '.project/plan.md', content: '# Plan\n', contentHash: 'original', size: 7,
+      modifiedAt: new Date().toISOString(),
+    };
+    const linkedFile = { ...canonicalPlan, path: '.project/decisions/review.md', content: '# Linked decision\n' };
+    await page.route('**/api/project-setup', (route) => route.fulfill({ json: {
+      required: false, completed: true, canonicalPlan, canonicalTaskCount: 1, taskCount: 0,
+      projectDocuments: [canonicalPlan, linkedFile], projectTree: [canonicalPlan.path, linkedFile.path],
+      candidates: [], defaultContent: '',
+    } }));
+    let requests = 0;
+    await page.route('**/api/project-setup/file?*', (route) => {
+      requests += 1;
+      return route.fulfill(requests === 1
+        ? { status: 503, json: { error: 'Temporary file outage' } }
+        : { json: { file: linkedFile } });
+    });
+    await page.goto(`/setup?file=${encodeURIComponent(linkedFile.path)}`);
+    const editor = page.getByRole('textbox');
+    const alert = page.getByRole('alert');
+    await expect(alert).toContainText('Temporary file outage');
+    await expect(editor).toHaveValue(canonicalPlan.content);
+    const originalUrl = page.url();
+    if (unsavedEdits) {
+      await editor.fill('# Edits made after the outage\n');
+      const confirmation = page.waitForEvent('dialog').then(async (dialog) => {
+        expect(dialog.message()).toContain('Discard your unsaved edits');
+        await dialog.dismiss();
+      });
+      await Promise.all([confirmation, alert.getByRole('button', { name: 'Retry opening file' }).click()]);
+      await expect(editor).toHaveValue('# Edits made after the outage\n');
+      expect(requests).toBe(1);
+      page.once('dialog', (nextDialog) => void nextDialog.accept());
+    }
+    await alert.getByRole('button', { name: 'Retry opening file' }).click();
+    await expect(editor).toHaveValue(linkedFile.content);
+    await expect(alert).toHaveCount(0);
+    expect(page.url()).toBe(originalUrl);
+    expect(requests).toBe(2);
+  });
+}
+
 test('a cancelled deep link opens after the current document is saved', async ({ page }) => {
   await installMockApi(page);
   await page.addInitScript(() => localStorage.setItem('coleo_project_setup_help_dismissed', 'true'));

@@ -131,6 +131,9 @@ export function SetupPage() {
   const [searchParams] = useWorkspaceSearchParams();
   const requestedFile = searchParams.get("file");
   const openedLinkRef = useRef<string | null>(null);
+  const linkAttemptRef = useRef<{ path: string; retry: number } | null>(null);
+  const [failedLinkedFile, setFailedLinkedFile] = useState<string | null>(null);
+  const [linkRetry, setLinkRetry] = useState(0);
   const initialLinkedFile = useRef(requestedFile);
   const [status, setStatus] = useState<ProjectSetupStatus | null>(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
@@ -208,12 +211,12 @@ export function SetupPage() {
     setHelpOpen(false);
   };
 
-  const loadFileIntoEditor = useCallback(async (path: string) => {
+  const loadFileIntoEditor = useCallback(async (path: string): Promise<boolean> => {
     requestedPathRef.current = path;
     setEditorLoading(true);
     try {
       const { file } = await api.getProjectSetupFile(path);
-      if (requestedPathRef.current !== path) return;
+      if (requestedPathRef.current !== path) return false;
       setOpenedModifiedAt((current) => new Map(current).set(file.path, file.modifiedAt));
       setEditor({
         path: file.path,
@@ -222,10 +225,12 @@ export function SetupPage() {
         savedContent: file.content,
         readOnly: file.readOnly === true,
       });
+      return true;
     } catch (err) {
       if (requestedPathRef.current === path) {
         setError(err instanceof Error ? err.message : 'Failed to open the file');
       }
+      return false;
     } finally {
       if (requestedPathRef.current === path) setEditorLoading(false);
     }
@@ -233,14 +238,22 @@ export function SetupPage() {
 
   useEffect(() => {
     if (loading || !status || !requestedFile || saving || openedLinkRef.current === requestedFile) return;
-    const initialLink = openedLinkRef.current === null && requestedFile === initialLinkedFile.current;
+    // A failed attempt waits for an explicit retry; ordinary renders must not
+    // repeatedly fetch or discard edits made while the linked file was unavailable.
+    if (linkAttemptRef.current?.path === requestedFile && linkAttemptRef.current.retry === linkRetry) return;
+    const initialLink = linkAttemptRef.current === null && requestedFile === initialLinkedFile.current;
     if (!isOpenableFile(requestedFile)) { setError('This file cannot be edited here.'); return; }
     if (!initialLink && dirty && !window.confirm('Discard your unsaved edits and open the linked file?')) return;
-    openedLinkRef.current = requestedFile;
+    linkAttemptRef.current = { path: requestedFile, retry: linkRetry };
+    setFailedLinkedFile(null);
     setFileScope('all');
     setError(null);
-    void loadFileIntoEditor(requestedFile);
-  }, [dirty, loadFileIntoEditor, loading, requestedFile, saving, status]);
+    void loadFileIntoEditor(requestedFile).then((loaded) => {
+      if (requestedPathRef.current !== requestedFile) return;
+      if (loaded) openedLinkRef.current = requestedFile;
+      else setFailedLinkedFile(requestedFile);
+    });
+  }, [dirty, linkRetry, loadFileIntoEditor, loading, requestedFile, saving, status]);
 
   const changeFileScope = (nextScope: SetupFileScope) => {
     if (!editor || !status || nextScope === fileScope || saving) return;
@@ -578,7 +591,19 @@ export function SetupPage() {
           </div>
 
           {error ? (
-            <div role="alert" className="mt-2 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>
+            <div role="alert" className="mt-2 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
+              {error}
+              {failedLinkedFile === requestedFile && failedLinkedFile ? (
+                <button
+                  type="button"
+                  onClick={() => setLinkRetry((current) => current + 1)}
+                  disabled={editorLoading || saving}
+                  className="ml-2 font-medium underline"
+                >
+                  Retry opening file
+                </button>
+              ) : null}
+            </div>
           ) : null}
           {result ? (
             <div role="status" className={`mt-2 rounded-md border px-3 py-2 text-xs ${result.formatterError ? 'border-warning/30 bg-warning/10 text-warning' : 'border-success/30 bg-success/10 text-success'}`}>

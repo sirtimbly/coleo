@@ -199,15 +199,30 @@ describe("task handoff queue", () => {
 		expect(db.query("SELECT status FROM tasks WHERE id = ?").get(body.task.id)).toEqual({ status: "pending" });
 	});
 
-	it("does not activate tasks cancelled after queueing", async () => {
-		const taskId = await createDraft();
-		const queued = await app.request(`/api/tasks/${taskId}/handoff`, {
-			method: "POST", body: JSON.stringify({ prepared: preparation }),
+	for (const status of ["cancelled", "pending"]) {
+		it(`does not activate tasks made ${status} after queueing`, async () => {
+			const taskId = await createDraft();
+			const queued = await app.request(`/api/tasks/${taskId}/handoff`, {
+				method: "POST", body: JSON.stringify({ prepared: preparation }),
+			});
+			const body = await queued.json() as { handoff: { id: string } };
+			db.run("UPDATE tasks SET status = ? WHERE id = ?", [status, taskId]);
+			const activated = await app.request(`/api/tasks/handoff/${body.handoff.id}/activate`, { method: "POST" });
+			expect(activated.status).toBe(409);
+			expect(db.query("SELECT status FROM task_handoffs WHERE id = ?").get(body.handoff.id)).toEqual({ status: "queued" });
 		});
-		const body = await queued.json() as { handoff: { id: string } };
-		db.run("UPDATE tasks SET status = 'cancelled' WHERE id = ?", [taskId]);
-		const activated = await app.request(`/api/tasks/handoff/${body.handoff.id}/activate`, { method: "POST" });
-		expect(activated.status).toBe(409);
-		expect(db.query("SELECT status FROM task_handoffs WHERE id = ?").get(body.handoff.id)).toEqual({ status: "queued" });
+	}
+
+	it("rejects pending tasks instead of bypassing preparation and dependency checks", async () => {
+		const taskId = await createDraft();
+		db.run("UPDATE tasks SET status = 'pending' WHERE id = ?", [taskId]);
+		for (const prepared of [{}, { ...preparation, dependencies: ["missing-dependency"] }]) {
+			const response = await app.request(`/api/tasks/${taskId}/handoff`, {
+				method: "POST", body: JSON.stringify({ prepared }),
+			});
+			expect(response.status).toBe(400);
+		}
+		expect(db.query("SELECT COUNT(*) AS count FROM task_handoffs").get()).toEqual({ count: 0 });
+		expect(db.query("SELECT status FROM tasks WHERE id = ?").get(taskId)).toEqual({ status: "pending" });
 	});
 });
