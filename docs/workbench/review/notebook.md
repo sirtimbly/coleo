@@ -1,5 +1,12 @@
 # The notebook: remember whose edit is being saved
 
+**September 29 disposition:** use simple save/server-refresh settings behavior;
+do not build the durable draft lifecycle recommended in this original review.
+Profiles and simultaneous-edit conflicts move to a later phase. Full schema
+versioning moves with the toolbar editor/DSL. The
+[implementation plan](./implementation-plan.md) supersedes the priority and
+implementation recommendations below while retaining the findings as evidence.
+
 **P1 — profile ownership and lost-edit risks. Runtime changes deferred.**
 
 Database-backed configuration is the right foundation. However, “persisted”

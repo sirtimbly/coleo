@@ -1,5 +1,10 @@
 # The panel host: keep the instruments mounted
 
+**September 29 disposition:** all coupling seams below are improvement targets.
+Panels have independent view/filter state; classic-only code may be removed.
+The [implementation plan](./implementation-plan.md) supersedes the alternatives
+and classic-parity requirements in this original review.
+
 **P2 — tight coupling inventory; all extraction deferred.**
 
 Golden Layout and Tabulator solve real product problems: rearrangeable live

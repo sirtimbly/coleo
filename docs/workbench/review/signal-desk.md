@@ -1,5 +1,10 @@
 # The signal desk: one socket does not mean one refresh policy
 
+**September 29 disposition:** prioritize a unified Messaging collection API and
+reliable recovery. Tab attention means unseen change in the particular view.
+The [implementation plan](./implementation-plan.md) supplies the selected
+semantics, delivery order, and acceptance checks for these findings.
+
 **P2 — observed coordination gaps; recovery scenarios require browser validation.**
 
 The guide requires every live subscription to use the projection provider.

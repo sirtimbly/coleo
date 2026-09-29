@@ -1,5 +1,10 @@
 # The bench: separate tools from product recipes
 
+**September 29 disposition:** select a portable resource core, generic collection
+rendering, semantic slots, and a shared visual/text toolbar model. The
+[implementation plan](./implementation-plan.md) supersedes the alternatives and
+classic-shell preservation requirements below; these remain the original review.
+
 **P2 — observed dependency mismatch; refactoring deferred.**
 
 The workbench README calls its folder reusable application-shell behavior;

@@ -1,8 +1,10 @@
 # Workbench architecture review — September 2026
 
-**Decision status: proposed; awaiting product direction.** Reviewed snapshot:
-`2882047` (2026-09-26). This review records findings and implementation options;
-it does not supersede ADR-004 or change runtime behavior.
+**Direction selected on 2026-09-29; implementation plan ready for review.**
+Start with [the implementation plan](./implementation-plan.md). It records Tim's
+decisions and supersedes the alternatives and original ordering below. The
+reviewed source snapshot remains `2882047` (2026-09-26). No runtime behavior has
+changed; current-implementation ADRs remain current until implementation lands.
 
 Coleo has useful tools on a crowded bench. The strongest abstraction is already
 working: a resource can appear in several views without making its renderer
@@ -15,19 +17,19 @@ generics or a plugin SDK would make that confusion expensive. For a lean team,
 the next investment should be reliable state ownership, followed by small
 boundaries proven by a second consumer.
 
-## Four decisions
+## Four decisions, now resolved
 
-| Category | Documented promise versus implementation | Recommended direction | Alternative |
-| --- | --- | --- | --- |
-| **The bench** | Domain-neutral foundation and feature-supplied projections; shared folders contain task/bug/Arm policy and profile consumers | Distinguish tools from product recipes; move boundaries only as features change | Keep mixed folders and explicitly narrow the portability claim |
-| **The signal desk** | Shared projection coordination; one socket exists, but pages also coordinate their own refreshes | One recovery and refresh policy per resource, with snapshot recovery after reconnect | Keep page-owned refreshes and document their explicit recovery obligations |
-| **The notebook** | Portable profiles and durable views; ownership, save ordering, and conflict behavior are incomplete | Make profile identity and pending saves explicit; reject stale view writes | Declare attention global and accept last-write-wins preferences as a product limitation |
-| **The panel host** | Independent registered view instances; route policy and large imperative lifecycles remain interwoven | Keep the host and adapters; isolate policy and model transitions incrementally | Keep application-specific modules and defer extraction until a second product exists |
+| Category | Selected direction | Priority |
+| --- | --- | --- |
+| **The bench** | Generic resource collections, vendor-free sheet models, semantic panel/control slots, visual and text toolbar editing | Incremental contracts and adapters, followed by editor/schema work |
+| **The signal desk** | One Messaging collection endpoint with reliable refresh/recovery; unseen-change dots belong to individual views | Messaging first |
+| **The notebook** | Independent panel settings with a simple save/server-refresh flow; full schema migrations with the toolbar work | Profiles and simultaneous-edit conflicts deferred |
+| **The panel host** | All identified coupling seams are improvement targets; retain imperative instances, remove classic-only code | Stage behind behavior checks |
 
-These are four choices, not four prerequisites for a rewrite. My recommended
-sequence is notebook correctness, signal recovery, then boundary cleanup only
-where a feature is already changing. A pivot does not justify building a
-framework before another application needs it.
+The selected order starts with Messaging, then panel independence and simple
+settings persistence, renderer boundaries, and the toolbar editor/DSL. CLI
+snapshots and a live TUI prove the shared contracts; SwiftUI/Perry remain later
+native-client options. There is no durable settings-draft system in this plan.
 
 ## Reading the evidence
 
@@ -68,12 +70,12 @@ contains unpublished commits, the draft PR targets a separate baseline branch
 at `2882047`; it must not include those commits as review changes or publish
 changes onto the user's existing branch. Retarget after the parent work lands.
 
-The documentation differs from the implementation in the four categories above.
-Following the requested decision gate, each category gets a separate
-documentation commit. Proposed runtime fixes and all coupling refactors remain
-unimplemented until a direction is selected. Each chapter specifies bounded
-follow-up commits and acceptance checks rather than treating recommendations
-as completed fixes.
+The original four commits recorded the documentation/implementation mismatch
+without refactoring it. The subsequent plan records the selected direction and
+bounded follow-up commits with acceptance checks. Historical chapter
+recommendations are evidence, not competing implementation instructions.
+Implementation remains follow-up work; acceptance of these documents does not
+claim that any runtime fixes are complete.
 
 ## Verification at the reviewed snapshot
 
