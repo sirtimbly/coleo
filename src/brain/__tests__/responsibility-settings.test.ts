@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { Brain } from '../brain';
 import { updateConfig } from '../../config';
 import { BrainTemplateManager } from '../template-manager';
-import { candidatesFor, routingQuestions, SwarmEvaluator } from '../swarm/evaluator';
+import { SwarmEvaluator } from '../swarm/evaluator';
 import { loadSwarmPrompts, parseSwarmQuestions } from '../swarm/prompts';
 import type { ArmOutputDecision } from '../arm-output-processor';
 import type { Arm } from '../../types';
@@ -26,13 +26,13 @@ it('reads edited JEV instructions and policy for the next evaluation; rejects al
   await writeFile(join(dir, 'src/brain/templates/jev-swarm-policy.jinja'), 'Custom conservative policy');
   const loaded = await loadSwarmPrompts(templates);
   expect(loaded.policy).toBe('Custom conservative policy');
+  expect(loaded.questions.routing).toEqual(edited.routing);
   const state: SwarmSnapshot = { window: { since: '2026-09-21T00:00:00Z', until: '2026-09-21T00:05:00Z', pollIntervalMs: 30000, windowPolls: 10 },
     entities: [{ id: 'a', kind: 'arm', version: 'v1', state: { status: 'idle' } }],
     events: [{ id: 'e', actor: 'a', target: 'a', type: 'message', text: 'waiting', timestamp: '2026-09-21T00:04:00Z' }],
     brainActions: [], evaluations: [], discoveries: [], coverage: { complete: true, notes: [] } };
-  expect(routingQuestions(candidatesFor(state), loaded.questions).action_0!.instructions).toStartWith('Custom question');
   const evaluator = new SwarmEvaluator('not-a-real-key', 'test', templates, { prompt_arm: 'off' });
-  let sent: { state: Record<string, unknown>; questions: Record<string, { instructions: string; criteria: Record<string, string> }> } | undefined;
+  let sent: { state: Record<string, unknown>; questions: Record<string, { instructions: string; criteria: Record<string, string | null> }> } | undefined;
   (evaluator as unknown as { client: { systemOne: (input: NonNullable<typeof sent>) => Promise<unknown> } }).client = {
     systemOne: async (input) => {
       sent = input;
@@ -44,7 +44,8 @@ it('reads edited JEV instructions and policy for the next evaluation; rejects al
   await evaluator.evaluate(state);
   expect(sent!.state.evaluationPolicy).toBe('Custom conservative policy');
   expect(JSON.stringify(sent!.state.candidates)).not.toContain('prompt_arm');
-  expect(sent!.questions.action_0!.instructions).toStartWith('Custom question');
+  expect(sent!.state.rubrics).toMatchObject({ routing: edited.routing });
+  expect(sent!.questions.action_0!.instructions).toContain('rubrics.routing');
   delete edited.routing.criteria.act;
   expect(() => parseSwarmQuestions(JSON.stringify(edited))).toThrow('keep the existing keys');
 });
