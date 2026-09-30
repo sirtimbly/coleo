@@ -20,24 +20,21 @@
 
 ### Bug Fixes
 
-* **harness:** bound OpenCode startup and reap failed processes ([ce6cf83](https://github.com/sirtimbly/coleo/commit/ce6cf83a8ac909f0ac32ed18bf41e1eb33412764))
-* **harness:** bound OpenCode startup and reap failed processes ([3d06220](https://github.com/sirtimbly/coleo/commit/3d0622047cdf39b34fafc819254fd81719717057))
+* **harness:** bound OpenCode startup and reap failed processes ([ce6cf83](https://github.com/sirtimbly/coleo/commit/ce6cf83a8ac909f0ac32ed18bf41e1eb33412764), [3d06220](https://github.com/sirtimbly/coleo/commit/3d0622047cdf39b34fafc819254fd81719717057))
 
 ## [0.14.2](https://github.com/sirtimbly/coleo/compare/coleo-v0.14.1...coleo-v0.14.2) (2026-09-18)
 
 
 ### Bug Fixes
 
-* preserve repository files until replacement is confirmed ([394bf9a](https://github.com/sirtimbly/coleo/commit/394bf9a74efaebc0a53646ffcab7a47baa47ad20))
-* preserve repository files until replacement is confirmed ([cc5bfaf](https://github.com/sirtimbly/coleo/commit/cc5bfaf67f933502e8ab75ba7cb6ac3f66f038fb))
+* preserve repository files until replacement is confirmed ([394bf9a](https://github.com/sirtimbly/coleo/commit/394bf9a74efaebc0a53646ffcab7a47baa47ad20), [cc5bfaf](https://github.com/sirtimbly/coleo/commit/cc5bfaf67f933502e8ab75ba7cb6ac3f66f038fb))
 
 ## [0.14.1](https://github.com/sirtimbly/coleo/compare/coleo-v0.14.0...coleo-v0.14.1) (2026-09-17)
 
 
 ### Bug Fixes
 
-* **web:** keep hosted sessions alive while users work ([cf2786d](https://github.com/sirtimbly/coleo/commit/cf2786db8d9f047ec586ecca25339f720adb1fae))
-* **web:** keep hosted sessions alive while users work ([21bb9bf](https://github.com/sirtimbly/coleo/commit/21bb9bf49fab176d425be82e70fb635c8a418900))
+* **web:** keep hosted sessions alive while users work ([cf2786d](https://github.com/sirtimbly/coleo/commit/cf2786db8d9f047ec586ecca25339f720adb1fae), [21bb9bf](https://github.com/sirtimbly/coleo/commit/21bb9bf49fab176d425be82e70fb635c8a418900))
 
 
 ### Tests
@@ -49,8 +46,7 @@
 
 ### Features
 
-* **web:** guide users through workspace startup and reconnects ([5ba37a0](https://github.com/sirtimbly/coleo/commit/5ba37a00ed03b7ce48c21c0cb784d84f641ce669))
-* **web:** guide users through workspace startup and reconnects ([06b29e0](https://github.com/sirtimbly/coleo/commit/06b29e0183d61994352cb35969a9c6ee6a9428a2))
+* **web:** guide users through workspace startup and reconnects ([5ba37a0](https://github.com/sirtimbly/coleo/commit/5ba37a00ed03b7ce48c21c0cb784d84f641ce669), [06b29e0](https://github.com/sirtimbly/coleo/commit/06b29e0183d61994352cb35969a9c6ee6a9428a2))
 
 
 ### Bug Fixes
@@ -62,8 +58,7 @@
 
 ### Bug Fixes
 
-* **db:** migrate legacy arm context defaults on upgrade ([71f83e2](https://github.com/sirtimbly/coleo/commit/71f83e2ba8638b52d5255daa0924dacd72053bfc))
-* **db:** migrate legacy arm context defaults on upgrade ([3822bf6](https://github.com/sirtimbly/coleo/commit/3822bf6272b3bf384e06b1f52f3b7fc3e3ff8bf6))
+* **db:** migrate legacy arm context defaults on upgrade ([71f83e2](https://github.com/sirtimbly/coleo/commit/71f83e2ba8638b52d5255daa0924dacd72053bfc), [3822bf6](https://github.com/sirtimbly/coleo/commit/3822bf6272b3bf384e06b1f52f3b7fc3e3ff8bf6))
 
 ## [0.13.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.12.1...coleo-v0.13.0) (2026-09-16)
 
@@ -78,8 +73,7 @@
 ### Bug Fixes
 
 * **db:** validate schema definitions before baselining ([6973c34](https://github.com/sirtimbly/coleo/commit/6973c34e1c418a257d6f927e104b4142f65eb5d4))
-* **web:** show workspace directory with solid folder icon ([e6efeff](https://github.com/sirtimbly/coleo/commit/e6efeff11b94a2a1e30070f970d25a1128f80aa5))
-* **web:** show workspace directory with solid folder icon ([f855c5e](https://github.com/sirtimbly/coleo/commit/f855c5eea76d615fda2a23860738e1d0de69a91a))
+* **web:** show workspace directory with solid folder icon ([e6efeff](https://github.com/sirtimbly/coleo/commit/e6efeff11b94a2a1e30070f970d25a1128f80aa5), [f855c5e](https://github.com/sirtimbly/coleo/commit/f855c5eea76d615fda2a23860738e1d0de69a91a))
 
 ## [0.12.1](https://github.com/sirtimbly/coleo/compare/coleo-v0.12.0...coleo-v0.12.1) (2026-09-03)
 
@@ -90,22 +84,18 @@
 * **api:** scope hidden bug matches to view filters ([e5a08c4](https://github.com/sirtimbly/coleo/commit/e5a08c4b1d3243725a8e9f6d54cc226d4fa423b3))
 * **tags:** require ASCII alphanumeric values ([872d78f](https://github.com/sirtimbly/coleo/commit/872d78ff4bab5befab962c5fb12b1a1b3b2befd1))
 * **web:** complete resource search safeguards ([9adb253](https://github.com/sirtimbly/coleo/commit/9adb2535a0147a700de2ef6125749eb6c9281a3c))
-* **web:** search all task and bug records ([eed483d](https://github.com/sirtimbly/coleo/commit/eed483d2d03e633c63ac4897562c7aa1366f5bf0))
-* **web:** search all task and bug records ([a81e4ca](https://github.com/sirtimbly/coleo/commit/a81e4ca56d9e8e1fb870134d21d88930c86faeb2))
+* **web:** search all task and bug records ([eed483d](https://github.com/sirtimbly/coleo/commit/eed483d2d03e633c63ac4897562c7aa1366f5bf0), [a81e4ca](https://github.com/sirtimbly/coleo/commit/a81e4ca56d9e8e1fb870134d21d88930c86faeb2))
 
 
 ### Documentation
 
-* readme and home ([dcd8c52](https://github.com/sirtimbly/coleo/commit/dcd8c52300a3a3bd7aa3dfb3fc10d3658906b947))
-* readme and home ([d178808](https://github.com/sirtimbly/coleo/commit/d178808c0656f1333dfe5b27d9695b37a9443c4e))
+* readme and home ([dcd8c52](https://github.com/sirtimbly/coleo/commit/dcd8c52300a3a3bd7aa3dfb3fc10d3658906b947), [d178808](https://github.com/sirtimbly/coleo/commit/d178808c0656f1333dfe5b27d9695b37a9443c4e))
 
 
 ### Miscellaneous Chores
 
-* **deps-dev:** bump playwright from 1.61.1 to 1.62.1 ([a622024](https://github.com/sirtimbly/coleo/commit/a622024ad8dcf0d9b3f8865e1730c1d1aca7d3a0))
-* **deps-dev:** bump playwright from 1.61.1 to 1.62.1 ([9405014](https://github.com/sirtimbly/coleo/commit/94050149f692f3d49613a80ef1a38dccb4964d1b))
-* **deps:** bump @opencode-ai/sdk from 1.17.17 to 1.18.25 ([7622953](https://github.com/sirtimbly/coleo/commit/7622953da029f1d7e0df13370ebf6be04308cdb7))
-* **deps:** bump @opencode-ai/sdk from 1.17.17 to 1.18.25 ([b5e312b](https://github.com/sirtimbly/coleo/commit/b5e312b7224b197aa132bd6933ea443c0c7425b5))
+* **deps-dev:** bump playwright from 1.61.1 to 1.62.1 ([a622024](https://github.com/sirtimbly/coleo/commit/a622024ad8dcf0d9b3f8865e1730c1d1aca7d3a0), [9405014](https://github.com/sirtimbly/coleo/commit/94050149f692f3d49613a80ef1a38dccb4964d1b))
+* **deps:** bump @opencode-ai/sdk from 1.17.17 to 1.18.25 ([7622953](https://github.com/sirtimbly/coleo/commit/7622953da029f1d7e0df13370ebf6be04308cdb7), [b5e312b](https://github.com/sirtimbly/coleo/commit/b5e312b7224b197aa132bd6933ea443c0c7425b5))
 
 ## [0.12.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.11.0...coleo-v0.12.0) (2026-08-20)
 
@@ -117,8 +107,7 @@
 
 ### Code Refactoring
 
-* **docs:** banners and home page ([9fc121f](https://github.com/sirtimbly/coleo/commit/9fc121f8fc60e586a97554edecf9aaaefa3a510e))
-* **docs:** banners and home page ([f549a06](https://github.com/sirtimbly/coleo/commit/f549a064d1e87c5201da2b5ddf1dcfc44a73bbce))
+* **docs:** banners and home page ([9fc121f](https://github.com/sirtimbly/coleo/commit/9fc121f8fc60e586a97554edecf9aaaefa3a510e), [f549a06](https://github.com/sirtimbly/coleo/commit/f549a064d1e87c5201da2b5ddf1dcfc44a73bbce))
 
 ## [0.11.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.10.0...coleo-v0.11.0) (2026-08-17)
 
@@ -137,8 +126,7 @@
 * **web:** add uniform workbench UI ([dff3761](https://github.com/sirtimbly/coleo/commit/dff37611c5e3c5ebe140e7ebe5173702a21dc101))
 * **web:** converge project streams in unified inbox ([f2d62e9](https://github.com/sirtimbly/coleo/commit/f2d62e95b884afdf83ea234a4114621299c89d63))
 * **web:** create tags from multiselect search ([998bf18](https://github.com/sirtimbly/coleo/commit/998bf1865c01f2ec05b2053cfedcda4957e1941d))
-* **web:** enhance workbench views and toolbar customization ([3f5df51](https://github.com/sirtimbly/coleo/commit/3f5df51a829aa9a24a5e4e6539fa8074e54ecaf2))
-* **web:** enhance workbench views and toolbar customization ([a99f01c](https://github.com/sirtimbly/coleo/commit/a99f01cfa63da019022e980143e635494d990ea8))
+* **web:** enhance workbench views and toolbar customization ([3f5df51](https://github.com/sirtimbly/coleo/commit/3f5df51a829aa9a24a5e4e6539fa8074e54ecaf2), [a99f01c](https://github.com/sirtimbly/coleo/commit/a99f01cfa63da019022e980143e635494d990ea8))
 * **web:** establish workbench design system ([48b9609](https://github.com/sirtimbly/coleo/commit/48b96090f41903954d9ca06bb46ecc28d1a2a88f))
 * **web:** migrate brain activity card stream ([1cee0dc](https://github.com/sirtimbly/coleo/commit/1cee0dc6782cd771f379d8adcee22ede1b99ac60))
 * **web:** migrate resource sheets to tabulator ([c60e294](https://github.com/sirtimbly/coleo/commit/c60e2941e18168d78ea57cca0b8a03d7902d41e7))
@@ -224,8 +212,7 @@
 
 * **deps-dev:** bump @types/node from 24.13.3 to 26.1.2 ([4328bf0](https://github.com/sirtimbly/coleo/commit/4328bf01dbd0b61b7b9190fae1096cd3ba95b13c))
 * **deps:** bump @hono/node-server from 1.19.14 to 2.0.12 ([e5eb92b](https://github.com/sirtimbly/coleo/commit/e5eb92b4cfe07cc04c4c25d0185aa3f9e7a5c1c9))
-* **master:** release coleo 0.10.0 ([d2ed258](https://github.com/sirtimbly/coleo/commit/d2ed258c51f9c652677cd7d22680e05b9941a014))
-* **master:** release coleo 0.10.0 ([d5a3a50](https://github.com/sirtimbly/coleo/commit/d5a3a503ad161f5ce257bdd5bf521ad64040baef))
+* **master:** release coleo 0.10.0 ([d2ed258](https://github.com/sirtimbly/coleo/commit/d2ed258c51f9c652677cd7d22680e05b9941a014), [d5a3a50](https://github.com/sirtimbly/coleo/commit/d5a3a503ad161f5ce257bdd5bf521ad64040baef))
 * merge credits error handling ([547a82e](https://github.com/sirtimbly/coleo/commit/547a82e44cf48a04bb0c0784273a64b8b9aca3e0))
 
 ## [0.10.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.9.0...coleo-v0.10.0) (2026-08-07)
@@ -236,8 +223,7 @@
 * **api:** persist card attention and actions ([d6e779d](https://github.com/sirtimbly/coleo/commit/d6e779d76340383e348686786acc91d3446e3189))
 * **api:** persist cards and unify workbench inbox ([2e448bc](https://github.com/sirtimbly/coleo/commit/2e448bc35e34ebcb7b88be700d6b784ba12dbd4b))
 * **api:** support versioned task card edits ([720d9b1](https://github.com/sirtimbly/coleo/commit/720d9b13570c638d3c8f25bce26c7aafc80bf5f3))
-* **brain:** fail closed on invalid project plans ([95524ac](https://github.com/sirtimbly/coleo/commit/95524ac484bb25d9bc0ec1d282fb5852c2e1ace3))
-* **brain:** fail closed on invalid project plans ([74e99ba](https://github.com/sirtimbly/coleo/commit/74e99ba0fdaa6d15205e8eac5e026efe77ff9109))
+* **brain:** fail closed on invalid project plans ([95524ac](https://github.com/sirtimbly/coleo/commit/95524ac484bb25d9bc0ec1d282fb5852c2e1ace3), [74e99ba](https://github.com/sirtimbly/coleo/commit/74e99ba0fdaa6d15205e8eac5e026efe77ff9109))
 * **runtime:** isolate project network endpoints ([2321dfb](https://github.com/sirtimbly/coleo/commit/2321dfbb2f7d2eed7b85888c28be6820d7c91793))
 * **runtime:** isolate project-local services and vector data ([3f6c0a9](https://github.com/sirtimbly/coleo/commit/3f6c0a90ed8d8d389ffa9067509d30a740395e70))
 * **search:** isolate vector data by project ([b2413f1](https://github.com/sirtimbly/coleo/commit/b2413f1fa0c53dc9172291656d49b52e4d492aa4))
@@ -341,8 +327,7 @@
 ### Miscellaneous Chores
 
 * **dev:** isolate local NATS ports ([1f725e1](https://github.com/sirtimbly/coleo/commit/1f725e10dd7d3b61f0188bd4a39470414937f5af))
-* **master:** release coleo 0.10.0 ([7244c1c](https://github.com/sirtimbly/coleo/commit/7244c1cbffac565361a7aaca46cead3c43362d2c))
-* **master:** release coleo 0.10.0 ([40a7118](https://github.com/sirtimbly/coleo/commit/40a711874f12319a91d0a782eea44c2a2a963e9f))
+* **master:** release coleo 0.10.0 ([7244c1c](https://github.com/sirtimbly/coleo/commit/7244c1cbffac565361a7aaca46cead3c43362d2c), [40a7118](https://github.com/sirtimbly/coleo/commit/40a711874f12319a91d0a782eea44c2a2a963e9f))
 * merge credits error handling ([547a82e](https://github.com/sirtimbly/coleo/commit/547a82e44cf48a04bb0c0784273a64b8b9aca3e0))
 
 ## [0.9.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.8.0...coleo-v0.9.0) (2026-07-30)
@@ -350,8 +335,7 @@
 
 ### Features
 
-* **web:** add brain activity dashboard ([1dfed58](https://github.com/sirtimbly/coleo/commit/1dfed580add7a729907e0f321102718d0ad6f2ad))
-* **web:** add brain activity dashboard ([f8f2daf](https://github.com/sirtimbly/coleo/commit/f8f2dafb8735a556e31fa2e400de5009ae9e6124))
+* **web:** add brain activity dashboard ([1dfed58](https://github.com/sirtimbly/coleo/commit/1dfed580add7a729907e0f321102718d0ad6f2ad), [f8f2daf](https://github.com/sirtimbly/coleo/commit/f8f2dafb8735a556e31fa2e400de5009ae9e6124))
 
 ## [0.8.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.7.1...coleo-v0.8.0) (2026-07-29)
 
@@ -374,14 +358,12 @@
 ### Code Refactoring
 
 * config ([57950cf](https://github.com/sirtimbly/coleo/commit/57950cf71e26e2050029215db0d12576095f9e26))
-* use bun in root deps only ([38444e3](https://github.com/sirtimbly/coleo/commit/38444e3e977e040ee0d0aff301d25d7cfa026d9b))
-* use bun in root deps only ([1d69abe](https://github.com/sirtimbly/coleo/commit/1d69abedbaf10f1ebc97524d8a2ee492c499816b))
+* use bun in root deps only ([38444e3](https://github.com/sirtimbly/coleo/commit/38444e3e977e040ee0d0aff301d25d7cfa026d9b), [1d69abe](https://github.com/sirtimbly/coleo/commit/1d69abedbaf10f1ebc97524d8a2ee492c499816b))
 
 
 ### Continuous Integration
 
-* Configure Dependabot for npm with monthly updates ([b3068c4](https://github.com/sirtimbly/coleo/commit/b3068c4d2646a76ca23440650bac8fe8e3b5186a))
-* Configure Dependabot for npm with monthly updates ([16f5899](https://github.com/sirtimbly/coleo/commit/16f589991dc23da5602d511b79d01e22277f02d3))
+* Configure Dependabot for npm with monthly updates ([b3068c4](https://github.com/sirtimbly/coleo/commit/b3068c4d2646a76ca23440650bac8fe8e3b5186a), [16f5899](https://github.com/sirtimbly/coleo/commit/16f589991dc23da5602d511b79d01e22277f02d3))
 
 
 ### Tests
@@ -391,28 +373,22 @@
 
 ### Miscellaneous Chores
 
-* **deps-dev:** bump vite from 7.3.6 to 8.1.5 ([957d01d](https://github.com/sirtimbly/coleo/commit/957d01d6cb02d5106862ef02499a7acfc0d3a49b))
-* **deps-dev:** bump vite from 7.3.6 to 8.1.5 ([eb7ef18](https://github.com/sirtimbly/coleo/commit/eb7ef1829ad3c4ad75bdda00e6846a80a240b997))
-* **deps:** bump @heroui/react from 3.0.0-beta.5 to 3.2.2 ([81ab962](https://github.com/sirtimbly/coleo/commit/81ab962f0d1d99ad34c13df34be1fb786ef5b1d0))
-* **deps:** bump @heroui/react from 3.0.0-beta.5 to 3.2.2 ([e63d706](https://github.com/sirtimbly/coleo/commit/e63d70678a52ac06586725603a61e8cfa82ef9ac))
-* **deps:** bump react-router-dom from 7.18.1 to 7.18.2 ([5a6c073](https://github.com/sirtimbly/coleo/commit/5a6c0731c37c87d01fe8c07acc95c0bbb384fb73))
-* **deps:** bump react-router-dom from 7.18.1 to 7.18.2 ([d85c9ec](https://github.com/sirtimbly/coleo/commit/d85c9ecaa40328c61f7c8acfb71c2b666a20bb0d))
-* **deps:** bump three from 0.181.2 to 0.185.1 ([38ff385](https://github.com/sirtimbly/coleo/commit/38ff385987708819d75eb2511c312964838f70d3))
-* **deps:** bump three from 0.181.2 to 0.185.1 ([fe258f0](https://github.com/sirtimbly/coleo/commit/fe258f09f4ebf44384d1bf3e7c88285391d7adf7))
+* **deps-dev:** bump vite from 7.3.6 to 8.1.5 ([957d01d](https://github.com/sirtimbly/coleo/commit/957d01d6cb02d5106862ef02499a7acfc0d3a49b), [eb7ef18](https://github.com/sirtimbly/coleo/commit/eb7ef1829ad3c4ad75bdda00e6846a80a240b997))
+* **deps:** bump @heroui/react from 3.0.0-beta.5 to 3.2.2 ([81ab962](https://github.com/sirtimbly/coleo/commit/81ab962f0d1d99ad34c13df34be1fb786ef5b1d0), [e63d706](https://github.com/sirtimbly/coleo/commit/e63d70678a52ac06586725603a61e8cfa82ef9ac))
+* **deps:** bump react-router-dom from 7.18.1 to 7.18.2 ([5a6c073](https://github.com/sirtimbly/coleo/commit/5a6c0731c37c87d01fe8c07acc95c0bbb384fb73), [d85c9ec](https://github.com/sirtimbly/coleo/commit/d85c9ecaa40328c61f7c8acfb71c2b666a20bb0d))
+* **deps:** bump three from 0.181.2 to 0.185.1 ([38ff385](https://github.com/sirtimbly/coleo/commit/38ff385987708819d75eb2511c312964838f70d3), [fe258f0](https://github.com/sirtimbly/coleo/commit/fe258f09f4ebf44384d1bf3e7c88285391d7adf7))
 
 ## [0.7.1](https://github.com/sirtimbly/coleo/compare/coleo-v0.7.0...coleo-v0.7.1) (2026-07-29)
 
 
 ### Bug Fixes
 
-* unflake the test ([0e40e3d](https://github.com/sirtimbly/coleo/commit/0e40e3d6c17985f368f2463ad2ff768a84be52dc))
-* unflake the test ([de1f9b0](https://github.com/sirtimbly/coleo/commit/de1f9b03b34a95b0f2d0ba082b119acc2dcc8a9a))
+* unflake the test ([0e40e3d](https://github.com/sirtimbly/coleo/commit/0e40e3d6c17985f368f2463ad2ff768a84be52dc), [de1f9b0](https://github.com/sirtimbly/coleo/commit/de1f9b03b34a95b0f2d0ba082b119acc2dcc8a9a))
 
 
 ### Tests
 
-* clean up slow flaky runs ([c12a538](https://github.com/sirtimbly/coleo/commit/c12a53826b3e2e9d12ec562de411c262360711bf))
-* clean up slow flaky runs ([0d2171f](https://github.com/sirtimbly/coleo/commit/0d2171f033e97421504e71a83c14a2b718f10f8f))
+* clean up slow flaky runs ([c12a538](https://github.com/sirtimbly/coleo/commit/c12a53826b3e2e9d12ec562de411c262360711bf), [0d2171f](https://github.com/sirtimbly/coleo/commit/0d2171f033e97421504e71a83c14a2b718f10f8f))
 
 ## [0.7.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.6.0...coleo-v0.7.0) (2026-07-29)
 
@@ -441,8 +417,7 @@
 ### Features
 
 * arm usage stats and history ([2cdb05a](https://github.com/sirtimbly/coleo/commit/2cdb05a65f5210adb7889a02a159372a6d4010ae))
-* **arms:** surface open-code model and message cost metadata ([864ad53](https://github.com/sirtimbly/coleo/commit/864ad539f9adceb0b8c592b11bf8646db5bba619))
-* **arms:** surface open-code model and message cost metadata ([f6bcfe5](https://github.com/sirtimbly/coleo/commit/f6bcfe5d416ceb6285feb0e80099dd8b71293744))
+* **arms:** surface open-code model and message cost metadata ([864ad53](https://github.com/sirtimbly/coleo/commit/864ad539f9adceb0b8c592b11bf8646db5bba619), [f6bcfe5](https://github.com/sirtimbly/coleo/commit/f6bcfe5d416ceb6285feb0e80099dd8b71293744))
 * fetch simple data ([6fdc9da](https://github.com/sirtimbly/coleo/commit/6fdc9dad57058ffec9d913fb495f09529b039d14))
 * manually complete tasks ([2d8ab57](https://github.com/sirtimbly/coleo/commit/2d8ab5765c5a7ad56ea38634aa4a5da169b0c2d3))
 * pick stats on arms by datetime ([4914ba7](https://github.com/sirtimbly/coleo/commit/4914ba73bffbd425f025750aaa7ad117b5b7e4f6))
@@ -474,17 +449,14 @@
 
 ### Documentation
 
-* link hosted Coleo preview ([11ac7a8](https://github.com/sirtimbly/coleo/commit/11ac7a8445e64d8f4ca69bbf929f41aaa4333377))
-* link hosted Coleo preview ([8238612](https://github.com/sirtimbly/coleo/commit/82386120176c501d2e6cea81b7bae35ab226f939))
+* link hosted Coleo preview ([11ac7a8](https://github.com/sirtimbly/coleo/commit/11ac7a8445e64d8f4ca69bbf929f41aaa4333377), [8238612](https://github.com/sirtimbly/coleo/commit/82386120176c501d2e6cea81b7bae35ab226f939))
 
 
 ### Tests
 
 * **web:** cover arm activity chart classifier ([a3818ac](https://github.com/sirtimbly/coleo/commit/a3818ac2ab1681f87f855530e4d37c23a29e2267))
-* **web:** cover mergeCostSamples deduplication behavior ([2ce5d91](https://github.com/sirtimbly/coleo/commit/2ce5d911e061dc0fc6312c8ec257c734ec7737b0))
-* **web:** cover mergeCostSamples deduplication behavior ([88bf545](https://github.com/sirtimbly/coleo/commit/88bf545025fa60de6753f2613084f2f8c29d56ea))
-* **web:** refine mergeCostSamples assertion style ([6d6c392](https://github.com/sirtimbly/coleo/commit/6d6c3925d84e8b6726d4bb679b1dc2b7e5e2cf50))
-* **web:** refine mergeCostSamples assertion style ([d73de1d](https://github.com/sirtimbly/coleo/commit/d73de1d25e27cf27e28ad124e111cecfeda20ca7))
+* **web:** cover mergeCostSamples deduplication behavior ([2ce5d91](https://github.com/sirtimbly/coleo/commit/2ce5d911e061dc0fc6312c8ec257c734ec7737b0), [88bf545](https://github.com/sirtimbly/coleo/commit/88bf545025fa60de6753f2613084f2f8c29d56ea))
+* **web:** refine mergeCostSamples assertion style ([6d6c392](https://github.com/sirtimbly/coleo/commit/6d6c3925d84e8b6726d4bb679b1dc2b7e5e2cf50), [d73de1d](https://github.com/sirtimbly/coleo/commit/d73de1d25e27cf27e28ad124e111cecfeda20ca7))
 
 ## [0.5.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.4.1...coleo-v0.5.0) (2026-07-27)
 
@@ -502,16 +474,14 @@
 
 ### Continuous Integration
 
-* upgrade actions and release notes ([c350c7a](https://github.com/sirtimbly/coleo/commit/c350c7a0cf3b8dc8266d59071aee6aa49f56f5a6))
-* upgrade actions and release notes ([7d24d85](https://github.com/sirtimbly/coleo/commit/7d24d853ed37c659c3912225eca2f035a3c1c99d))
+* upgrade actions and release notes ([c350c7a](https://github.com/sirtimbly/coleo/commit/c350c7a0cf3b8dc8266d59071aee6aa49f56f5a6), [7d24d85](https://github.com/sirtimbly/coleo/commit/7d24d853ed37c659c3912225eca2f035a3c1c99d))
 
 ## [0.4.1](https://github.com/sirtimbly/coleo/compare/coleo-v0.4.0...coleo-v0.4.1) (2026-07-22)
 
 
 ### Bug Fixes
 
-* **release:** align release tags and changelog sections ([6df281a](https://github.com/sirtimbly/coleo/commit/6df281a8a271172143ddccffc28a627315d733d2))
-* **release:** align release tags and changelog sections ([f56386e](https://github.com/sirtimbly/coleo/commit/f56386e91618e9bee3ff2fa3962e51c9f3322962))
+* **release:** align release tags and changelog sections ([6df281a](https://github.com/sirtimbly/coleo/commit/6df281a8a271172143ddccffc28a627315d733d2), [f56386e](https://github.com/sirtimbly/coleo/commit/f56386e91618e9bee3ff2fa3962e51c9f3322962))
 
 
 ### Code Refactoring
@@ -529,8 +499,7 @@
 * **brain:** apply bug priority responses ([bcfbe4d](https://github.com/sirtimbly/coleo/commit/bcfbe4dc5afa430bbd541491436c36c0e31eb071))
 * **nats:** consume status history events ([8b1d07c](https://github.com/sirtimbly/coleo/commit/8b1d07cf9ee553417ae1020384e52fe670484922))
 * **tasks:** add blocked task review workflow ([bbe82a1](https://github.com/sirtimbly/coleo/commit/bbe82a168e2b621da64a5979b3ab07cd7ed979d3))
-* **tasks:** regenerate queue from project plan ([439a793](https://github.com/sirtimbly/coleo/commit/439a793f5e3f0b83db498c657de3bddeb1351b50))
-* **tasks:** regenerate queue from project plan ([42497ae](https://github.com/sirtimbly/coleo/commit/42497aea9644610b6410775ed6c98e17a348e6f6))
+* **tasks:** regenerate queue from project plan ([439a793](https://github.com/sirtimbly/coleo/commit/439a793f5e3f0b83db498c657de3bddeb1351b50), [42497ae](https://github.com/sirtimbly/coleo/commit/42497aea9644610b6410775ed6c98e17a348e6f6))
 * **vector:** backfill completed tasks ([a7d5c08](https://github.com/sirtimbly/coleo/commit/a7d5c089953796886286bf496ddd91548a4da89d))
 * **vector:** embed complete status events ([aed0259](https://github.com/sirtimbly/coleo/commit/aed0259b96a8daf36d6db7b83371922aa8c8a571))
 * **web:** add status history search page ([c8ac126](https://github.com/sirtimbly/coleo/commit/c8ac126d5cb6666f558422ad71cab0e35a577e9b))
@@ -584,8 +553,7 @@
 * **brain:** Add smart status report forwarding logic ([6c5cced](https://github.com/sirtimbly/coleo/commit/6c5cced2541129bac917a0736f701f074d0ba69f))
 * **brain:** auto-create commit task when tasks are completed ([d1f9776](https://github.com/sirtimbly/coleo/commit/d1f9776bcdc1042551b2d8c14685cf29d7ed9b21))
 * **brain:** create skeleton modules for brain.ts extraction ([#9](https://github.com/sirtimbly/coleo/issues/9)) ([1b81ddf](https://github.com/sirtimbly/coleo/commit/1b81ddfc6de596ad0f8a07bc2642aa36de453618))
-* **brain:** detect and handle silent task completions ([b2a0eff](https://github.com/sirtimbly/coleo/commit/b2a0eff99a3853ac8cce1ceeb5dcdfb079a38580))
-* **brain:** detect and handle silent task completions ([b127f61](https://github.com/sirtimbly/coleo/commit/b127f612cd19e305ed468aef0650dbd6496a181e))
+* **brain:** detect and handle silent task completions ([b2a0eff](https://github.com/sirtimbly/coleo/commit/b2a0eff99a3853ac8cce1ceeb5dcdfb079a38580), [b127f61](https://github.com/sirtimbly/coleo/commit/b127f612cd19e305ed468aef0650dbd6496a181e))
 * **brain:** detect and handle silent task completions ([#8](https://github.com/sirtimbly/coleo/issues/8)) ([92c540e](https://github.com/sirtimbly/coleo/commit/92c540ed236e435c62db590a5e6234da99930bf8))
 * **brain:** implement stopping point detection and automated branch/PR workflow ([3f449c9](https://github.com/sirtimbly/coleo/commit/3f449c93e15750ba8ed21099d38e42e4aa2a6c8f))
 * **brain:** integrate claims system to prevent file conflicts ([162c38c](https://github.com/sirtimbly/coleo/commit/162c38c6f16244d805d5923b9f30990562f72a51))
