@@ -1,14 +1,17 @@
 import { actionKey } from "../db/swarm-actions";
 import { proposalSchema } from "../brain/swarm/types";
+import { inboxSourceWindowSql } from "./inbox-source-window";
 import type { Database } from "bun:sqlite";
 import type { SwarmProposal } from "../brain/swarm/types";
 import type { WorkbenchInboxRecord } from "../types/adaptive-cards";
+import type { InboxSourceWindow } from "./inbox-source-window";
 
 interface RecommendationRow {
   id: string;
   evaluation_id: string;
   proposal: string;
   created_at: string;
+  inbox_timestamp: string | null;
   disposition: string;
   detail: string;
   mode: string;
@@ -20,6 +23,7 @@ interface RecommendationRow {
 }
 
 const SELECT_RECOMMENDATIONS = `SELECT r.*, e.mode,
+  strftime('%Y-%m-%dT%H:%M:%fZ', r.created_at) AS inbox_timestamp,
   json_extract(e.snapshot, '$.window.since') AS window_since,
   json_extract(e.snapshot, '$.window.until') AS window_until,
   a.id AS action_id, a.status AS action_status, a.detail AS action_detail
@@ -53,6 +57,7 @@ const DETAIL_LABELS: Record<string, string> = {
 };
 
 function asInboxRecord(row: RecommendationRow): WorkbenchInboxRecord {
+  if (!row.inbox_timestamp) throw new Error("Invalid swarm recommendation timestamp");
   const proposal = proposalSchema.parse(JSON.parse(row.proposal));
   const status = row.action_status ?? row.disposition;
   const detail = row.action_detail || row.detail;
@@ -73,7 +78,7 @@ function asInboxRecord(row: RecommendationRow): WorkbenchInboxRecord {
   return {
     itemKey: `swarm:${row.id}`, source: "swarm-recommendation", kind: "brain",
     title: `Swarm recommendation: ${proposal.action.replaceAll("_", " ")} · ${proposal.targetId}`,
-    summary, timestamp: row.created_at, resource: { kind: proposal.targetType, id: proposal.targetId },
+    summary, timestamp: row.inbox_timestamp, resource: { kind: proposal.targetType, id: proposal.targetId },
     severity: status === "uncertain" ? "warning" : status === "succeeded" ? "success" : "info",
     requiresAction: status === "uncertain",
   };
@@ -93,9 +98,12 @@ export function setSwarmRecommendationDisposition(db: Database, proposal: SwarmP
     [disposition, detail, actionKey(proposal)]);
 }
 
-export function listSwarmInboxRecords(db: Database, limit: number): WorkbenchInboxRecord[] {
-  return (db.query(`${SELECT_RECOMMENDATIONS} ORDER BY r.created_at DESC,r.id DESC LIMIT ?`)
-    .all(limit) as RecommendationRow[]).map(asInboxRecord);
+export function listSwarmInboxRecords(db: Database, limit: number, window: InboxSourceWindow = {}): WorkbenchInboxRecord[] {
+  const timestamp = "strftime('%Y-%m-%dT%H:%M:%fZ', r.created_at)";
+  const predicate = inboxSourceWindowSql(timestamp, "('swarm:' || r.id)", window);
+  return (db.query(`${SELECT_RECOMMENDATIONS} WHERE ${predicate.clause}
+    ORDER BY ${timestamp} DESC, r.id COLLATE BINARY DESC LIMIT ?`)
+    .all(...predicate.params, limit) as RecommendationRow[]).map(asInboxRecord);
 }
 
 export function getSwarmInboxRecord(db: Database, id: string): WorkbenchInboxRecord | null {

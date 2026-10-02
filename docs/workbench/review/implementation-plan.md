@@ -1,9 +1,32 @@
 # Implementation plan: one resource model, several ways to work
 
-**Direction selected by Tim on 2026-09-29; implementation plan for acceptance.**
+**Direction selected by Tim on 2026-09-29; baseline accepted on 2026-10-01.**
 This plan supersedes the alternatives and ordering in the four review chapters.
-Their findings remain the evidence record. This PR changes documentation only;
-runtime work begins in follow-up commits/PRs after the plan is accepted.
+Their findings remain the evidence record. The original review changed
+documentation only; runtime work now proceeds in bounded follow-up slices.
+
+### Execution decisions accepted on 2026-10-01
+
+Messaging API and browser recovery (1a/1b) remain the first delivery milestone.
+Bring the minimal CLI Inbox snapshot forward after the API contract stabilizes,
+followed by the live TUI slice after recovery semantics are proven. The CLI
+rewrite may make a deliberate compatibility break, with a documented new
+command/output contract and migration guidance.
+
+The first portability milestone includes **named blueprint view parity**, not
+only matching endpoints. Bring a thin versioned named-view contract, validation,
+and API resolution forward with this work. Preserve the existing ResourceView
+composition: toolbar 1 (primary), toolbar 2 (secondary), an optional metadata/
+insight visualization region above content, and interchangeable grid, Adaptive
+Card, or registered custom resource renderers. These are semantic features that
+CLI and TUI adapters expose through flags, keys, menus, summaries, and terminal
+presentations; unsupported features need explicit diagnostics or declared
+fallbacks. Keep resource/query identity independent of renderer choice.
+
+Start with the [Messaging contract and execution baseline](./messaging-contract.md):
+current-source inventory, normalized query/response fixtures, one named-view
+example, and the exact first bounded API change. The complete control inventory
+still gates freezing the broader toolbar/blueprint schema.
 
 ## What we are building
 
@@ -524,6 +547,9 @@ behavior before extraction, and update this checklist as evidence lands.
 | --- | --- | --- | --- |
 | 1a | `feat(api): unify messaging collection queries` | Existing domain services; minimal query contract | Single scoped endpoint, paging/freshness/partial-failure contract tests |
 | 1b | `fix(web): make messaging refresh ordered and recoverable` | 1a | Single collection load path; burst, stale-response, reconnect browser checks |
+| 1c | `feat(workbench): resolve named collection-view definitions` | 1a; thin composition/registry contract | Same named query, fields, two toolbar tiers, optional metadata, commands, and capability diagnostics through the API |
+| 1d | `feat(cli): expose named inbox snapshots` | 1a, 1c | CLI text/JSON matches the browser's resolved view; scope/freshness/partial results are explicit |
+| 1e | `feat(tui): prove a live named inbox view` | 1b, 1c, 1d | Same view and commands, HTTP snapshots plus change/recovery protocol, terminal mappings and explicit fallbacks |
 | 2a | `feat(workbench): persist independent panel view state` | Minimal panel schema | Two same-resource panels stay independent across restore |
 | 2b | `fix(workbench): track unseen changes per panel` | 1b, 2a | Query-relevant changes and observation rules; no sibling clearing |
 | 2c | `fix(web): save settings with a canonical round trip` | 2a | Success/failure and same-panel request ordering; no durable drafts |
@@ -537,7 +563,7 @@ behavior before extraction, and update this checklist as evidence lands.
 | 4e | `feat(workbench): add blueprint authoring assistance` | 4b schema and capability registry; iterate alongside 4c–4d | Web and local-editor completions, hover, diagnostics, offline schema support, and shared semantic fixtures |
 | 5a | `refactor(web): separate workspace policy from renderer lifetime` | Relevant behavior coverage | Host/sheet/feature seams split without remount regressions |
 | 5b | `fix(web): consolidate remaining projection refresh owners` | 1b's proven controller | Tasks/Processes use one policy; no burst/order regressions |
-| 6 | `feat(cli): expose shared resource snapshots` then TUI live slice | 1a's stable contract; core where useful | Same query/action semantics across clients |
+| 6 | Extend the CLI/TUI rewrite across remaining resource recipes | Early named Inbox proof; extracted models and blueprint contracts | Same query/action/composition semantics across clients, with documented terminal exceptions |
 | Later | Profile ownership, cross-client conflict handling, native spike | Actual product demand | Separate scoped plans; no blockage of Messaging or editor work |
 
 Boundary fixes can accompany the first feature that needs them; the order is

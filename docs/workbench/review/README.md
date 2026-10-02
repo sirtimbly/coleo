@@ -1,10 +1,12 @@
 # Workbench architecture review — September 2026
 
-**Direction selected on 2026-09-29; implementation plan ready for review.**
+**Direction selected on 2026-09-29; baseline accepted on 2026-10-01.**
 Start with [the implementation plan](./implementation-plan.md). It records Tim's
 decisions and supersedes the alternatives and original ordering below. The
-reviewed source snapshot remains `2882047` (2026-09-26). No runtime behavior has
-changed; current-implementation ADRs remain current until implementation lands.
+reviewed source snapshot remains `2882047` (2026-09-26). The original review was
+documentation-only. Follow-up work starts with the [Messaging contract and
+execution baseline](./messaging-contract.md), including the first durable Inbox
+paging correction and early portable ResourceView composition contracts.
 
 Coleo has useful tools on a crowded bench. The strongest abstraction is already
 working: a resource can appear in several views without making its renderer
@@ -26,10 +28,10 @@ boundaries proven by a second consumer.
 | **The notebook** | Independent panel settings with a simple save/server-refresh flow; full schema migrations with the toolbar work | Profiles and simultaneous-edit conflicts deferred |
 | **The panel host** | All identified coupling seams are improvement targets; retain imperative instances, remove classic-only code | Stage behind behavior checks |
 
-The selected order starts with Messaging, then panel independence and simple
-settings persistence, renderer boundaries, and the toolbar editor/DSL. CLI
-snapshots and a live TUI prove the shared contracts; SwiftUI/Perry remain later
-native-client options. There is no durable settings-draft system in this plan.
+The selected order starts with Messaging, with an early named-view CLI snapshot
+and live TUI proof. Panel independence and simple settings persistence, renderer
+boundaries, and the complete toolbar editor/DSL follow. SwiftUI/Perry remain
+later native-client options. There is no durable settings-draft system in this plan.
 
 Hand-authored process templates are now also a first-class goal. The plan's
 proposed **workbench blueprints** define coherent resource views and actions

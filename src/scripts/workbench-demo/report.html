@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='9' fill='%232457da'/%3E%3Cpath d='M10 28q-4-7 2-14t12 0q6 7 2 14M12 25v6m5-7v8m6-8v8m5-7v6' fill='none' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
+  <meta name="description" content="An interactive, evidence-backed field report on Coleo's portable resource workbench.">
+  <title>Coleo · One view, several ways to work</title>
+  <style>/* REPORT_STYLES */</style>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to report</a>
+  <header class="site-header">
+    <a class="brand" href="#main">
+      <svg viewBox="0 0 36 36" width="34" height="34" aria-hidden="true"><path d="M18 5c-7 0-10 5-10 11 0 4 2 6 4 7M18 5c7 0 10 5 10 11 0 4-2 6-4 7M12 20C5 19 2 24 5 28m8-7c-5 3-5 9-1 10m4-10c-2 5-1 10 2 11m2-11c2 5 1 10-2 11m5-11c5 3 5 9 1 10m0-11c7-1 10 4 7 8" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/><circle cx="14" cy="14" r="1.3" fill="currentColor"/><circle cx="22" cy="14" r="1.3" fill="currentColor"/></svg>
+      <span>Coleo<span class="brand-subtitle">Workbench field report</span></span>
+    </a>
+    <nav aria-label="Report sections"><a href="#demo">Try the view</a><a href="#evidence">The proof</a><a href="#blueprint">The blueprint</a><a href="#next">What comes next</a></nav>
+    <button class="quiet-button print-button" id="print-report" type="button">Print report <span aria-hidden="true">↗</span></button>
+  </header>
+  <main id="main">
+    <section class="hero" aria-labelledby="hero-title">
+      <div>
+        <p class="eyebrow"><span class="status-light"></span> Architecture cleanup · First working slice</p>
+        <h1 id="hero-title">One view.<br><span>Several ways to work.</span></h1>
+        <p class="hero-deck">A resource view is more than its renderer. Keep its controls, metadata, fields, and commands together—then give each client a useful way to present them.</p>
+        <div class="hero-actions"><a class="primary-button" href="#demo">Explore the working contracts <span aria-hidden="true">↓</span></a><a class="text-link" href="#evidence">See the paging fix <span aria-hidden="true">↗</span></a></div>
+      </div>
+      <figure class="hero-diagram">
+        <svg viewBox="0 0 470 270" role="img" aria-labelledby="hero-diagram-title">
+          <title id="hero-diagram-title">One named view supplies a query, fields, and commands to browser, CLI, and TUI adapters.</title>
+          <defs><pattern id="diagram-grid" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.8" fill="#c7d5e0"/></pattern></defs>
+          <rect width="470" height="270" rx="12" fill="url(#diagram-grid)"/>
+          <rect x="107" y="24" width="256" height="83" rx="9" fill="#fff" stroke="#2457da" stroke-width="1.5"/>
+          <text x="235" y="48" text-anchor="middle" class="svg-caption" fill="#597587">NAMED RESOURCE VIEW</text>
+          <text x="235" y="72" text-anchor="middle" class="svg-title" fill="#172a3a">inbox-triage</text>
+          <text x="235" y="93" text-anchor="middle" class="svg-small" fill="#597587">query · fields · commands · composition</text>
+          <path d="M235 107v34M78 159v-18h314v18M235 141v18" fill="none" stroke="#2457da" stroke-width="1.5"/>
+          <circle cx="235" cy="141" r="4" fill="#2457da"/>
+          <g fill="#fff" stroke="#b5c8d7"><rect x="20" y="159" width="116" height="70" rx="7"/><rect x="177" y="159" width="116" height="70" rx="7"/><rect x="334" y="159" width="116" height="70" rx="7"/></g>
+          <g text-anchor="middle" fill="#172a3a" class="svg-title"><text x="78" y="185">Browser</text><text x="235" y="185">CLI</text><text x="392" y="185">TUI</text></g>
+          <g text-anchor="middle" fill="#597587" class="svg-small"><text x="78" y="207">panels + renderers</text><text x="235" y="207">flags + snapshots</text><text x="392" y="207">keys + live lists</text></g>
+          <text x="235" y="257" text-anchor="middle" fill="#597587" class="svg-small">Same meaning. Client-specific presentation.</text>
+        </svg>
+        <figcaption>Shared contracts are working. This report supplies demo adapters; application-wide and native terminal wiring is the next step.</figcaption>
+      </figure>
+    </section>
+
+    <section class="report-section demo-section" id="demo" aria-labelledby="demo-title">
+      <div class="section-heading"><div><p class="eyebrow">Interactive contract demonstration</p><h2 id="demo-title">Take the same view somewhere else.</h2></div><span class="evidence-tag"><span class="status-light"></span> Actual headless modules</span></div>
+      <p class="section-deck">Switch clients and presentations. The query and resource IDs stay put. Search, sort, select a resource, or reveal the optional metadata region.</p>
+      <div class="demo-layout">
+        <aside class="anatomy" aria-label="ResourceView hierarchy">
+          <p class="mini-heading">Anatomy of a resource view</p>
+          <button class="anatomy-item" data-highlight="primary" type="button"><span class="layer-number">1</span><span><strong>Primary toolbar</strong><small>Identity, context, search, commands, and source state.</small></span></button>
+          <button class="anatomy-item" data-highlight="secondary" type="button"><span class="layer-number">2</span><span><strong>Secondary toolbar</strong><small>Sort, presentation, selection, and insight controls.</small></span></button>
+          <button class="anatomy-item" data-highlight="metadata" type="button"><span class="layer-number optional-layer">↳</span><span><strong>Optional metadata</strong><small>A visualization in the browser. A summary in a terminal.</small></span></button>
+          <button class="anatomy-item" data-highlight="content" type="button"><span class="layer-number">↳</span><span><strong>Resource presentation</strong><small>Grid, cards, or custom content over the same projected resources.</small></span></button>
+          <div class="anatomy-note"><strong>Try this</strong><p>Select Cards, then switch to TUI. The capability resolver chooses a text-list fallback and explains the substitution.</p></div>
+        </aside>
+        <div class="demo-workspace">
+          <div class="workspace-topline"><div class="segmented" role="group" aria-label="Client preview"><button type="button" data-client="web" aria-pressed="true">Browser</button><button type="button" data-client="cli" aria-pressed="false">CLI snapshot</button><button type="button" data-client="tui" aria-pressed="false">TUI preview</button></div><span class="query-stamp">Query <code id="query-fingerprint">…</code></span></div>
+          <div id="resource-stage" class="resource-stage" tabindex="-1" aria-label="Interactive resource view"></div>
+          <div class="adapter-caption" id="adapter-caption"></div>
+          <div class="demo-feedback" role="status" aria-live="polite" id="demo-feedback">Eight illustrative resources. Local demo actions do not change live Coleo data.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="report-section" id="recovery" aria-labelledby="recovery-title">
+      <div class="section-heading"><div><p class="eyebrow">Failure semantics you can exercise</p><h2 id="recovery-title">Unavailable doesn’t mean empty.</h2></div><span class="evidence-tag">Working reconciliation function</span></div>
+      <div class="recovery-layout"><div class="recovery-copy"><p>Lose a source, and its last loaded section remains visible in that query. Confirm the source is genuinely empty, and the old rows disappear. Counts are marked incomplete during an outage.</p><div class="source-buttons" role="group" aria-label="Mail source scenario"><button type="button" data-source-mode="unavailable">Make mail unavailable</button><button type="button" data-source-mode="empty">Return an empty mailbox</button><button type="button" data-source-mode="healthy" class="quiet-button">Recover mail</button></div><p class="scenario-note" role="status" id="source-lab-note">Mail is healthy. These buttons feed fixture snapshots through the real reconciliation contract.</p><p class="small-note">The experiment uses local fixture snapshots, not a live Maildir or WebSocket disconnect. Socket recovery and fetch scheduling are still a delivery gate.</p></div><figure class="outage-figure"><div id="outage-chart"></div><figcaption>All-eight-resource reference fixture: rows received versus rows retained from a previous snapshot. The active view above may have a narrower scope.</figcaption></figure></div>
+    </section>
+
+    <section class="report-section evidence-section" id="evidence" aria-labelledby="evidence-title">
+      <div class="section-heading"><div><p class="eyebrow">Measured on an isolated, migrated SQLite fixture</p><h2 id="evidence-title">The first fix changes what you can reach.</h2></div><span class="evidence-tag">Current Hono endpoint</span></div>
+      <div class="proof-layout">
+        <div class="proof-summary"><div class="proof-number"><span id="before-total">57</span><span class="proof-arrow" aria-hidden="true">→</span><strong id="after-total">532</strong></div><p>records reached by cursor paging</p><div class="proof-explanation"><span class="old-dot"></span><p><strong>Before:</strong> take a short source prefix, then apply the cursor. Older items disappear from traversal.</p></div><div class="proof-explanation"><span class="new-dot"></span><p><strong>Now:</strong> apply visibility and cursor boundaries before the limit, then merge in a consistent order.</p></div><div class="proof-facts"><span><strong id="duplicates">0</strong> duplicate IDs</span><span><strong id="page-size">25</strong> records per page</span></div></div>
+        <figure class="paging-figure"><div class="chart-heading"><strong>Cumulative records reached</strong><div class="chart-legend"><span><i class="old-dot"></i>Old prefix algorithm</span><span><i class="new-dot"></i>Fixed endpoint</span></div></div><div id="paging-chart"></div><div class="paging-controls"><button type="button" class="quiet-button" id="replay-paging">Replay traversal</button><label for="page-scrubber">Page <output id="page-readout">22</output></label><input id="page-scrubber" type="range" min="0" max="22" value="22" aria-label="Paging proof page"/></div><figcaption>525 blocked tasks + 7 status reports. The blue series is generated by calling the current endpoint. The orange series reproduces the recorded pre-fix algorithm over the same fixture. This is a correctness proof, not a latency benchmark.</figcaption></figure>
+      </div>
+      <div class="verification-strip" aria-label="Verification evidence"><div><strong id="test-count">…</strong><span>focused tests passed</span></div><div><strong id="assertion-count">…</strong><span>assertions</span></div><div><strong>Checked</strong><span>server + browser TypeScript</span></div><div><strong>Portable</strong><span>self-contained offline report</span></div></div>
+    </section>
+
+    <section class="report-section" id="blueprint" aria-labelledby="blueprint-title">
+      <div class="section-heading"><div><p class="eyebrow">One named definition, several adapters</p><h2 id="blueprint-title">The hierarchy is in the definition.</h2></div><button type="button" class="quiet-button" id="download-snapshot">Download view snapshot <span aria-hidden="true">↓</span></button></div>
+      <p class="section-deck">Edit this resolved JSON example. Valid edits update the local preview after a typing pause; invalid bindings keep the last valid definition active. JSON here is the wire model—YAML versus JSONC authoring remains an open choice.</p>
+      <div class="definition-layout"><div class="definition-editor"><div class="editor-topline"><span><i class="file-dot"></i>inbox-triage · resolved definition</span><div><button type="button" id="break-binding">Try an invalid binding</button><button type="button" id="reset-definition">Reset example</button></div></div><label class="sr-only" for="definition-source">Resource view JSON definition</label><textarea id="definition-source" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea><div id="definition-status" class="definition-status" role="status" aria-live="polite">Valid definition. Local preview is active.</div></div><aside class="definition-notes"><h3>What travels with a view</h3><dl><dt>Query + identity</dt><dd>A normalized scope, filters, sorting, and stable resource references.</dd><dt>Both toolbar tiers</dt><dd>Named semantic slots and registered controls. Flags and key actions are alternative interfaces to the same purposes.</dd><dt>Optional metadata</dt><dd>Insight choices, selected fields, and capability-aware summary fallbacks.</dd><dt>Resource presentation</dt><dd>Registered grid, card, and custom renderers; field choices survive the adapter change.</dd><dt>Commands</dt><dd>Allowlisted references. The API remains responsible for validation, authorization, and actual mutations.</dd></dl><div class="identity-note">Panel settings remain independent overrides. Changing the live preview doesn’t rewrite the source example or another panel.</div></aside></div>
+      <details class="inspector"><summary>Inspect the active normalized query, fields, and capability decisions</summary><pre id="contract-inspector"></pre></details>
+    </section>
+
+    <section class="report-section next-section" id="next" aria-labelledby="next-title">
+      <div class="section-heading"><div><p class="eyebrow">A foundation with a clear next boundary</p><h2 id="next-title">From this slice to a shared workbench.</h2></div></div>
+      <div class="delivery-map"><article class="delivered"><span class="delivery-state">Working now</span><h3>Contracts + correctness</h3><p>Query normalization and projection. View validation. Capability fallbacks. Partial-source reconciliation. Durable Inbox paging.</p></article><article><span class="delivery-state">Next API slice</span><h3>One Messaging projection</h3><p>Mail threads and retained event adapters. Source freshness, scoped counts, and continuation boundaries through the existing endpoint.</p></article><article><span class="delivery-state">Next client slice</span><h3>Web recovery + terminal proof</h3><p>Ordered refresh, socket-only reconnect tests, named-view API resolution, and actual CLI/TUI consumers.</p></article><article><span class="delivery-state">Broader blueprint delivery</span><h3>Author and ship a workflow</h3><p>File authority, source-preserving visual editing, schema migrations, editor assistance, and independently configured panels.</p></article></div>
+      <div class="scope-note"><strong>Reading the demo correctly</strong><p>The paging fix is running API code. Query, projection, validation, and reconciliation are imported production modules. Browser grids/cards/timelines and CLI/TUI screens here are lightweight HTML demo adapters—not a claim that the application or native terminal rewrite is complete.</p></div>
+    </section>
+  </main>
+  <footer class="report-footer"><div><strong>Coleo</strong><span>One resource model. Several ways to work.</span></div><p id="report-provenance">Generated from the working tree.</p></footer>
+  <noscript><p class="noscript-note">This is a self-contained report. Enable JavaScript to explore the view, inspect the contracts, and display its measured charts.</p></noscript>
+  <script type="application/json" id="report-data">__REPORT_DATA__</script>
+  <script>/* REPORT_CLIENT */</script>
+</body>
+</html>
