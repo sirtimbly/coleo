@@ -34,6 +34,10 @@ export interface ResourceViewDefinition {
 	readonly query: { readonly [key: string]: ViewJsonValue };
 	readonly commands: readonly string[];
 	readonly slots: Readonly<Partial<Record<ResourceViewSlot, readonly ResourceViewControl[]>>>;
+	readonly hierarchy?: {
+		readonly initialExpansion: "collapsed" | "roots" | "all";
+		readonly selectionScope: "loaded-descendants";
+	};
 	readonly insights?: {
 		readonly active: string | null;
 		readonly panels: readonly ResourceViewRenderer[];
@@ -72,6 +76,8 @@ const definitionSchema = z.object({
 	slots: z.partialRecord(z.enum(RESOURCE_VIEW_SLOTS), z.array(z.object({
 		id, widget: id, label: id, binding: id.optional(), command: id.optional(),
 	}).strict())),
+	hierarchy: z.object({ initialExpansion: z.enum(["collapsed", "roots", "all"]),
+		selectionScope: z.literal("loaded-descendants") }).strict().optional(),
 	insights: z.object({ active: id.nullable(), panels: z.array(rendererSchema) }).strict().optional(),
 	presentation: z.object({
 		active: id,

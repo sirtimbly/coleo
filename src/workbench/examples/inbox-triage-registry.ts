@@ -24,6 +24,9 @@ export const INBOX_TRIAGE_REGISTRY: ResourceViewRegistry = {
 			slots: ["toolbar.secondary.presentation"], bindings: ["presentation.active"], capabilities: [],
 		},
 		"collection.selection": { slots: ["toolbar.secondary.selection"], bindings: [], capabilities: [] },
+		"collection.hierarchy": {
+			slots: ["toolbar.secondary.presentation"], bindings: ["hierarchy.expandedIds"], capabilities: [],
+		},
 		"collection.insights": { slots: ["toolbar.secondary.insights"], bindings: ["insights.active"], capabilities: [] },
 	},
 	renderers: {

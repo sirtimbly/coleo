@@ -28,6 +28,14 @@ current-source inventory, normalized query/response fixtures, one named-view
 example, and the exact first bounded API change. The complete control inventory
 still gates freezing the broader toolbar/blueprint schema.
 
+The follow-up [threading contract](./threading-contract.md) makes nested resource
+relationships portable as well: explicit primary-parent forests, independent
+expansion/focus, and loaded-descendant selection snapshots. Blueprint definitions
+carry hierarchy defaults and semantic controls. Every renderer/client exposes
+folding and group selection; incoming resources are not silently added to an
+existing selection. Mail thread APIs supply actual reply ancestry and diagnose
+missing parents rather than deriving nesting from visual row order.
+
 ## What we are building
 
 Coleo owns the resources and their commands. The workbench arranges ways to see

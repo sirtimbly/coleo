@@ -1,6 +1,7 @@
 import { compareMessagingPositions } from "./messaging-query";
 
 import type { MessagingBrainCategory, MessagingItemKind, MessagingMailbox, MessagingQuery } from "./messaging-query";
+import type { MailThreadLocation, MailThreadProjection } from "./mail-thread-model";
 
 export type MessagingSourceId = "records" | "mail" | "activity" | "events";
 
@@ -15,7 +16,9 @@ export interface MessagingItem {
 	/** Opaque data revision, including attention state; never a request generation. */
 	readonly revision: string;
 	readonly sourceId: MessagingSourceId;
-	readonly representation: "resource" | "event" | "thread";
+	readonly representation: "resource" | "event" | "thread" | "message";
+	readonly thread?: MailThreadProjection;
+	readonly locations?: readonly MailThreadLocation[];
 	readonly kind: MessagingItemKind;
 	readonly title: string;
 	readonly summary: string;
@@ -30,6 +33,7 @@ export interface MessagingItem {
 	readonly detail:
 		| { readonly kind: "record"; readonly itemKey: string }
 		| { readonly kind: "thread"; readonly threadId: string; readonly mailbox: MessagingMailbox }
+		| { readonly kind: "message"; readonly threadId: string; readonly messageId: string; readonly mailbox: MessagingMailbox }
 		| { readonly kind: "activity"; readonly activityId: string; readonly sequence: number | null }
 		| { readonly kind: "event"; readonly itemKey: string; readonly sequence: number };
 }
@@ -49,7 +53,9 @@ export function projectMessagingItems(items: readonly MessagingItem[], query: Me
 			(query.brainCategory !== "all" && item.brainCategory !== query.brainCategory))) return false;
 		if (query.facet === "arms" && item.kind !== "arm" && item.kind !== "status") return false;
 		if (query.facet === "history" && item.kind === "project") return false;
-		if (query.search && !`${item.title} ${item.summary} ${item.source}`.toLowerCase().includes(query.search)) return false;
+		if (query.search && !`${item.title} ${item.summary} ${item.source}`.toLowerCase().includes(query.search) &&
+			!item.thread?.hierarchy.nodes.some((node) => `${node.data.title} ${node.data.summary} ${node.data.source}`
+				.toLowerCase().includes(query.search))) return false;
 		return query.filters.every((filter) => {
 			if (filter.field === "kind") {
 				return filter.operator === "in" ? filter.value.includes(item.kind) : !filter.value.includes(item.kind);

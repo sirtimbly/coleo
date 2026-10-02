@@ -1,10 +1,14 @@
 import { INBOX_TRIAGE_REGISTRY } from "../../../workbench/examples/inbox-triage-registry";
 import { reconcileMessagingPage } from "../../../workbench/messaging-collection";
+import { indexMessagingHierarchy, markHierarchyMessagesRead, matchingMessageHierarchyIds } from "../../../workbench/message-hierarchy";
+import { hierarchySelectionSummaries, hierarchySubtreeIds, toggleHierarchySelection, visibleHierarchyRows } from "../../../workbench/resource-hierarchy";
 import { messagingQueryIdentity, normalizeMessagingQuery } from "../../../workbench/messaging-query";
 import { parseResourceViewDefinition, resolveResourceViewFeatures } from "../../../workbench/resource-view-definition";
 import { fixtureSnapshot } from "../snapshots";
+import { addReviewReply } from "../thread-arrival";
 import { escapeHtml as html, fingerprint, outageChart, pagingChart } from "./report-charts";
 import { currentRenderer, detailPeek, metadataPanel, resourceContent, snapshotRows, sourceBar, toolbar } from "./report-renderers";
+import { hierarchySnapshot } from "./report-tree";
 
 import type { MessagingCollectionPage, MessagingItem } from "../../../workbench/messaging-collection";
 import type { ResourceViewDefinition } from "../../../workbench/resource-view-definition";
@@ -28,6 +32,11 @@ let sourceMode: DemoSourceMode = "healthy";
 let presentation = definition.presentation.active;
 let metadata = false;
 let selectedId: string | null = null;
+let targetId: string | null = null;
+let selectedIds: ReadonlySet<string> = new Set();
+let expandedIds = new Set<string>();
+const initializedRoots = new Set<string>();
+let arrival = 0;
 let showDetails = false;
 let format: "text" | "json" = "text";
 let latestContext: PreviewContext;
@@ -44,6 +53,8 @@ function render(): void {
 	const focused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 	const focusControl = focused?.dataset.control;
 	const focusCommand = focused?.dataset.command;
+	const focusToggle = focused?.dataset.treeToggle;
+	const focusBranch = focused?.dataset.selectBranch;
 	const terminalFocused = focused?.classList.contains("terminal");
 	const selection = focused instanceof HTMLInputElement ? [focused.selectionStart, focused.selectionEnd] as const : null;
 	const view = parseResourceViewDefinition({
@@ -56,9 +67,22 @@ function render(): void {
 	const incoming = fixtureSnapshot(items, query, sourceMode);
 	const page = reconcileMessagingPage(cache.get(incoming.queryId), incoming);
 	cache.set(page.queryId, page);
-	if (selectedId && !page.items.some((item) => item.id === selectedId)) selectedId = null;
-	if (client === "tui" && !selectedId) selectedId = page.items[0]?.id ?? null;
-	latestContext = { view, page, client, mode: sourceMode, selectedId, showDetails, metadata, format, searchText };
+	const index = indexMessagingHierarchy(page.items);
+	for (const root of index.hierarchy.rootIds) {
+		if (initializedRoots.has(root)) continue;
+		initializedRoots.add(root);
+		if (view.hierarchy?.initialExpansion === "all") {
+			for (const id of hierarchySubtreeIds(index, root)) if (index.children.get(id)!.length) expandedIds.add(id);
+		} else if (view.hierarchy?.initialExpansion === "roots") expandedIds.add(root);
+	}
+	selectedIds = new Set([...selectedIds].filter((id) => index.byId.get(id)?.selectable));
+	const rows = visibleHierarchyRows(index, expandedIds, matchingMessageHierarchyIds(index, query.search));
+	const visibleIds = new Set(rows.map((row) => row.node.id));
+	while (selectedId && !visibleIds.has(selectedId)) selectedId = index.byId.get(selectedId)?.parentId ?? null;
+	if (client === "tui" && !selectedId) selectedId = rows[0]?.node.id ?? null;
+	if (!targetId || !index.children.get(targetId)?.length) targetId = index.preorder.find((id) => index.children.get(id)!.length) ?? null;
+	const tree = { index, rows, expandedIds, selectedIds, summaries: hierarchySelectionSummaries(index, selectedIds) };
+	latestContext = { view, page, client, mode: sourceMode, selectedId, showDetails, metadata, format, searchText, tree, targetId };
 	const capabilities = new Set(client === "web" ? ["table", "adaptive-cards", "timeline", "charts", "text"] : ["table", "text"]);
 	const features = resolveResourceViewFeatures(view, INBOX_TRIAGE_REGISTRY, capabilities);
 	const renderer = features.presentation.find((feature) => feature.id === presentation);
@@ -68,11 +92,14 @@ function render(): void {
 		(incomplete ? `<div class="view-warning">Mail is unavailable. ${retained ? `${retained} previously loaded resource${retained === 1 ? " is" : "s are"} retained in this query.` : "There is no previous mail snapshot for this query."} Counts are incomplete.</div>` : "") +
 		metadataPanel(latestContext) + `<div class="view-content">${resourceContent(latestContext)}</div>` +
 		sourceBar(latestContext) + detailPeek(latestContext);
+	for (const checkbox of stage.querySelectorAll<HTMLInputElement>("[data-select-branch]")) {
+		checkbox.indeterminate = checkbox.dataset.state === "mixed";
+	}
 	element("query-fingerprint").textContent = fingerprint(messagingQueryIdentity(query));
 	const captions = {
 		web: `Browser / ${currentRenderer(latestContext).label}. HTML demo adapter; Coleo's application uses Tabulator and AdaptiveCardCollection.`,
 		cli: "CLI / a one-shot text or JSON snapshot of the same projected fields. Command syntax shown here is proposed, not installed.",
-		tui: "TUI / an HTML terminal preview. Focus the list, then use j/k, Enter, m, or r. Native OpenTUI wiring is next.",
+		tui: "TUI / HTML keyboard preview. j/k moves focus; left/right folds branches; Space selects a loaded branch; Shift+Space selects one message. Native OpenTUI wiring is next.",
 	};
 	element("adapter-caption").innerHTML = `${html(captions[client])}${renderer?.diagnostic ? ` <strong>${html(renderer.diagnostic)}.</strong>` : ""}`;
 	for (const button of document.querySelectorAll<HTMLButtonElement>("[data-client]")) {
@@ -92,8 +119,11 @@ function render(): void {
 	element("contract-inspector").textContent = JSON.stringify({
 		view: view.id, query, queryIdentity: page.queryId, resourceIds: page.items.map((item) => item.id),
 		fields: currentRenderer(latestContext).fields, commands: view.commands, sourceStates: page.sources, features,
+		hierarchy: hierarchySnapshot(tree, currentRenderer(latestContext).fields), focusId: selectedId,
 	}, null, 2);
 	const restore = terminalFocused ? stage.querySelector<HTMLElement>(".terminal")
+		: focusToggle ? stage.querySelector<HTMLElement>(`[data-tree-toggle="${CSS.escape(focusToggle)}"]`)
+			: focusBranch ? stage.querySelector<HTMLElement>(`[data-select-branch="${CSS.escape(focusBranch)}"]`)
 		: focusControl ? stage.querySelector<HTMLElement>(`[data-control="${CSS.escape(focusControl)}"]`)
 			: focusCommand ? stage.querySelector<HTMLElement>(`[data-command="${CSS.escape(focusCommand)}"]`) : null;
 	if (restore) {
@@ -113,19 +143,32 @@ function runCommand(command: string): void {
 		showDetails = true;
 		message(`inbox.open / ${selectedId}. Showing fixture detail; no browser-only route is part of the contract.`);
 	} else if (command === "inbox.mark-read") {
-		const selected = latestContext.page.items.find((item) => item.id === selectedId);
-		if (!selected) return message("Select a resource before marking it read.");
-		if (!selected.unread) return message("This resource is already read in the demo fixture.");
-		if (selected.sourceId === "mail" && sourceMode === "unavailable") {
+		const targets = selectedIds.size ? [...selectedIds] : selectedId ? [selectedId] : [];
+		const selected = targets.map((id) => latestContext.tree.index.byId.get(id)).filter((node) => node?.selectable);
+		if (selected.some((node) => node!.data.sourceId === "mail") && sourceMode === "unavailable") {
 			return message("Recover mail before updating this fixture resource. Unavailable sources do not report successful writes.");
 		}
-		items = items.map((item) => item.id === selectedId ? {
-			...item, unread: false, requiresAction: item.sourceId === "mail" ? false : item.requiresAction,
-			revision: `${item.revision}-read`,
-		} : item);
-		message(`inbox.mark-read / ${selectedId}. Updated only the demo fixture; live application mutations still belong to the API.`);
+		const eligible = selected.filter((node) => node!.data.unread && (node!.data.sourceId !== "mail" ||
+			node!.data.locations?.some((location) => location.mailbox === "inbox" && !location.seen)));
+		if (!eligible.length) return message("Select an unread message or a loaded branch with unread Inbox messages.");
+		items = markHierarchyMessagesRead(items, new Set(eligible.map((node) => node!.id)));
+		message(`inbox.mark-read / ${eligible.length} eligible loaded resources updated in the local fixture. Sent-only context is read-only.`);
 	}
 	render();
+}
+
+function selectBranch(id: string, scope: "node" | "subtree" = "subtree"): void {
+	selectedIds = toggleHierarchySelection(latestContext.tree.index, selectedIds, id, scope);
+	selectedId = id;
+	message(`${selectedIds.size} explicit loaded members selected. Collapsing does not clear them; incoming replies are not auto-selected.`);
+	render();
+}
+
+function setQuery(value: unknown): void {
+	const next = normalizeMessagingQuery(value);
+	const scope = (candidate: typeof query) => JSON.stringify({ ...candidate, sort: null, limit: null });
+	if (scope(next) !== scope(query)) { selectedIds = new Set(); selectedId = null; }
+	query = next;
 }
 
 stage.addEventListener("click", (event) => {
@@ -136,25 +179,51 @@ stage.addEventListener("click", (event) => {
 		showDetails = true;
 		message(`Selected ${selectedId}. Its identity survives every presentation and client switch.`);
 		render();
+	} else if (target.dataset.treeToggle) {
+		const id = target.dataset.treeToggle;
+		if (expandedIds.has(id)) expandedIds.delete(id); else expandedIds.add(id);
+		render();
 	} else if (target.dataset.command) runCommand(target.dataset.command);
 	else if (target.dataset.control === "metadata") { metadata = !metadata; render(); }
 	else if (target.dataset.control === "close-details") { showDetails = false; render(); }
+	else if (target.dataset.control === "clear-selection") { selectedIds = new Set(); render(); }
+	else if (target.dataset.control === "expand-all") {
+		for (const id of latestContext.tree.index.preorder) if (latestContext.tree.index.children.get(id)!.length) expandedIds.add(id);
+		render();
+	}
+	else if (target.dataset.control === "collapse-all") { expandedIds.clear(); render(); }
+	else if (target.dataset.control === "select-focused" && selectedId) selectBranch(selectedId);
+	else if (target.dataset.control === "select-node" && selectedId) selectBranch(selectedId, "node");
+	else if (target.dataset.control === "select-target" && targetId) selectBranch(targetId);
+	else if (target.dataset.control === "toggle-target" && targetId) {
+		if (expandedIds.has(targetId)) expandedIds.delete(targetId); else expandedIds.add(targetId);
+		render();
+	}
+	else if (target.dataset.control === "add-reply") {
+		items = addReviewReply(items, ++arrival);
+		message("A reply arrived in the API branch. Its new ID is unselected; an earlier whole-branch selection becomes mixed.");
+		render();
+	}
 	else if (target.dataset.format === "text" || target.dataset.format === "json") { format = target.dataset.format; render(); }
 });
 
 stage.addEventListener("input", (event) => {
 	if (!(event.target instanceof HTMLInputElement) || event.target.dataset.control !== "search") return;
 	searchText = event.target.value;
-	query = normalizeMessagingQuery({ ...query, search: searchText });
+	setQuery({ ...query, search: searchText });
 	render();
 });
 
 stage.addEventListener("change", (event) => {
+	if (event.target instanceof HTMLInputElement && event.target.dataset.selectBranch) {
+		selectBranch(event.target.dataset.selectBranch); return;
+	}
 	if (!(event.target instanceof HTMLSelectElement)) return;
 	const { value } = event.target;
-	if (event.target.dataset.control === "facet") query = normalizeMessagingQuery({ ...query, facet: value });
-	else if (event.target.dataset.control === "sort") query = normalizeMessagingQuery({ ...query, sort: { field: "timestamp", direction: value } });
+	if (event.target.dataset.control === "facet") setQuery({ ...query, facet: value });
+	else if (event.target.dataset.control === "sort") setQuery({ ...query, sort: { field: "timestamp", direction: value } });
 	else if (event.target.dataset.control === "presentation") presentation = value;
+	else if (event.target.dataset.control === "group-target") targetId = value;
 	render();
 });
 
@@ -181,11 +250,22 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("[data-highlig
 
 stage.addEventListener("keydown", (event) => {
 	if (client !== "tui" || !(event.target instanceof HTMLElement) || !event.target.classList.contains("terminal")) return;
-	const index = latestContext.page.items.findIndex((item) => item.id === selectedId);
+	const index = latestContext.tree.rows.findIndex((row) => row.node.id === selectedId);
 	if (["j", "k", "ArrowDown", "ArrowUp"].includes(event.key)) {
 		event.preventDefault();
 		const step = event.key === "j" || event.key === "ArrowDown" ? 1 : -1;
-		selectedId = latestContext.page.items[Math.max(0, Math.min(latestContext.page.items.length - 1, index + step))]?.id ?? null;
+		selectedId = latestContext.tree.rows[Math.max(0, Math.min(latestContext.tree.rows.length - 1, index + step))]?.node.id ?? null;
+		render();
+	} else if (event.key === " " && selectedId) {
+		event.preventDefault(); selectBranch(selectedId, event.shiftKey ? "node" : "subtree");
+	} else if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && selectedId) {
+		event.preventDefault();
+		const children = latestContext.tree.index.children.get(selectedId)!;
+		if (event.key === "ArrowRight") {
+			if (expandedIds.has(selectedId) && children.length) selectedId = children[0]!;
+			else expandedIds.add(selectedId);
+		} else if (expandedIds.has(selectedId) && children.length) expandedIds.delete(selectedId);
+		else selectedId = latestContext.tree.index.byId.get(selectedId)?.parentId ?? selectedId;
 		render();
 	} else if (["Enter", "m", "r"].includes(event.key)) {
 		event.preventDefault();
@@ -197,7 +277,8 @@ function validateDefinition(): void {
 	try {
 		const parsed = parseResourceViewDefinition(JSON.parse(editor.value), INBOX_TRIAGE_REGISTRY);
 		definition = parsed;
-		query = normalizeMessagingQuery(parsed.query);
+		setQuery(parsed.query);
+		initializedRoots.clear(); expandedIds.clear(); selectedIds = new Set();
 		searchText = query.search;
 		presentation = parsed.presentation.active;
 		metadata = parsed.insights?.active !== null && parsed.insights?.active !== undefined;
@@ -226,7 +307,8 @@ element("reset-definition").addEventListener("click", () => { editor.value = JSO
 
 element("download-snapshot").addEventListener("click", () => {
 	const payload = { view: latestContext.view, query: latestContext.page.query,
-		sources: latestContext.page.sources, complete: latestContext.page.summaries.complete, items: snapshotRows(latestContext) };
+		sources: latestContext.page.sources, complete: latestContext.page.summaries.complete, items: snapshotRows(latestContext),
+		hierarchy: hierarchySnapshot(latestContext.tree, currentRenderer(latestContext).fields) };
 	const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }));
 	const link = document.createElement("a");
 	link.href = url; link.download = `${definition.id.replace(/[^a-z0-9._-]/gi, "-")}.snapshot.json`; link.click();
@@ -257,5 +339,8 @@ element("test-count").textContent = String(data.verification.passed);
 element("assertion-count").textContent = String(data.verification.assertions);
 element("report-provenance").textContent = `Generated ${data.generatedAt.replace("T", " ").slice(0, 19)} UTC\nWorking tree based on ${data.revision} · actual checks run during generation`;
 element("outage-chart").innerHTML = outageChart(data.items);
+if (data.threading) element("thread-api-proof").textContent =
+	`Real API fixture: ${data.threading.threads} conversations, ${data.threading.messages} messages. ` +
+	`POST /api/mail/threads/review/selection resolved exactly ${data.threading.apiBranchMemberIds.length} API-branch members with a revision guard.`;
 updatePaging(data.paging.after.length);
 render();

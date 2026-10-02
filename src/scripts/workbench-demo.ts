@@ -1,11 +1,14 @@
 /** Generate a self-contained, evidence-backed report; optionally serve it on a separate local port. */
 import { resolve } from "node:path";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 
 import { INBOX_TRIAGE_REGISTRY } from "../workbench/examples/inbox-triage-registry";
 import { parseResourceViewDefinition } from "../workbench/resource-view-definition";
 import { collectPagingEvidence, verifyWorkbenchDemo } from "./workbench-demo/evidence";
 import { DEMO_ITEMS } from "./workbench-demo/fixtures";
 import { renderWorkbenchReport } from "./workbench-demo/render-report";
+import { captureThreadFixture, createThreadFixtureApp } from "./workbench-demo/thread-fixture-api";
 
 import type { WorkbenchReportData } from "./workbench-demo/types";
 
@@ -15,12 +18,34 @@ const outputPath = resolve(root, "docs/public/workbench-report.html");
 
 const verification = verifyWorkbenchDemo(root);
 const paging = await collectPagingEvidence();
-const blueprint = await Bun.file(resolve(root, "src/workbench/examples/inbox-triage.json")).json();
+const blueprint = await Bun.file(resolve(root, "src/workbench/examples/threaded-inbox.json")).json();
 parseResourceViewDefinition(blueprint, INBOX_TRIAGE_REGISTRY);
+const fixtureDirectory = await mkdtemp(resolve(tmpdir(), "coleo-thread-report-"));
+let reportItems = [...DEMO_ITEMS];
+let threading: WorkbenchReportData["threading"];
+try {
+	const threads = await captureThreadFixture(fixtureDirectory);
+	reportItems = DEMO_ITEMS.map((item) => {
+		if (item.detail.kind !== "thread") return item;
+		const thread = threads.find((candidate) => candidate.id === (item.detail.kind === "thread" ? item.detail.threadId : ""))!;
+		return { ...item, thread, revision: thread.revision, timestamp: thread.lastMessageAt,
+			source: `${thread.mailbox} · ${thread.messageCount} messages (${thread.mailboxMessageCount} in mailbox)`,
+			unread: thread.unreadCount > 0, requiresAction: thread.mailbox === "inbox" && thread.unreadCount > 0 };
+	});
+	const review = threads.find((thread) => thread.id === "review")!;
+	const selection = await createThreadFixtureApp(fixtureDirectory).request("/mail/threads/review/selection", {
+		method: "POST", headers: { "content-type": "application/json" },
+		body: JSON.stringify({ revision: review.revision, branchIds: ["message:<review-api@example.test>"] }),
+	});
+	if (!selection.ok) throw new Error("API branch-selection evidence failed");
+	const receipt = await selection.json() as { memberIds: string[] };
+	threading = { threads: threads.length, messages: threads.reduce((sum, thread) => sum + thread.messageCount, 0),
+		apiBranchMemberIds: receipt.memberIds };
+} finally { await rm(fixtureDirectory, { recursive: true, force: true }); }
 const revision = Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"], { cwd: root });
 const data: WorkbenchReportData = {
 	generatedAt: new Date().toISOString(), revision: new TextDecoder().decode(revision.stdout).trim(),
-	blueprint, items: DEMO_ITEMS, paging, verification,
+	blueprint, items: reportItems, paging, verification, threading,
 };
 const build = await Bun.build({
 	entrypoints: [resolve(directory, "browser/report-client.ts")], target: "browser", format: "iife", minify: true,

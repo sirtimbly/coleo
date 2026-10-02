@@ -14,6 +14,7 @@ import { eventStore } from "../../nats/jetstream";
 import { normalizePostmarkInbound, sendPostmarkMessage } from "../../mail/postmark-gateway";
 import { sendCloudflareMessage } from "../../mail/cloudflare-gateway";
 import { loadConfig } from "../../config";
+import { createMailThreadRoutes } from "./mail-threads";
 
 interface MailContext {
   Variables: {
@@ -62,14 +63,16 @@ interface FolderInfo {
   lastModified: Date;
 }
 
-export function createMailRoutes() {
+export function createMailRoutes(options: { coleoDir?: string } = {}) {
   const app = new Hono<MailContext>();
 
   app.use("*", async (c, next) => {
-    const coleoDir = getColeoDir();
+    const coleoDir = options.coleoDir ?? getColeoDir();
     c.set("coleoDir", coleoDir);
     await next();
   });
+
+  app.route("/threads", createMailThreadRoutes());
 
   // Enhanced API for downstream gateways
   

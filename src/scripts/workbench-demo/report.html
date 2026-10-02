@@ -34,7 +34,7 @@
           <rect width="470" height="270" rx="12" fill="url(#diagram-grid)"/>
           <rect x="107" y="24" width="256" height="83" rx="9" fill="#fff" stroke="#2457da" stroke-width="1.5"/>
           <text x="235" y="48" text-anchor="middle" class="svg-caption" fill="#597587">NAMED RESOURCE VIEW</text>
-          <text x="235" y="72" text-anchor="middle" class="svg-title" fill="#172a3a">inbox-triage</text>
+          <text x="235" y="72" text-anchor="middle" class="svg-title" fill="#172a3a">inbox-thread-review</text>
           <text x="235" y="93" text-anchor="middle" class="svg-small" fill="#597587">query · fields · commands · composition</text>
           <path d="M235 107v34M78 159v-18h314v18M235 141v18" fill="none" stroke="#2457da" stroke-width="1.5"/>
           <circle cx="235" cy="141" r="4" fill="#2457da"/>
@@ -49,7 +49,7 @@
 
     <section class="report-section demo-section" id="demo" aria-labelledby="demo-title">
       <div class="section-heading"><div><p class="eyebrow">Interactive contract demonstration</p><h2 id="demo-title">Take the same view somewhere else.</h2></div><span class="evidence-tag"><span class="status-light"></span> Actual headless modules</span></div>
-      <p class="section-deck">Switch clients and presentations. The query and resource IDs stay put. Search, sort, select a resource, or reveal the optional metadata region.</p>
+      <p class="section-deck">Expand a conversation, select an API or terminal branch, then collapse it or change clients. The same message IDs, nested relationships, and selected members travel through every presentation.</p>
       <div class="demo-layout">
         <aside class="anatomy" aria-label="ResourceView hierarchy">
           <p class="mini-heading">Anatomy of a resource view</p>
@@ -57,20 +57,40 @@
           <button class="anatomy-item" data-highlight="secondary" type="button"><span class="layer-number">2</span><span><strong>Secondary toolbar</strong><small>Sort, presentation, selection, and insight controls.</small></span></button>
           <button class="anatomy-item" data-highlight="metadata" type="button"><span class="layer-number optional-layer">↳</span><span><strong>Optional metadata</strong><small>A visualization in the browser. A summary in a terminal.</small></span></button>
           <button class="anatomy-item" data-highlight="content" type="button"><span class="layer-number">↳</span><span><strong>Resource presentation</strong><small>Grid, cards, or custom content over the same projected resources.</small></span></button>
-          <div class="anatomy-note"><strong>Try this</strong><p>Select Cards, then switch to TUI. The capability resolver chooses a text-list fallback and explains the substitution.</p></div>
+          <div class="anatomy-note"><strong>Try this</strong><p>Select the API branch checkbox, collapse that branch, then switch to TUI. Add a reply: the new message stays unselected and the branch becomes mixed.</p></div>
         </aside>
         <div class="demo-workspace">
           <div class="workspace-topline"><div class="segmented" role="group" aria-label="Client preview"><button type="button" data-client="web" aria-pressed="true">Browser</button><button type="button" data-client="cli" aria-pressed="false">CLI snapshot</button><button type="button" data-client="tui" aria-pressed="false">TUI preview</button></div><span class="query-stamp">Query <code id="query-fingerprint">…</code></span></div>
           <div id="resource-stage" class="resource-stage" tabindex="-1" aria-label="Interactive resource view"></div>
           <div class="adapter-caption" id="adapter-caption"></div>
-          <div class="demo-feedback" role="status" aria-live="polite" id="demo-feedback">Eight illustrative resources. Local demo actions do not change live Coleo data.</div>
+          <div class="demo-feedback" role="status" aria-live="polite" id="demo-feedback">Two real API-projected fixture conversations with eight nested messages. Local demo actions do not change live Coleo data.</div>
         </div>
       </div>
     </section>
 
+    <section class="report-section" id="threading" aria-labelledby="threading-title">
+      <div class="section-heading"><div><p class="eyebrow">A portable relationship and selection model</p><h2 id="threading-title">A branch is a relationship, not a renderer trick.</h2></div><span class="evidence-tag">Mail thread API + shared tree model</span></div>
+      <div class="thread-contract"><pre aria-label="Branching review conversation">Delivery blueprint review
+└─ Root message from Tim
+   ├─ API branch: scoped paging
+   │  └─ Verify partial sources
+   └─ Terminal branch: one named view
+      └─ TUI visibility
+
+Handoff conversation
+└─ Root handoff note
+   └─ CLI: export the tree
+      └─ TUI: keyboard groups</pre><div><ul>
+        <li><strong>Relationships come from the API.</strong> Message-ID, In-Reply-To, and References establish actual parent links; input order and neighboring rows do not.</li>
+        <li><strong>Focus, expansion, and selection are separate.</strong> A collapsed branch keeps selected descendants. Mixed checkboxes describe partly selected groups.</li>
+        <li><strong>Selection is an explicit snapshot.</strong> A branch selects loaded member IDs, including hidden descendants. New replies remain unselected. Query-scope changes clear selection; sorting and client changes preserve it.</li>
+        <li><strong>Coverage stays visible.</strong> Unknown children and missing parents are represented explicitly. A complete loaded group is not a promise about future messages.</li>
+      </ul><p class="small-note" id="thread-api-proof">Thread fixtures are loaded through GET /api/mail/threads. Branch membership is also verified through the revision-guarded selection API.</p></div></div>
+    </section>
+
     <section class="report-section" id="recovery" aria-labelledby="recovery-title">
       <div class="section-heading"><div><p class="eyebrow">Failure semantics you can exercise</p><h2 id="recovery-title">Unavailable doesn’t mean empty.</h2></div><span class="evidence-tag">Working reconciliation function</span></div>
-      <div class="recovery-layout"><div class="recovery-copy"><p>Lose a source, and its last loaded section remains visible in that query. Confirm the source is genuinely empty, and the old rows disappear. Counts are marked incomplete during an outage.</p><div class="source-buttons" role="group" aria-label="Mail source scenario"><button type="button" data-source-mode="unavailable">Make mail unavailable</button><button type="button" data-source-mode="empty">Return an empty mailbox</button><button type="button" data-source-mode="healthy" class="quiet-button">Recover mail</button></div><p class="scenario-note" role="status" id="source-lab-note">Mail is healthy. These buttons feed fixture snapshots through the real reconciliation contract.</p><p class="small-note">The experiment uses local fixture snapshots, not a live Maildir or WebSocket disconnect. Socket recovery and fetch scheduling are still a delivery gate.</p></div><figure class="outage-figure"><div id="outage-chart"></div><figcaption>All-eight-resource reference fixture: rows received versus rows retained from a previous snapshot. The active view above may have a narrower scope.</figcaption></figure></div>
+      <div class="recovery-layout"><div class="recovery-copy"><p>Lose a source, and its last loaded section remains visible in that query—including its reply relationships and selected descendants. Confirm the source is genuinely empty, and the old rows disappear. Counts are marked incomplete during an outage.</p><div class="source-buttons" role="group" aria-label="Mail source scenario"><button type="button" data-source-mode="unavailable">Make mail unavailable</button><button type="button" data-source-mode="empty">Return an empty mailbox</button><button type="button" data-source-mode="healthy" class="quiet-button">Recover mail</button></div><p class="scenario-note" role="status" id="source-lab-note">Mail is healthy. These buttons feed fixture snapshots through the real reconciliation contract.</p><p class="small-note">The experiment uses local fixture snapshots, not a live Maildir or WebSocket disconnect. Socket recovery and fetch scheduling are still a delivery gate.</p></div><figure class="outage-figure"><div id="outage-chart"></div><figcaption>Eight root resources, including two conversations. Retaining a thread retains its attached hierarchy; nested messages do not become independently paged roots.</figcaption></figure></div>
     </section>
 
     <section class="report-section evidence-section" id="evidence" aria-labelledby="evidence-title">
@@ -84,8 +104,8 @@
 
     <section class="report-section" id="blueprint" aria-labelledby="blueprint-title">
       <div class="section-heading"><div><p class="eyebrow">One named definition, several adapters</p><h2 id="blueprint-title">The hierarchy is in the definition.</h2></div><button type="button" class="quiet-button" id="download-snapshot">Download view snapshot <span aria-hidden="true">↓</span></button></div>
-      <p class="section-deck">Edit this resolved JSON example. Valid edits update the local preview after a typing pause; invalid bindings keep the last valid definition active. JSON here is the wire model—YAML versus JSONC authoring remains an open choice.</p>
-      <div class="definition-layout"><div class="definition-editor"><div class="editor-topline"><span><i class="file-dot"></i>inbox-triage · resolved definition</span><div><button type="button" id="break-binding">Try an invalid binding</button><button type="button" id="reset-definition">Reset example</button></div></div><label class="sr-only" for="definition-source">Resource view JSON definition</label><textarea id="definition-source" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea><div id="definition-status" class="definition-status" role="status" aria-live="polite">Valid definition. Local preview is active.</div></div><aside class="definition-notes"><h3>What travels with a view</h3><dl><dt>Query + identity</dt><dd>A normalized scope, filters, sorting, and stable resource references.</dd><dt>Both toolbar tiers</dt><dd>Named semantic slots and registered controls. Flags and key actions are alternative interfaces to the same purposes.</dd><dt>Optional metadata</dt><dd>Insight choices, selected fields, and capability-aware summary fallbacks.</dd><dt>Resource presentation</dt><dd>Registered grid, card, and custom renderers; field choices survive the adapter change.</dd><dt>Commands</dt><dd>Allowlisted references. The API remains responsible for validation, authorization, and actual mutations.</dd></dl><div class="identity-note">Panel settings remain independent overrides. Changing the live preview doesn’t rewrite the source example or another panel.</div></aside></div>
+      <p class="section-deck">This named view declares initial expansion and loaded-descendant selection alongside both toolbars, optional metadata, and presentation choices. Valid JSON edits update the local preview; invalid bindings keep the last valid definition active.</p>
+      <div class="definition-layout"><div class="definition-editor"><div class="editor-topline"><span><i class="file-dot"></i>inbox-thread-review · resolved definition</span><div><button type="button" id="break-binding">Try an invalid binding</button><button type="button" id="reset-definition">Reset example</button></div></div><label class="sr-only" for="definition-source">Resource view JSON definition</label><textarea id="definition-source" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea><div id="definition-status" class="definition-status" role="status" aria-live="polite">Valid definition. Local preview is active.</div></div><aside class="definition-notes"><h3>What travels with a view</h3><dl><dt>Query + identity</dt><dd>A normalized scope, filters, sorting, and stable resource references.</dd><dt>Both toolbar tiers</dt><dd>Named semantic slots and registered controls. Flags and key actions are alternative interfaces to the same purposes.</dd><dt>Optional metadata</dt><dd>Insight choices, selected fields, and capability-aware summary fallbacks.</dd><dt>Resource presentation</dt><dd>Registered grid, card, and custom renderers; field choices survive the adapter change.</dd><dt>Commands</dt><dd>Allowlisted references. The API remains responsible for validation, authorization, and actual mutations.</dd></dl><div class="identity-note">Panel settings remain independent overrides. Changing the live preview doesn’t rewrite the source example or another panel.</div></aside></div>
       <details class="inspector"><summary>Inspect the active normalized query, fields, and capability decisions</summary><pre id="contract-inspector"></pre></details>
     </section>
 

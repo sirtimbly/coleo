@@ -24,6 +24,11 @@ export interface WorkbenchReportData {
 	readonly items: readonly MessagingItem[];
 	readonly paging: PagingEvidence;
 	readonly verification: VerificationEvidence;
+	readonly threading?: {
+		readonly threads: number;
+		readonly messages: number;
+		readonly apiBranchMemberIds: readonly string[];
+	};
 }
 
 export type DemoClient = "web" | "cli" | "tui";

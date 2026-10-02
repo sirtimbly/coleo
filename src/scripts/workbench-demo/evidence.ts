@@ -13,6 +13,8 @@ const TEST_PATHS = [
 	"src/api/__tests__/brain-swarm.test.ts", "src/web/__tests__/websocket-reconnect.test.ts",
 	"src/web/__tests__/refresh-gate.test.ts",
 	"src/scripts/__tests__/workbench-demo-report.test.ts",
+	"src/api/__tests__/mail-threads.test.ts",
+	"src/mail/__tests__/maildir.test.ts",
 ];
 
 export function verifyWorkbenchDemo(root: string): VerificationEvidence {

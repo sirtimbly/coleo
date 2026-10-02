@@ -137,11 +137,13 @@ export class Maildir {
   /**
    * Read all messages from a folder
    */
-  async list(folder: "new" | "cur" | "sent" | "archive" = "new"): Promise<MailMessage[]> {
+  async list(folder: "new" | "cur" | "sent" | "archive" = "new", options: { strict?: boolean } = {}): Promise<MailMessage[]> {
     const folderPath = join(this.basePath, folder);
+    let folderRead = false;
     
     try {
       const files = await readdir(folderPath);
+      folderRead = true;
       const messages: MailMessage[] = [];
       
       for (const file of files) {
@@ -164,6 +166,7 @@ export class Maildir {
                   const message = await this.read(join(filePath, subFile));
                   messages.push(message);
                 } catch (err) {
+                  if (options.strict) throw err;
                   console.error(`Failed to read archived message ${subFile}:`, err);
                 }
               }
@@ -175,6 +178,7 @@ export class Maildir {
           const message = await this.read(filePath);
           messages.push(message);
         } catch (err) {
+          if (options.strict) throw err;
           console.error(`Failed to read message ${file}:`, err);
         }
       }
@@ -183,7 +187,9 @@ export class Maildir {
       messages.sort((a, b) => b.date.getTime() - a.date.getTime());
       
       return messages;
-    } catch {
+    } catch (error) {
+      const missingFolder = !folderRead && error instanceof Error && "code" in error && error.code === "ENOENT";
+      if (options.strict && !missingFolder) throw error;
       // Folder doesn't exist yet
       return [];
     }

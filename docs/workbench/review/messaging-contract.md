@@ -188,6 +188,12 @@ Browser race/reconnect validation is still required when 1b changes the loading
 controller. No complete 1a/1b or terminal rewrite acceptance is implied by the
 initial contract/paging slice.
 
+The subsequent [nested-group and threading contract](./threading-contract.md)
+adds source-owned reply relationships, independent visibility/focus, and explicit
+loaded-member selection. The report now opens the `inbox-thread-review` named
+view over API-projected Maildir fixtures; the original `inbox-triage` example
+remains available as the initial composition fixture.
+
 ## Interactive HTML report
 
 <a href="/workbench-report.html" target="_blank" rel="noopener">Open the interactive workbench report</a>.
