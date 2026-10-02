@@ -131,6 +131,8 @@ export function SetupPage() {
   const [searchParams] = useWorkspaceSearchParams();
   const requestedFile = searchParams.get("file");
   const openedLinkRef = useRef<string | null>(null);
+  const linkAttemptRef = useRef<{ path: string; retry: number } | null>(null);
+  const [linkRetry, setLinkRetry] = useState(0);
   const initialLinkedFile = useRef(requestedFile);
   const [status, setStatus] = useState<ProjectSetupStatus | null>(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
@@ -144,7 +146,11 @@ export function SetupPage() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [fileScope, setFileScope] = useState<SetupFileScope>('all');
   const [helpOpen, setHelpOpen] = useState(() => !hasDismissedProjectSetupHelp());
-  const [error, setError] = useState<string | null>(null);
+  const [editorError, setEditorError] = useState<{ message: string; linkedFile: string | null } | null>(null);
+  const error = editorError?.message ?? null;
+  const setError = useCallback((message: string | null, linkedFile: string | null = null) => {
+    setEditorError(message ? { message, linkedFile } : null);
+  }, []);
   const [hint, setHint] = useState<string | null>(null);
   const [result, setResult] = useState<{
     mode: 'ai' | 'structured';
@@ -152,7 +158,7 @@ export function SetupPage() {
     formatterError?: string;
   } | null>(null);
   const [openedModifiedAt, setOpenedModifiedAt] = useState<Map<string, string>>(() => new Map());
-  const requestedPathRef = useRef<string | null>(null);
+  const fileRequestRef = useRef(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -171,7 +177,7 @@ export function SetupPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [setError]);
 
   useEffect(() => {
     markProjectSetupOpened();
@@ -208,12 +214,12 @@ export function SetupPage() {
     setHelpOpen(false);
   };
 
-  const loadFileIntoEditor = useCallback(async (path: string) => {
-    requestedPathRef.current = path;
+  const loadFileIntoEditor = useCallback(async (path: string, linkedFile = false): Promise<boolean> => {
+    const requestId = ++fileRequestRef.current;
     setEditorLoading(true);
     try {
       const { file } = await api.getProjectSetupFile(path);
-      if (requestedPathRef.current !== path) return;
+      if (fileRequestRef.current !== requestId) return false;
       setOpenedModifiedAt((current) => new Map(current).set(file.path, file.modifiedAt));
       setEditor({
         path: file.path,
@@ -222,29 +228,40 @@ export function SetupPage() {
         savedContent: file.content,
         readOnly: file.readOnly === true,
       });
+      if (linkedFile) openedLinkRef.current = path;
+      return true;
     } catch (err) {
-      if (requestedPathRef.current === path) {
-        setError(err instanceof Error ? err.message : 'Failed to open the file');
+      if (fileRequestRef.current === requestId) {
+        setError(err instanceof Error ? err.message : 'Failed to open the file', linkedFile ? path : null);
       }
+      return false;
     } finally {
-      if (requestedPathRef.current === path) setEditorLoading(false);
+      if (fileRequestRef.current === requestId) setEditorLoading(false);
     }
-  }, []);
+  }, [setError]);
 
   useEffect(() => {
     if (loading || !status || !requestedFile || saving || openedLinkRef.current === requestedFile) return;
-    const initialLink = openedLinkRef.current === null && requestedFile === initialLinkedFile.current;
+    // A failed attempt waits for an explicit retry; ordinary renders must not
+    // repeatedly fetch or discard edits made while the linked file was unavailable.
+    if (linkAttemptRef.current?.path === requestedFile && linkAttemptRef.current.retry === linkRetry) return;
+    const initialLink = linkAttemptRef.current === null && requestedFile === initialLinkedFile.current;
     if (!isOpenableFile(requestedFile)) { setError('This file cannot be edited here.'); return; }
-    if (!initialLink && dirty && !window.confirm('Discard your unsaved edits and open the linked file?')) return;
-    openedLinkRef.current = requestedFile;
+    if (!initialLink && dirty && !window.confirm('Discard your unsaved edits and open the linked file?')) {
+      if (linkAttemptRef.current?.path === requestedFile) {
+        linkAttemptRef.current = { path: requestedFile, retry: linkRetry };
+      }
+      return;
+    }
+    linkAttemptRef.current = { path: requestedFile, retry: linkRetry };
     setFileScope('all');
     setError(null);
-    void loadFileIntoEditor(requestedFile);
-  }, [dirty, loadFileIntoEditor, loading, requestedFile, saving, status]);
+    void loadFileIntoEditor(requestedFile, true);
+  }, [dirty, linkRetry, loadFileIntoEditor, loading, requestedFile, saving, setError, status]);
 
   const changeFileScope = (nextScope: SetupFileScope) => {
     if (!editor || !status || nextScope === fileScope || saving) return;
-    requestedPathRef.current = null;
+    fileRequestRef.current += 1;
     setEditorLoading(false);
     if (setupPathMatchesScope(editor.path, nextScope, CANONICAL_PLAN_PATH)) {
       setFileScope(nextScope);
@@ -268,7 +285,6 @@ export function SetupPage() {
     setResult(null);
     setError(null);
     if (targetPath === CANONICAL_PLAN_PATH) {
-      requestedPathRef.current = null;
       const canonicalPlan = status.canonicalPlan;
       setEditor(canonicalPlan ? {
         path: canonicalPlan.path,
@@ -316,7 +332,7 @@ export function SetupPage() {
   const createPlan = () => {
     if (!status || saving) return;
     if (dirty && !window.confirm('Discard your unsaved edits and start a new plan?')) return;
-    requestedPathRef.current = null;
+    fileRequestRef.current += 1;
     setEditorLoading(false);
     setEditor({
       path: CANONICAL_PLAN_PATH,
@@ -578,7 +594,19 @@ export function SetupPage() {
           </div>
 
           {error ? (
-            <div role="alert" className="mt-2 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>
+            <div role="alert" className="mt-2 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
+              {error}
+              {editorError?.linkedFile === requestedFile && editorError.linkedFile ? (
+                <button
+                  type="button"
+                  onClick={() => setLinkRetry((current) => current + 1)}
+                  disabled={editorLoading || saving}
+                  className="ml-2 font-medium underline"
+                >
+                  Retry opening file
+                </button>
+              ) : null}
+            </div>
           ) : null}
           {result ? (
             <div role="status" className={`mt-2 rounded-md border px-3 py-2 text-xs ${result.formatterError ? 'border-warning/30 bg-warning/10 text-warning' : 'border-success/30 bg-success/10 text-success'}`}>

@@ -1,6 +1,186 @@
 import { expect, test } from '@playwright/test';
 import { installMockApi } from './support/fixtures';
 
+for (const unsavedEdits of [false, true]) {
+  test(`retries a failed linked file ${unsavedEdits ? 'with unsaved edits' : 'without changing the URL'}`, async ({ page }) => {
+    await installMockApi(page);
+    await page.addInitScript(() => localStorage.setItem('coleo_project_setup_help_dismissed', 'true'));
+    const canonicalPlan = {
+      path: '.project/plan.md', content: '# Plan\n', contentHash: 'original', size: 7,
+      modifiedAt: new Date().toISOString(),
+    };
+    const linkedFile = { ...canonicalPlan, path: '.project/decisions/review.md', content: '# Linked decision\n' };
+    await page.route('**/api/project-setup', (route) => route.fulfill({ json: {
+      required: false, completed: true, canonicalPlan, canonicalTaskCount: 1, taskCount: 0,
+      projectDocuments: [canonicalPlan, linkedFile], projectTree: [canonicalPlan.path, linkedFile.path],
+      candidates: [], defaultContent: '',
+    } }));
+    let requests = 0;
+    await page.route('**/api/project-setup/file?*', (route) => {
+      requests += 1;
+      return route.fulfill(requests === 1
+        ? { status: 503, json: { error: 'Temporary file outage' } }
+        : { json: { file: linkedFile } });
+    });
+    await page.goto(`/setup?file=${encodeURIComponent(linkedFile.path)}`);
+    const editor = page.getByRole('textbox');
+    const alert = page.getByRole('alert');
+    await expect(alert).toContainText('Temporary file outage');
+    await expect(editor).toHaveValue(canonicalPlan.content);
+    const originalUrl = page.url();
+    if (unsavedEdits) {
+      await editor.fill('# Edits made after the outage\n');
+      const confirmation = page.waitForEvent('dialog').then(async (dialog) => {
+        expect(dialog.message()).toContain('Discard your unsaved edits');
+        await dialog.dismiss();
+      });
+      await Promise.all([confirmation, alert.getByRole('button', { name: 'Retry opening file' }).click()]);
+      await expect(editor).toHaveValue('# Edits made after the outage\n');
+      expect(requests).toBe(1);
+      page.once('dialog', (nextDialog) => void nextDialog.accept());
+    }
+    await alert.getByRole('button', { name: 'Retry opening file' }).click();
+    await expect(editor).toHaveValue(linkedFile.content);
+    await expect(alert).toHaveCount(0);
+    expect(page.url()).toBe(originalUrl);
+    expect(requests).toBe(2);
+  });
+}
+
+for (const saveSucceeds of [false, true]) {
+  test(`a cancelled retry stays consumed after a ${saveSucceeds ? 'successful' : 'failed'} save`, async ({ page }) => {
+    await installMockApi(page);
+    await page.addInitScript(() => localStorage.setItem('coleo_project_setup_help_dismissed', 'true'));
+    const canonicalPlan = {
+      path: '.project/plan.md', content: '# Plan\n', contentHash: 'original', size: 7,
+      modifiedAt: new Date().toISOString(),
+    };
+    const linkedFile = { ...canonicalPlan, path: 'linked.md' };
+    await page.route('**/api/project-setup', (route) => route.fulfill({ json: {
+      required: false, completed: true, canonicalPlan, canonicalTaskCount: 1, taskCount: 0,
+      projectDocuments: [canonicalPlan, linkedFile], projectTree: [canonicalPlan.path, linkedFile.path],
+      candidates: [], defaultContent: '',
+    } }));
+    let linkedRequests = 0;
+    await page.route('**/api/project-setup/file?*', (route) => {
+      linkedRequests += 1;
+      return route.fulfill({ status: 503, json: { error: 'Temporary file outage' } });
+    });
+    await page.route('**/api/project-setup/file', (route) => route.fulfill(saveSucceeds
+      ? { json: { file: { ...canonicalPlan, content: '# Unsaved edits\n', contentHash: 'saved' } } }
+      : { status: 409, json: { error: 'File changed on disk' } }));
+    await page.goto(`/setup?file=${encodeURIComponent(linkedFile.path)}`);
+    const editor = page.getByRole('textbox');
+    const retryButton = page.getByRole('button', { name: 'Retry opening file' });
+    await expect(retryButton).toBeVisible();
+    await editor.fill('# Unsaved edits\n');
+    let confirmations = 0;
+    page.on('dialog', async (dialog) => {
+      confirmations += 1;
+      await dialog.dismiss();
+    });
+    await retryButton.click();
+    await expect.poll(() => confirmations).toBe(1);
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    if (saveSucceeds) await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+    else await expect(page.getByRole('alert')).toHaveText('File changed on disk');
+    await editor.fill('# Further edits\n');
+    await expect(editor).toHaveValue('# Further edits\n');
+    expect(confirmations).toBe(1);
+    expect(linkedRequests).toBe(1);
+  });
+}
+
+for (const staleFailure of [false, true]) {
+  test(`a superseded same-path ${staleFailure ? 'failure' : 'success'} cannot overwrite tree navigation`, async ({ page }) => {
+    await installMockApi(page);
+    await page.addInitScript(() => localStorage.setItem('coleo_project_setup_help_dismissed', 'true'));
+    const canonicalPlan = {
+      path: '.project/plan.md', content: '# Plan\n', contentHash: 'original', size: 7,
+      modifiedAt: new Date().toISOString(),
+    };
+    const linkedFile = { ...canonicalPlan, path: 'linked.md', content: '# Latest file\n' };
+    await page.route('**/api/project-setup', (route) => route.fulfill({ json: {
+      required: false, completed: true, canonicalPlan, canonicalTaskCount: 1, taskCount: 0,
+      projectDocuments: [canonicalPlan, linkedFile], projectTree: [canonicalPlan.path, linkedFile.path],
+      candidates: [], defaultContent: '',
+    } }));
+    let requests = 0;
+    let finishFirst!: () => void;
+    const pendingFirst = new Promise<void>((resolve) => { finishFirst = resolve; });
+    await page.route('**/api/project-setup/file?*', async (route) => {
+      requests += 1;
+      if (requests === 1) {
+        await pendingFirst;
+        await route.fulfill(staleFailure
+          ? { status: 503, json: { error: 'Stale file outage' } }
+          : { json: { file: { ...linkedFile, content: '# Stale file\n' } } });
+      } else await route.fulfill({ json: { file: linkedFile } });
+    });
+    await page.goto(`/setup?file=${encodeURIComponent(linkedFile.path)}`);
+    await expect.poll(() => requests).toBe(1);
+    await page.getByRole('treeitem', { name: 'linked.md', exact: true }).click();
+    const editor = page.getByRole('textbox');
+    await expect(editor).toHaveValue(linkedFile.content);
+    const staleResponse = page.waitForResponse((response) => response.url().includes('/project-setup/file?'));
+    finishFirst();
+    await (await staleResponse).finished();
+    await page.evaluate(() => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    }));
+    await expect(editor).toHaveValue(linkedFile.content);
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Retry opening file' })).toHaveCount(0);
+    expect(requests).toBe(2);
+  });
+}
+
+for (const openAnotherFile of [false, true]) {
+  test(`unrelated save errors do not retry a failed deep link ${openAnotherFile ? 'after tree navigation' : 'in the current file'}`, async ({ page }) => {
+    await installMockApi(page);
+    await page.addInitScript(() => localStorage.setItem('coleo_project_setup_help_dismissed', 'true'));
+    const canonicalPlan = {
+      path: '.project/plan.md', content: '# Plan\n', contentHash: 'original', size: 7,
+      modifiedAt: new Date().toISOString(),
+    };
+    const linkedFile = { ...canonicalPlan, path: '.project/decisions/review.md' };
+    const otherFile = { ...canonicalPlan, path: 'notes.md', content: '# Notes\n' };
+    await page.route('**/api/project-setup', (route) => route.fulfill({ json: {
+      required: false, completed: true, canonicalPlan, canonicalTaskCount: 1, taskCount: 0,
+      projectDocuments: [canonicalPlan, linkedFile, otherFile],
+      projectTree: [canonicalPlan.path, linkedFile.path, otherFile.path], candidates: [], defaultContent: '',
+    } }));
+    let linkedRequests = 0;
+    await page.route('**/api/project-setup/file?*', (route) => {
+      if (new URL(route.request().url()).searchParams.get('path') === otherFile.path) {
+        return route.fulfill({ json: { file: otherFile } });
+      }
+      linkedRequests += 1;
+      return route.fulfill({ status: 503, json: { error: 'Temporary file outage' } });
+    });
+    await page.route('**/api/project-setup/file', (route) => route.fulfill({
+      status: 409, json: { error: 'File changed on disk' },
+    }));
+    await page.goto(`/setup?file=${encodeURIComponent(linkedFile.path)}`);
+    const originalUrl = page.url();
+    const editor = page.getByRole('textbox');
+    const retryButton = page.getByRole('button', { name: 'Retry opening file' });
+    await expect(retryButton).toBeVisible();
+    if (openAnotherFile) {
+      await page.getByRole('treeitem', { name: 'notes.md', exact: true }).click();
+      await expect(editor).toHaveValue(otherFile.content);
+      await expect(retryButton).toHaveCount(0);
+    }
+    await editor.fill('# Unsaved edits\n');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByRole('alert')).toHaveText('File changed on disk');
+    await expect(retryButton).toHaveCount(0);
+    await expect(editor).toHaveValue('# Unsaved edits\n');
+    expect(page.url()).toBe(originalUrl);
+    expect(linkedRequests).toBe(1);
+  });
+}
+
 test('a cancelled deep link opens after the current document is saved', async ({ page }) => {
   await installMockApi(page);
   await page.addInitScript(() => localStorage.setItem('coleo_project_setup_help_dismissed', 'true'));

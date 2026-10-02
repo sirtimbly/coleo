@@ -67,8 +67,8 @@ export function activateTaskHandoff(db: Database, handoffId: string): { taskId: 
 		const task = db.query("SELECT id, status, dependency_blocked, source_ref, plan_line_uid FROM tasks WHERE id = ?")
 			.get(handoff.task_id) as HandoffTask | null;
 		if (!task) throw HttpError.notFound(`Task not found: ${handoff.task_id}`);
-		if (!["draft", "pending"].includes(task.status)) {
-			throw new HttpError(409, "Only draft or pending tasks can be activated");
+		if (task.status !== "draft") {
+			throw new HttpError(409, "Only draft tasks can be activated");
 		}
 		let payload: unknown;
 		try { payload = JSON.parse(handoff.payload); }
