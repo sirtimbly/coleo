@@ -29,6 +29,8 @@ export interface MessagingItem {
 	readonly requiresAction: boolean;
 	readonly severity: "info" | "success" | "warning" | "danger";
 	readonly brainCategory?: Exclude<MessagingBrainCategory, "all">;
+	readonly actor?: { readonly kind: "brain" | "arm" | "user"; readonly id: string; readonly displayName: string };
+	readonly facts?: readonly { readonly label: string; readonly value: string }[];
 	/** Semantic detail handoff, resolved by each client rather than a browser route. */
 	readonly detail:
 		| { readonly kind: "record"; readonly itemKey: string }

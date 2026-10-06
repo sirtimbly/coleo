@@ -158,14 +158,17 @@ export function InboxCardTable({
 	onOpen,
 	density,
 	className,
+	serverSort,
 }: {
 	items: InboxProjectionItem[];
 	renderCard: (item: InboxProjectionItem) => ReactNode;
 	onOpen: (item: InboxProjectionItem) => void;
 	density?: "compact" | "comfortable";
 	className?: string;
+	serverSort?: "asc" | "desc";
 }) {
 	const containerRef = useRef<HTMLDivElement>(null);
+	const initialServerSort = useRef(serverSort);
 	const tableRef = useRef<Tabulator | null>(null);
 	const syncRef = useRef<(() => void) | null>(null);
 	const expandedIdsRef = useRef(new Set<string>());
@@ -359,9 +362,10 @@ export function InboxCardTable({
 				responsiveLayout: "hide",
 				renderVertical: "virtual",
 				renderVerticalBuffer: 420,
-				initialSort: [{ column: "timestampValue", dir: "desc" }],
+				initialSort: [{ column: "timestampValue", dir: initialServerSort.current ?? "desc" }],
 				selectableRows: false,
 				columnDefaults: {
+					headerSort: initialServerSort.current === undefined,
 					headerSortTristate: true,
 					vertAlign: "middle",
 				},
@@ -437,11 +441,16 @@ export function InboxCardTable({
 
 			instance.on("rowClick", (event, row) => {
 				const target = event.target;
-				if (target instanceof Element && target.closest(".coleo-inbox-card-detail, button, a, input, select, textarea")) return;
+				// React may replace an icon during its click handler. The original target can be detached
+				// before Tabulator sees the event; its immutable composed path still identifies the control.
+				if (event.composedPath().some((entry) => entry instanceof Element &&
+					entry.matches(".coleo-inbox-card-detail, button, a, input, select, textarea")) ||
+					target instanceof Element && target.closest(".coleo-inbox-card-detail, button, a, input, select, textarea")) return;
 				toggleRow(row);
 			});
 			instance.on("rowDblClick", (event, row) => {
-				if (event.target instanceof Element && event.target.closest(".coleo-inbox-card-detail")) return;
+				if (event.composedPath().some((entry) => entry instanceof Element && entry.matches(".coleo-inbox-card-detail")) ||
+					event.target instanceof Element && event.target.closest(".coleo-inbox-card-detail")) return;
 				const data = readRow(row);
 				const item = data ? runtimeRef.current.itemsById.get(data.id) : undefined;
 				if (item) runtimeRef.current.onOpen(item);
@@ -470,6 +479,10 @@ export function InboxCardTable({
 	useEffect(() => {
 		syncRef.current?.();
 	}, [items, renderCard]);
+
+	useEffect(() => {
+		if (serverSort) tableRef.current?.setSort("timestampValue", serverSort);
+	}, [serverSort]);
 
 	return (
 		<div

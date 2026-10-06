@@ -133,5 +133,7 @@ and application-wide integration following the accepted plan.
 - Desktop and 390px mobile layouts were inspected; document width stays within
   the viewport. Accessibility and best-practices snapshot checks score 100.
 
-This establishes relationship and selection contracts; the complete mixed-source
-Messaging endpoint and its live refresh owner remain the next 1a/1b delivery gates.
+The [production Messaging integration](./messaging-production.md) subsequently
+connects these models to the mixed-source collection endpoint and the actual
+React Inbox refresh owner. The evidence above remains the threading/demo slice's
+record; the integration has separate API/model/browser checks.

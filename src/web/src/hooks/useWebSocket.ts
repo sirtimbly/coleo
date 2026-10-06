@@ -43,6 +43,7 @@ interface UseWebSocketOptions {
 interface ConnectionSnapshot {
 	connected: boolean;
 	authenticated: boolean;
+	recoveryRevision: number;
 }
 
 interface Subscriber {
@@ -53,6 +54,7 @@ interface Subscriber {
 const DISCONNECTED_SNAPSHOT: ConnectionSnapshot = {
 	connected: false,
 	authenticated: false,
+	recoveryRevision: 0,
 };
 
 export class SharedWebSocketTransport {
@@ -65,6 +67,7 @@ export class SharedWebSocketTransport {
 	private pingTimer: ReturnType<typeof setInterval> | null = null;
 	private reconnectAttempts = 0;
 	private shouldReconnect = false;
+	private hasAuthenticated = false;
 
 	getSnapshot = (): ConnectionSnapshot => this.snapshot;
 
@@ -116,7 +119,7 @@ export class SharedWebSocketTransport {
 
 		socket.onopen = () => {
 			this.reconnectAttempts = 0;
-			this.setSnapshot({ connected: true, authenticated: false });
+			this.setSnapshot({ connected: true, authenticated: false, recoveryRevision: this.snapshot.recoveryRevision });
 			this.send({ type: "auth", apiKey: api.getApiKey() ?? "" });
 		};
 
@@ -125,12 +128,14 @@ export class SharedWebSocketTransport {
 				const message = JSON.parse(String(event.data)) as WebSocketMessage;
 				if (message.type === "auth") {
 					if (message.success) {
-						this.setSnapshot({ connected: true, authenticated: true });
+						this.setSnapshot({ connected: true, authenticated: true,
+							recoveryRevision: this.snapshot.recoveryRevision + Number(this.hasAuthenticated) });
+						this.hasAuthenticated = true;
 						for (const channel of this.channelCounts.keys()) {
 							this.send({ type: "subscribe", channel });
 						}
 					} else {
-						this.setSnapshot({ connected: true, authenticated: false });
+						this.setSnapshot({ connected: true, authenticated: false, recoveryRevision: this.snapshot.recoveryRevision });
 					}
 					return;
 				}
@@ -156,7 +161,7 @@ export class SharedWebSocketTransport {
 		socket.onclose = () => {
 			if (this.socket === socket) this.socket = null;
 			this.stopHeartbeat();
-			this.setSnapshot(DISCONNECTED_SNAPSHOT);
+			this.setSnapshot({ ...DISCONNECTED_SNAPSHOT, recoveryRevision: this.snapshot.recoveryRevision });
 			if (!this.shouldReconnect || this.subscribers.size === 0) return;
 			const delay = Math.min(1_000 * 2 ** this.reconnectAttempts, 30_000);
 			this.reconnectAttempts += 1;
@@ -189,7 +194,7 @@ export class SharedWebSocketTransport {
 			socket.onclose = null;
 			socket.close();
 		}
-		this.setSnapshot(DISCONNECTED_SNAPSHOT);
+		this.setSnapshot({ ...DISCONNECTED_SNAPSHOT, recoveryRevision: this.snapshot.recoveryRevision });
 	};
 
 	private send(message: Record<string, unknown>): void {
@@ -211,7 +216,7 @@ export class SharedWebSocketTransport {
 	private setSnapshot(next: ConnectionSnapshot): void {
 		if (
 			next.connected === this.snapshot.connected &&
-			next.authenticated === this.snapshot.authenticated
+			next.authenticated === this.snapshot.authenticated && next.recoveryRevision === this.snapshot.recoveryRevision
 		) {
 			return;
 		}

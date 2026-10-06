@@ -133,6 +133,7 @@ export class EventStore implements IEventStore {
 
   async queryEvents(options: QueryOptions): Promise<EventData[]> {
     if (!this.js || !this.jsm) {
+      if (options.strict) throw new Error('Event store is not initialized');
       console.log('[EventStore] JetStream not initialized, cannot query events');
       return [];
     }
@@ -208,13 +209,15 @@ export class EventStore implements IEventStore {
               ...data,
               sequence: data.sequence ?? streamSequence,
             });
-          } catch {
+          } catch (error) {
+            if (options.strict) throw error;
           }
         }
       } finally {
         await consumer.delete().catch(() => false);
       }
     } catch (err) {
+      if (options.strict) throw err;
       console.error('[EventStore] Failed to query events:', err);
     }
 

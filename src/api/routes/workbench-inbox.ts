@@ -1,6 +1,8 @@
 import { Hono } from "hono";
+import { getColeoDir } from "../../config";
 
 import { HttpError } from "../middleware";
+import { loadMessagingCollection, parseMessagingRequest } from "../messaging-collection";
 import { listWorkbenchInboxPage, mapInboxAttention } from "../workbench-inbox-page";
 import { sanitizeEventData } from "./events";
 import { getInboxEventRecord } from "./inbox-event-record";
@@ -13,7 +15,7 @@ interface InboxContext {
 	Variables: { db: Database };
 }
 
-export function createWorkbenchInboxRoutes() {
+export function createWorkbenchInboxRoutes(options: { coleoDir?: string } = {}) {
 	const app = new Hono<InboxContext>();
 
 	app.get("/events/:itemKey", async (c) => {
@@ -42,8 +44,11 @@ export function createWorkbenchInboxRoutes() {
 		return c.json({ item });
 	});
 
-	app.get("/", (c) => {
+	app.get("/", async (c) => {
 		const db = c.get("db");
+		const query = c.req.query("query");
+		if (query !== undefined) return c.json(await loadMessagingCollection(db, options.coleoDir ?? getColeoDir(),
+			parseMessagingRequest(query), c.req.query("cursor")));
 		const profileId = c.req.query("profileId") ?? "local";
 		if (!db.query("SELECT id FROM workbench_profiles WHERE id = ?").get(profileId)) {
 			throw HttpError.notFound(`Workbench profile not found: ${profileId}`);

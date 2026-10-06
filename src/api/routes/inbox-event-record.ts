@@ -14,7 +14,8 @@ function matchesItem(event: EventData, itemKey: string): boolean {
 	if (!eventMatchesProject(event, getProjectScope().projectKey)) return false;
 	if (itemKey.startsWith("activity:")) return itemKey === `activity:${inboxActivityId(event)}`;
 	const prefix = `event:${event.type}:${event.timestamp}:`;
-	return itemKey.startsWith(prefix) && (event.armId ? itemKey === prefix + event.armId : /^\d+$/.test(itemKey.slice(prefix.length)));
+	return itemKey.startsWith(prefix) && (event.armId ? itemKey === prefix + event.armId ||
+		itemKey === `${prefix}${event.armId}:${event.sequence}` : /^\d+$/.test(itemKey.slice(prefix.length)));
 }
 
 export async function getInboxEventRecord(itemKey: string, rawSequence?: string): Promise<EventData> {

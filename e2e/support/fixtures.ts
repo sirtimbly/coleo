@@ -8,6 +8,8 @@
 /// <reference lib="dom" />
 
 import type { Page, Route } from "@playwright/test";
+import { fixtureMessagingPage, fixtureThreads } from "./messaging";
+import type { FixtureMail } from "./messaging";
 
 interface MockApiOptions {
 	arms?: unknown[];
@@ -19,6 +21,7 @@ interface MockApiOptions {
 	archive?: unknown[];
 	activity?: unknown[];
 	recentEvents?: unknown[];
+	workbenchInbox?: unknown[];
 }
 
 const now = "2026-08-02T12:00:00.000Z";
@@ -38,6 +41,8 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 	const viewRecords: Array<Record<string, unknown>> = [];
 	const cardInstances = new Map<string, unknown>();
 	const attentionRecords = new Map<string, Record<string, unknown>>();
+	const inboxRecords = [...options.inbox ?? []] as FixtureMail[];
+	const archiveRecords = [...options.archive ?? []] as FixtureMail[];
 
 	await page.addInitScript(() => {
 		window.localStorage.setItem("coleo-layout-mode", "classic");
@@ -111,7 +116,32 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 			});
 		}
 		if (path === "/api/workbench/inbox") {
+			if (url.searchParams.has("query")) return json(route, fixtureMessagingPage({ ...options, inbox: inboxRecords, archive: archiveRecords },
+				JSON.parse(url.searchParams.get("query")!), [...attentionRecords.values()]));
 			return json(route, { items: [], nextCursor: undefined });
+		}
+		if (path.startsWith("/api/mail/threads/")) {
+			const mailbox = url.searchParams.get("mailbox") === "sent" ? "sent" : url.searchParams.get("mailbox") === "archive" ? "archive" : "inbox";
+			const body = request.method() === "POST" ? request.postDataJSON() as { mailbox?: "inbox" | "sent" | "archive"; memberIds?: string[]; action?: string } : null;
+			const box = body?.mailbox ?? mailbox;
+			const threads = fixtureThreads({ ...options, inbox: inboxRecords, archive: archiveRecords }, box);
+			const id = decodeURIComponent(path.split("/")[4]!);
+			const thread = threads.find((candidate) => candidate.id === id || candidate.aliases?.includes(id));
+			if (!thread) return json(route, { error: "Thread not found" }, 404);
+			if (path.endsWith("/actions") && body) {
+				const nodes = thread.hierarchy.nodes.filter((node) => body.memberIds?.includes(node.id));
+				const ids = new Set(nodes.flatMap((node) => node.data.locations.filter((location) => location.mailbox === "inbox").map((location) => location.messageId)));
+				for (const message of inboxRecords) if (ids.has(message.id)) message.flags = { ...message.flags, seen: true };
+				if (body.action === "archive") { archiveRecords.push(...inboxRecords.filter((message) => ids.has(message.id))); for (let i = inboxRecords.length - 1; i >= 0; i--) if (ids.has(inboxRecords[i]!.id)) inboxRecords.splice(i, 1); }
+				return json(route, { ok: true, completedMessageIds: [...ids], skippedMemberIds: [] });
+			}
+			const allMessages = [...inboxRecords, ...options.sent ?? [], ...archiveRecords] as FixtureMail[];
+			const messages = thread.hierarchy.nodes.filter((node) => node.selectable).map((node) => {
+				const location = node.data.locations[0]!;
+				const message = allMessages.find((candidate) => candidate.id === location.messageId)!;
+				return { id: node.id, from: message.from, to: message.to, subject: message.subject, timestamp: message.date, body: message.body };
+			});
+			return json(route, { schemaVersion: 1, thread, messages });
 		}
 		if (path === "/api/workbench/attention" && request.method() === "GET") {
 			return json(route, { attention: [...attentionRecords.values()] });

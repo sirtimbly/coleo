@@ -33,6 +33,9 @@ import type {
   WorkbenchAttention,
   WorkbenchInboxRecord,
 } from '../../../types/adaptive-cards';
+import type { MessagingCollectionPage } from '../../../workbench/messaging-collection';
+import type { MessagingQuery, MessagingMailbox } from '../../../workbench/messaging-query';
+import type { MailThreadDetail } from '../../../workbench/mail-thread-detail';
 
 const API_BASE = '/api';
 
@@ -1607,6 +1610,36 @@ class ApiClient {
     return this.request<{ items: WorkbenchInboxRecord[]; nextCursor?: string }>(
       `/workbench/inbox?${query.toString()}`,
     );
+  }
+
+  async getMessagingCollection(query: MessagingQuery, cursor?: string, signal?: AbortSignal): Promise<MessagingCollectionPage> {
+    const params = new URLSearchParams({ query: JSON.stringify(query) });
+    if (cursor) params.set('cursor', cursor);
+    return this.request<MessagingCollectionPage>(`/workbench/inbox?${params}`, { signal });
+  }
+
+  async getMailThread(threadId: string, mailbox: MessagingMailbox, signal?: AbortSignal) {
+    return this.request<MailThreadDetail>(
+      `/mail/threads/${encodeURIComponent(threadId)}?mailbox=${mailbox}`, { signal });
+  }
+
+  async getThreadMessage(threadId: string, messageId: string, mailbox: MessagingMailbox, signal?: AbortSignal) {
+    return this.request<{ message: { id: string; from: string; subject: string; timestamp: string; body: string } }>(
+      `/mail/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}?mailbox=${mailbox}`, { signal });
+  }
+
+  async resolveMailThreadSelection(threadId: string, mailbox: MessagingMailbox, revision: string, branchIds: string[]) {
+    return this.request<{ memberIds: string[]; inboxMessageIds: string[]; revision: string }>(
+      `/mail/threads/${encodeURIComponent(threadId)}/selection`, {
+        method: 'POST', body: JSON.stringify({ mailbox, revision, branchIds }),
+      });
+  }
+
+  async executeMailThreadAction(threadId: string, mailbox: MessagingMailbox, revision: string, memberIds: string[], action: 'read' | 'archive') {
+    return this.request<{ ok: boolean; completedMessageIds: string[]; skippedMemberIds: string[] }>(
+      `/mail/threads/${encodeURIComponent(threadId)}/actions`, {
+        method: 'POST', body: JSON.stringify({ mailbox, revision, memberIds, action }),
+      });
   }
 
   async updateWorkbenchAttention(

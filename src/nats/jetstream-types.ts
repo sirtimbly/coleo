@@ -30,6 +30,8 @@ export interface QueryOptions {
   beforeSequence?: number;
   eventType?: string;
   latest?: boolean;
+  /** Callers replacing authoritative snapshots must distinguish a failed read from an empty stream. */
+  strict?: boolean;
 }
 
 export interface StateReconstructionOptions {

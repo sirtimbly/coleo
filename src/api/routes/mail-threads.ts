@@ -1,10 +1,13 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { join } from "node:path";
 
 import { MESSAGING_MAILBOXES } from "../../workbench/messaging-query";
 import { hierarchySubtreeIds, indexResourceHierarchy } from "../../workbench/resource-hierarchy";
-import { loadMailThreadProjections, readThreadMessage } from "../mail-thread-projection";
+import { findMailThread, loadMailThreadDetail, loadMailThreadProjections, readThreadMessage } from "../mail-thread-projection";
 import { HttpError } from "../middleware/error";
+import { Maildir } from "../../mail/maildir";
+import { broadcast } from "../websocket";
 
 import type { MailThreadProjection } from "../../workbench/mail-thread-model";
 
@@ -44,14 +47,15 @@ export function createMailThreadRoutes(): Hono<MailThreadContext> {
 	});
 	app.get("/:id", async (c) => {
 		const query = parseQuery(c.req.query());
-		const threads = await loadThreads(c.get("coleoDir"), query.mailbox);
-		const thread = threads.find((candidate) => candidate.id === c.req.param("id"));
-		if (!thread) throw HttpError.notFound("Mail thread not found in the requested mailbox");
-		return c.json({ schemaVersion: 1, thread });
+		let detail;
+		try { detail = await loadMailThreadDetail(c.get("coleoDir"), query.mailbox, c.req.param("id")); }
+		catch (error) { if (error instanceof HttpError) throw error; throw new HttpError(503, "Mail thread source is unavailable"); }
+		if (!detail) throw HttpError.notFound("Mail thread not found in the requested mailbox");
+		return c.json(detail);
 	});
 	app.get("/:id/messages/:messageId", async (c) => {
 		const query = parseQuery(c.req.query());
-		const thread = (await loadThreads(c.get("coleoDir"), query.mailbox)).find((candidate) => candidate.id === c.req.param("id"));
+		const thread = findMailThread(await loadThreads(c.get("coleoDir"), query.mailbox), c.req.param("id"));
 		if (!thread) throw HttpError.notFound("Mail thread not found in the requested mailbox");
 		let message;
 		try { message = await readThreadMessage(c.get("coleoDir"), thread, c.req.param("messageId")); }
@@ -66,7 +70,7 @@ export function createMailThreadRoutes(): Hono<MailThreadContext> {
 			branchIds: z.array(z.string().min(1)).min(1).max(200),
 		}).strict().safeParse(input);
 		if (!body.success) throw HttpError.badRequest(`Invalid branch selection: ${body.error.message}`);
-		const thread = (await loadThreads(c.get("coleoDir"), body.data.mailbox)).find((candidate) => candidate.id === c.req.param("id"));
+		const thread = findMailThread(await loadThreads(c.get("coleoDir"), body.data.mailbox), c.req.param("id"));
 		if (!thread) throw HttpError.notFound("Mail thread not found in the requested mailbox");
 		if (thread.revision !== body.data.revision) throw new HttpError(409, "Thread changed; reload before resolving this selection");
 		const index = indexResourceHierarchy(thread.hierarchy);
@@ -80,6 +84,36 @@ export function createMailThreadRoutes(): Hono<MailThreadContext> {
 			inboxMessageIds: [...new Set([...ids].flatMap((id) => index.byId.get(id)!.data.locations
 				.filter((location) => location.mailbox === "inbox").map((location) => location.messageId)))],
 		});
+	});
+	app.post("/:id/actions", async (c) => {
+		const input = await c.req.json().catch(() => { throw HttpError.badRequest("Thread action must be valid JSON"); });
+		const body = z.object({ mailbox: z.enum(MESSAGING_MAILBOXES).default("inbox"), revision: z.string().min(1),
+			memberIds: z.array(z.string().min(1)).min(1).max(1000), action: z.enum(["read", "archive"]) }).strict().safeParse(input);
+		if (!body.success) throw HttpError.badRequest(`Invalid thread action: ${body.error.message}`);
+		const thread = findMailThread(await loadThreads(c.get("coleoDir"), body.data.mailbox), c.req.param("id"));
+		if (!thread) throw HttpError.notFound("Mail thread not found");
+		if (thread.revision !== body.data.revision) throw new HttpError(409, "Thread changed; reload before acting on selected members");
+		const index = indexResourceHierarchy(thread.hierarchy);
+		const inboxIds = new Set<string>();
+		const skipped: string[] = [];
+		for (const id of new Set(body.data.memberIds)) {
+			const node = index.byId.get(id);
+			if (!node?.selectable) throw HttpError.badRequest(`Message is not part of this thread: ${id}`);
+			const locations = node.data.locations.filter((location) => location.mailbox === "inbox");
+			if (!locations.length) skipped.push(id);
+			for (const location of locations) inboxIds.add(location.messageId);
+		}
+		const store = new Maildir(join(c.get("coleoDir"), "mail", "inbox"));
+		const completed: string[] = [];
+		try {
+			for (const id of inboxIds) {
+				if (body.data.action === "read") await store.markSeen(id, { strict: true });
+				else await store.archive(id, { strict: true });
+				completed.push(id);
+			}
+		} catch { throw new HttpError(409, `Thread action stopped after ${completed.length} messages; reload before retrying`); }
+		broadcast("mail", body.data.action === "read" ? "mail.read" : "mail.archived", { messageIds: completed, threadId: thread.id });
+		return c.json({ ok: true, completedMessageIds: completed, skippedMemberIds: skipped });
 	});
 	return app;
 }

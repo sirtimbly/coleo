@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createThreadFixtureApp, writeThreadFixture } from "../../scripts/workbench-demo/thread-fixture-api";
 import { THREADED_MAIL_FIXTURE } from "../../workbench/examples/threaded-mail";
+import { Maildir } from "../../mail/maildir";
 
 import type { MailThreadProjection } from "../../workbench/mail-thread-model";
 
@@ -83,4 +84,57 @@ describe("mail thread API", () => {
 		expect(selection.memberIds).toHaveLength(3);
 		expect(selection.memberIds).toContain("message:<new-api@example.test>");
 	});
+
+	it("mutates exact selected Inbox messages, preserves read-only sent context, and rejects stale/foreign actions", async () => {
+		const app = createThreadFixtureApp(directory);
+		const thread = (await (await app.request("/mail/threads/review")).json() as { thread: MailThreadProjection }).thread;
+		const act = (revision: string, memberIds: string[], action = "read") => app.request("/mail/threads/review/actions", {
+			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ revision, memberIds, action }),
+		});
+		expect((await act(thread.revision, ["unknown"])).status).toBe(400);
+		const read = await act(thread.revision, ["message:<review-api@example.test>", "message:<review-terminal@example.test>"]);
+		expect(read.status).toBe(200);
+		expect(await read.json()).toMatchObject({ completedMessageIds: ["review-api"], skippedMemberIds: ["message:<review-terminal@example.test>"] });
+		const next = (await (await app.request("/mail/threads/review")).json() as { thread: MailThreadProjection }).thread;
+		expect(next.hierarchy.nodes.find((node) => node.id === "message:<review-api@example.test>")?.data.unread).toBe(false);
+		expect(next.hierarchy.nodes.find((node) => node.id === "message:<review-api-check@example.test>")?.data.unread).toBe(true);
+		expect((await act(thread.revision, ["message:<review-api-check@example.test>"])).status).toBe(409);
+		const archived = await act(next.revision, ["message:<review-api@example.test>"], "archive");
+		expect(archived.status).toBe(200);
+		const after = (await (await app.request("/mail/threads/review")).json() as { thread: MailThreadProjection }).thread;
+		expect(after.hierarchy.nodes.find((node) => node.id === "message:<review-api@example.test>")?.data.locations[0]?.mailbox).toBe("archive");
+		expect(after.hierarchy.nodes.find((node) => node.id === "message:<review-api-check@example.test>")?.data.locations[0]?.mailbox).toBe("inbox");
+	});
+
+	it("retries a transient message move during snapshot enumeration without reporting an empty/unavailable thread", async () => {
+		const original = Maildir.prototype.read;
+		let reads = 0;
+		const read = spyOn(Maildir.prototype, "read").mockImplementation(async function (this: Maildir, path: string) {
+			if (++reads === 1) throw Object.assign(new Error("Message moved between new and cur"), { code: "ENOENT" });
+			return original.call(this, path);
+		});
+		try {
+			const response = await createThreadFixtureApp(directory).request("/mail/threads/review");
+			expect(response.status).toBe(200);
+			expect((await response.json() as { thread: MailThreadProjection }).thread.messageCount).toBe(5);
+			expect(reads).toBeGreaterThan(8);
+		} finally { read.mockRestore(); }
+	});
+
+	for (const [code, attempts] of [["ENOENT", 3], ["EACCES", 1]] as const) {
+		it(`stops a persistent ${code} after ${attempts} snapshot attempts`, async () => {
+			const original = Maildir.prototype.list;
+			let archives = 0;
+			const list = spyOn(Maildir.prototype, "list").mockImplementation(async function (this: Maildir, folder, options) {
+				if (folder === "archive") { archives++; throw Object.assign(new Error("Unavailable fixture source"), { code }); }
+				return original.call(this, folder, options);
+			});
+			const log = spyOn(console, "error").mockImplementation(() => {});
+			try {
+				const response = await createThreadFixtureApp(directory).request("/mail/threads/review");
+				expect(response.status).toBe(503);
+				expect(archives).toBe(attempts);
+			} finally { list.mockRestore(); log.mockRestore(); }
+		});
+	}
 });

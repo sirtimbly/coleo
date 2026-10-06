@@ -207,7 +207,7 @@ export function createWorkbenchRoutes(options: WorkbenchRouteOptions = {}) {
 
 	app.route("/attention", createWorkbenchAttentionRoutes());
 	app.route("/cards", createWorkbenchCardRoutes());
-	app.route("/inbox", createWorkbenchInboxRoutes());
+	app.route("/inbox", createWorkbenchInboxRoutes({ coleoDir }));
 
 	app.get("/bootstrap", async (c) => {
 		const db = c.get("db");

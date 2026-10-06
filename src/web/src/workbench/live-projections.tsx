@@ -33,6 +33,7 @@ interface AttentionSnapshot {
 interface LiveProjectionContextValue {
 	connected: boolean;
 	authenticated: boolean;
+	recoveryRevision: number;
 	subscribe: (listener: SignalListener) => () => void;
 	attention: AttentionSnapshot;
 	clearAttention: (channels?: WorkbenchChannel[]) => void;
@@ -166,6 +167,7 @@ export function LiveProjectionProvider({ children }: { children: ReactNode }) {
 	const value = useMemo<LiveProjectionContextValue>(() => ({
 		connected: connection.connected,
 		authenticated: connection.authenticated,
+		recoveryRevision: connection.recoveryRevision,
 		subscribe,
 		attention,
 		clearAttention,
@@ -174,6 +176,7 @@ export function LiveProjectionProvider({ children }: { children: ReactNode }) {
 		clearAttention,
 		connection.authenticated,
 		connection.connected,
+		connection.recoveryRevision,
 		subscribe,
 	]);
 

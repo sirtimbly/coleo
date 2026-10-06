@@ -58,15 +58,27 @@ for (const initialState of ['connecting', 'rejected-auth'] as const) {
     expect(oldSocket.onmessage).toBeNull();
     expect(oldSocket.onclose).toBeNull();
     expect(FakeSocket.instances).toHaveLength(2);
-    expect(transport.getSnapshot()).toEqual({ connected: false, authenticated: false });
+		expect(transport.getSnapshot()).toMatchObject({ connected: false, authenticated: false });
     const replacement = FakeSocket.instances[1]!;
     replacement.open();
     expect(replacement.sent).toContainEqual({ type: 'auth', apiKey: 'test-key' });
     replacement.auth(true);
-    expect(transport.getSnapshot()).toEqual({ connected: true, authenticated: true });
+		expect(transport.getSnapshot()).toMatchObject({ connected: true, authenticated: true });
     expect(replacement.sent).toContainEqual({ type: 'subscribe', channel: 'arms' });
     replacement.onmessage?.({ data: JSON.stringify({ type: 'event', channel: 'arms' }) });
     expect(received).toHaveLength(1);
     unsubscribe();
   });
 }
+
+test('authenticated socket recovery has a monotonic revision independent of focus/network events', () => {
+	transport.addSubscriber({ channels: new Set(['mail']), onMessageRef: { current: undefined } });
+	FakeSocket.instances[0]!.open(); FakeSocket.instances[0]!.auth(true);
+	expect(transport.getSnapshot().recoveryRevision).toBe(0);
+	transport.reconnect();
+	FakeSocket.instances[1]!.open(); FakeSocket.instances[1]!.auth(true);
+	expect(transport.getSnapshot().recoveryRevision).toBe(1);
+	transport.reconnect();
+	FakeSocket.instances[2]!.open(); FakeSocket.instances[2]!.auth(true);
+	expect(transport.getSnapshot().recoveryRevision).toBe(2);
+});

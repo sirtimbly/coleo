@@ -22,6 +22,7 @@ export function ProjectionMenuTrigger({
 	onPress,
 	ariaLabel,
 	className,
+	isDisabled = false,
 }: {
 	label?: string;
 	summary: string;
@@ -29,12 +30,14 @@ export function ProjectionMenuTrigger({
 	onPress?: () => void;
 	ariaLabel?: string;
 	className?: string;
+	isDisabled?: boolean;
 }) {
 	return (
 		<Button
 			size="sm"
 			variant="secondary"
 			data-projection-menu-trigger
+			isDisabled={isDisabled}
 			onPress={onPress}
 			aria-label={ariaLabel ?? `${label}: ${summary}`}
 			className={cn(
@@ -59,15 +62,18 @@ export function ProjectionFilterMenu({
 	options,
 	onChange,
 	className,
+	isDisabled = false,
 }: {
 	label: string;
 	value: string;
 	options: readonly ProjectionFilterOption[];
 	onChange: (value: string) => void;
 	className?: string;
+	isDisabled?: boolean;
 }) {
 	const selected = options.find((option) => option.id === value) ?? options[0];
 	const handleSelectionChange = (selection: Selection) => {
+		if (isDisabled) return;
 		if (selection === "all") return;
 		const [next] = selection;
 		if (typeof next === "string" && options.some((option) => option.id === next)) {
@@ -85,6 +91,7 @@ export function ProjectionFilterMenu({
 				count={selected.count}
 				ariaLabel={`Filter ${label}: ${selected.label}`}
 				className={className}
+				isDisabled={isDisabled}
 			/>
 			<Dropdown.Popover placement="bottom start" className="min-w-56">
 				<Dropdown.Menu
@@ -114,11 +121,13 @@ export function ProjectionSearch({
 	onChange,
 	placeholder = "Search this view…",
 	className,
+	isDisabled = false,
 }: {
 	value: string;
 	onChange: (value: string) => void;
 	placeholder?: string;
 	className?: string;
+	isDisabled?: boolean;
 }) {
 	const handleChange = (event: ChangeEvent<HTMLInputElement>) => onChange(event.target.value);
 	return (
@@ -126,6 +135,7 @@ export function ProjectionSearch({
 			<Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
 			<input
 				type="search"
+				disabled={isDisabled}
 				name="projection-search"
 				aria-label={placeholder.replace(/…$/, "")}
 				autoComplete="off"

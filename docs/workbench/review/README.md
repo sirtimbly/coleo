@@ -8,6 +8,12 @@ documentation-only. Follow-up work starts with the [Messaging contract and
 execution baseline](./messaging-contract.md), including the first durable Inbox
 paging correction and early portable ResourceView composition contracts.
 
+The [production Messaging integration](./messaging-production.md) now connects
+the scoped collection contract and reply models to the actual React Inbox, with
+ordered refresh ownership, visible partial-source behavior, and socket-only
+recovery checks. Native CLI/TUI and the remaining resource recipes follow their
+own portability and extraction gates.
+
 Coleo has useful tools on a crowded bench. The strongest abstraction is already
 working: a resource can appear in several views without making its renderer
 the owner of the resource. Stable identities, targeted Inbox details, API-owned

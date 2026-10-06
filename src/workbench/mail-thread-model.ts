@@ -44,6 +44,7 @@ export interface MailThreadDefinition {
 	readonly lastMessageAt: string;
 	readonly hierarchy: ResourceHierarchy<MailThreadNodeData>;
 	readonly diagnostics: readonly { readonly code: string; readonly nodeId: string; readonly message: string }[];
+	readonly aliases?: readonly string[];
 }
 
 export interface MailThreadProjection extends MailThreadDefinition {
@@ -195,7 +196,10 @@ export function buildMailThreadDefinitions(
 		}
 		threads.push({ id: threadId, mailbox, subject, messageCount: group.length,
 			mailboxMessageCount: group.filter((message) => message.locations.some((location) => location.mailbox === mailbox)).length,
-			unreadCount, lastMessageAt, hierarchy: { schemaVersion: 1, rootIds: [rootId], nodes, complete: true }, diagnostics });
+			unreadCount, lastMessageAt, hierarchy: { schemaVersion: 1, rootIds: [rootId], nodes, complete: true }, diagnostics,
+			aliases: [...new Set(group.flatMap((message) => [message.rfcId, message.parentReference,
+				message.message.subject.replace(/^(?:(?:re|fwd?):\s*)+/i, "").trim()]).filter((value): value is string => !!value))],
+		});
 	}
 	return threads.sort((left, right) => compareMessagingPositions(
 		{ id: left.id, timestamp: left.lastMessageAt }, { id: right.id, timestamp: right.lastMessageAt }));

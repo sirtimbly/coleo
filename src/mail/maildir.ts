@@ -295,7 +295,23 @@ export class Maildir {
   /**
    * Mark a message as seen (move from new/ to cur/ with S flag)
    */
-  async markSeen(messageId: string): Promise<void> {
+  async markSeen(messageId: string, options: { strict?: boolean } = {}): Promise<void> {
+    if (options.strict) {
+      for (const folder of ["new", "cur"] as const) {
+        const files = await readdir(join(this.basePath, folder)).catch((error: unknown) => {
+          if (error instanceof Error && "code" in error && error.code === "ENOENT") return [];
+          throw error;
+        });
+        const filename = files.find((file) => file.split(":")[0] === messageId);
+        if (!filename) continue;
+        const flags = new Set((filename.split(":2,")[1] ?? "").split(""));
+        flags.add("S");
+        const target = `${messageId}:2,${[...flags].sort().join("")}`;
+        if (folder !== "cur" || filename !== target) await rename(join(this.basePath, folder, filename), join(this.basePath, "cur", target));
+        return;
+      }
+      throw new Error("Inbox message no longer exists; reload before retrying");
+    }
     const newPath = join(this.basePath, "new", messageId);
     const curPath = join(this.basePath, "cur", `${messageId}:2,S`);
     
@@ -309,7 +325,7 @@ export class Maildir {
   /**
    * Archive a message
    */
-  async archive(messageId: string): Promise<void> {
+  async archive(messageId: string, options: { strict?: boolean } = {}): Promise<void> {
     const now = new Date();
     const archiveDir = join(
       this.basePath,
@@ -323,7 +339,7 @@ export class Maildir {
     for (const folder of ["cur", "new"]) {
       try {
         const files = await readdir(join(this.basePath, folder));
-        const file = files.find((f) => f.startsWith(messageId));
+        const file = files.find((f) => options.strict ? f.split(":")[0] === messageId : f.startsWith(messageId));
         if (file) {
           await rename(
             join(this.basePath, folder, file),
@@ -331,10 +347,12 @@ export class Maildir {
           );
           return;
         }
-      } catch {
+      } catch (error) {
+        if (options.strict) throw error;
         continue;
       }
     }
+    if (options.strict) throw new Error("Inbox message no longer exists; reload before retrying");
   }
 
   /**

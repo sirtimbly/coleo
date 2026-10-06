@@ -16,6 +16,7 @@ export interface InboxItemData {
 	recentEvent?: RecentEvent;
 	brainCategory?: BrainActivityCategory;
 	targetRoute?: { pathname: string; search: string };
+	creator?: CardCreator;
 }
 
 function activityKind(entry: ActivityEntry): InboxProjectionItem["kind"] {
@@ -197,6 +198,7 @@ export function workbenchInboxToItem(record: WorkbenchInboxRecord): InboxItemDat
 }
 
 export function creatorForInboxItem(source: InboxItemData): CardCreator {
+	if (source.creator) return source.creator;
 	if (source.statusReport) return createArmCardCreator(source.statusReport.armId);
 	if (source.recentEvent?.armId) return createArmCardCreator(source.recentEvent.armId);
 	if (source.item.kind === "arm") {

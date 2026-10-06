@@ -36,6 +36,11 @@ folding and group selection; incoming resources are not silently added to an
 existing selection. Mail thread APIs supply actual reply ancestry and diagnose
 missing parents rather than deriving nesting from visual row order.
 
+The [production Messaging integration](./messaging-production.md) connects these
+contracts to the actual React Inbox: scoped reads, source freshness, root paging,
+nested selection, ordered refresh, and authenticated socket-only recovery. Its
+focused API/model/browser evidence is separate from the HTML demo evidence.
+
 ## What we are building
 
 Coleo owns the resources and their commands. The workbench arranges ways to see
@@ -573,6 +578,13 @@ behavior before extraction, and update this checklist as evidence lands.
 | 5b | `fix(web): consolidate remaining projection refresh owners` | 1b's proven controller | Tasks/Processes use one policy; no burst/order regressions |
 | 6 | Extend the CLI/TUI rewrite across remaining resource recipes | Early named Inbox proof; extracted models and blueprint contracts | Same query/action/composition semantics across clients, with documented terminal exceptions |
 | Later | Profile ownership, cross-client conflict handling, native spike | Actual product demand | Separate scoped plans; no blockage of Messaging or editor work |
+
+Initial 1a/1b implementation evidence is recorded in
+[Messaging API and React Inbox integration](./messaging-production.md): 100
+focused API/model tests and 18 browser checks, including source failures, ordered
+refresh, thread actions, direct details, and socket-only recovery. Large-retention
+latency profiling and the later independent-panel/named-view/terminal gates remain
+separately tracked; this evidence does not freeze the complete blueprint schema.
 
 Boundary fixes can accompany the first feature that needs them; the order is
 not permission to delay a demonstrated correctness defect until a later cleanup.

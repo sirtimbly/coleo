@@ -83,6 +83,20 @@ export function ProjectionInbox({
 	toolbarScreenId = "inbox",
 	loading = false,
 	className,
+	searchText,
+	onSearchChange,
+	serverProjected = false,
+	resultCount,
+	feedback,
+	selectionContent,
+	paginationContent,
+	secondaryContent,
+	serverSort,
+	loadError,
+	readActionLabel = "Mark read",
+	readActionDisabled = false,
+	readActionHasTargets,
+	queryControlsDisabled = false,
 }: {
 	title: string;
 	description?: string;
@@ -100,11 +114,27 @@ export function ProjectionInbox({
 	toolbarScreenId?: "inbox" | "mail";
 	loading?: boolean;
 	className?: string;
+	searchText?: string;
+	onSearchChange?: (value: string) => void;
+	serverProjected?: boolean;
+	resultCount?: number | null;
+	feedback?: ReactNode;
+	selectionContent?: ReactNode;
+	paginationContent?: ReactNode;
+	secondaryContent?: ReactNode;
+	serverSort?: "asc" | "desc";
+	loadError?: string | null;
+	readActionLabel?: string;
+	readActionDisabled?: boolean;
+	readActionHasTargets?: boolean;
+	queryControlsDisabled?: boolean;
 }) {
 	const [search, setSearch] = useState("");
-	const deferredSearch = useDeferredValue(search);
+	const effectiveSearch = searchText ?? search;
+	const deferredSearch = useDeferredValue(effectiveSearch);
 	const facet = facets.find((item) => item.id === activeFacet) ?? facets[0];
 	const filtered = useMemo(() => {
+		if (serverProjected) return items;
 		const query = deferredSearch.trim().toLowerCase();
 		return items.filter((item) => {
 			const facetMatches = facet?.predicate
@@ -114,18 +144,18 @@ export function ProjectionInbox({
 			if (!query) return true;
 			return `${item.title} ${item.summary} ${item.source ?? ""}`.toLowerCase().includes(query);
 		});
-	}, [deferredSearch, facet, items]);
+	}, [deferredSearch, facet, items, serverProjected]);
 	const facetOptions = useMemo<ProjectionFilterOption[]>(() =>
 		facets.map((item) => ({
 			id: item.id,
 			label: item.label,
-			count: items.reduce((count, candidate) => {
+			count: serverProjected ? item.id === activeFacet ? resultCount ?? undefined : undefined : items.reduce((count, candidate) => {
 				const matches = item.predicate
 					? item.predicate(candidate)
 					: !item.kinds || item.kinds.includes(candidate.kind);
 				return count + (matches ? 1 : 0);
 			}, 0),
-		})), [facets, items]);
+		})), [facets, items, serverProjected, activeFacet, resultCount]);
 	const unread = filtered.filter((item) => item.unread);
 	const isMail = toolbarScreenId === "mail";
 	const template = useToolbarTemplate(toolbarScreenId);
@@ -152,8 +182,9 @@ export function ProjectionInbox({
 		),
 		[`${toolbarPrefix}.search`]: (
 			<ProjectionSearch
-				value={search}
-				onChange={setSearch}
+				value={effectiveSearch}
+				isDisabled={queryControlsDisabled}
+				onChange={onSearchChange ?? setSearch}
 				placeholder={isMail ? "Search mail…" : "Search this inbox…"}
 				className="min-w-48 max-w-xs"
 			/>
@@ -162,12 +193,12 @@ export function ProjectionInbox({
 			<Button
 				size="sm"
 				variant="ghost"
-				isDisabled={unread.length === 0}
+				isDisabled={readActionDisabled || !(readActionHasTargets ?? unread.length > 0)}
 				onPress={() => onMarkAllRead(unread)}
 				className="shrink-0"
 			>
 				<CheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
-				Mark read
+				{readActionLabel}
 			</Button>
 		) : null,
 		[`${toolbarPrefix}.refresh`]: onRefresh ? (
@@ -182,6 +213,7 @@ export function ProjectionInbox({
 			"inbox.facet": (
 				<ProjectionFilterMenu
 					label="View"
+					isDisabled={queryControlsDisabled}
 					value={activeFacet}
 					options={facetOptions}
 					onChange={onFacetChange}
@@ -194,16 +226,18 @@ export function ProjectionInbox({
 
 	return (
 		<div className={cn("flex h-full min-h-0 flex-col bg-background", className)}>
-			<ToolbarTemplateRows template={template} widgets={toolbarWidgets} />
+			<ToolbarTemplateRows template={template} widgets={toolbarWidgets}
+				rowExtras={{ [template.rows[1].id]: <>{secondaryContent}{selectionContent}</>, [template.rows[0].id]: paginationContent }} />
+			{feedback}
 			<div className="min-h-0 flex-1">
 				{filtered.length === 0 ? (
 					<WorkbenchEmptyState
-						title={loading ? (isMail ? "Loading mail" : "Loading inbox") : "Nothing in this view"}
-						description={loading
+						title={loadError ? (isMail ? "Mail unavailable" : "Inbox unavailable") : loading ? (isMail ? "Loading mail" : "Loading inbox") : "Nothing in this view"}
+						description={loadError ?? (loading
 							? (isMail ? "Coleo is collecting the latest project mail." : "Coleo is collecting the latest project state.")
 							: isMail
 								? "New project messages will appear here."
-								: "New Brain, Arm, and project activity will stream into this projection."}
+								: "New Brain, Arm, and project activity will stream into this projection.")}
 					/>
 				) : display.mode === "cards" ? (
 					<AdaptiveCardCollection
@@ -226,7 +260,8 @@ export function ProjectionInbox({
 							items={filtered}
 							renderCard={(item) => renderCard(item, display.cardPresentation)}
 							onOpen={onOpen}
-							density={display.density}
+								density={display.density}
+								serverSort={serverSort}
 						/>
 					</Suspense>
 				)}

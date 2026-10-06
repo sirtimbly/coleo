@@ -30,12 +30,14 @@ export interface ToolbarWidgetRegistry {
 export function ToolbarTemplateRows({
 	template,
 	widgets,
+	rowExtras,
 }: {
 	template: WorkbenchToolbarTemplate;
 	widgets: ToolbarWidgetRegistry;
+	rowExtras?: Readonly<Record<string, ReactNode>>;
 }) {
 	return template.rows.map((row) => (
-		<ToolbarTemplateRow key={row.id} row={row} widgets={widgets} />
+		<ToolbarTemplateRow key={row.id} row={row} widgets={widgets} extraContent={rowExtras?.[row.id]} />
 	));
 }
 
@@ -43,10 +45,12 @@ export function ToolbarTemplateRow({
 	row,
 	widgets,
 	className,
+	extraContent,
 }: {
 	row: ToolbarRowTemplate;
 	widgets: ToolbarWidgetRegistry;
 	className?: string;
+	extraContent?: ReactNode;
 }) {
 	return (
 		<Toolbar
@@ -104,6 +108,7 @@ export function ToolbarTemplateRow({
 					</div>
 				);
 			})}
+			{extraContent}
 		</Toolbar>
 	);
 }
