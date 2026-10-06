@@ -23,7 +23,7 @@ export function formatErrorResponse(c: Context, err: unknown): Response {
 
   return c.json(
     {
-      error: status === 500 ? "Internal server error" : message,
+      error: status === 500 ? (err instanceof HttpError ? err.publicMessage : undefined) ?? "Internal server error" : message,
       ...(includeStack && {
         stack: err instanceof Error ? err.stack : undefined,
       }),
@@ -38,7 +38,9 @@ export function formatErrorResponse(c: Context, err: unknown): Response {
 export class HttpError extends Error {
   constructor(
     public status: number,
-    message: string
+    message: string,
+    /** Explicitly safe diagnostic text for a server error; raw exceptions remain private. */
+    public publicMessage?: string
   ) {
     super(message);
     this.name = "HttpError";
@@ -60,7 +62,7 @@ export class HttpError extends Error {
     return new HttpError(404, message);
   }
 
-  static internal(message: string): HttpError {
-    return new HttpError(500, message);
+  static internal(message: string, publicMessage?: string): HttpError {
+    return new HttpError(500, message, publicMessage);
   }
 }

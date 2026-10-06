@@ -25,11 +25,11 @@ for (const layout of ['classic', 'golden']) {
       await route.fulfill({ json: { brain } });
     });
     await page.goto('/brain');
-    await page.getByText('Evaluate swarm activity', { exact: true }).click();
-    await expect(page.getByRole('switch', { name: 'Evaluate swarm activity', exact: true })).toBeChecked();
-    await page.getByText('Execute swarm actions', { exact: true }).click();
-    await expect(page.getByRole('switch', { name: 'Execute swarm actions', exact: true })).toBeChecked();
-    await page.getByRole('navigation', { name: 'Brain responsibilities' }).getByRole('button', { name: 'Follow-up prompts from arm messages' }).click();
+    await page.getByText('Enable JEV evaluation', { exact: true }).click();
+    await expect(page.getByRole('switch', { name: 'Enable JEV evaluation', exact: true })).toBeChecked();
+    await page.getByText('Execute JEV actions', { exact: true }).click();
+    await expect(page.getByRole('switch', { name: 'Execute JEV actions', exact: true })).toBeChecked();
+    await page.getByRole('navigation', { name: 'Brain responsibilities' }).getByRole('button', { name: 'Arm follow-ups' }).click();
     const followup = page.getByRole('region', { name: 'Follow-up prompts from arm messages', exact: true });
     await followup.locator('[data-slot="switch-control"]').click();
     await expect(followup.getByRole('switch')).not.toBeChecked();

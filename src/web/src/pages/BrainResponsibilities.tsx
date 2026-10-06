@@ -14,6 +14,13 @@ const ACTION_LABELS: Record<SwarmActionId, string> = {
   log_discovery: 'Log a discovery', create_bug: 'Create a bug', update_bug: 'Update a bug', notify_human: 'Notify the human',
   restart_dev_server: 'Restart a dev server', preserve_git_work: 'Preserve Git work',
 };
+const SEARCHABLE_RESPONSIBILITIES = BRAIN_RESPONSIBILITIES.map(item => ({
+  ...item,
+  searchText: [
+    item.navLabel, item.title, item.today, item.fit, item.gap, item.example, item.builtinLabel, item.scope,
+    ...item.actions, ...item.actions.map(action => ACTION_LABELS[action]), ...item.templates,
+  ].join(' ').toLowerCase(),
+}));
 function actionStatus(config: BrainConfigResponse, action: SwarmActionId): string {
   const choice = config.swarmActionModes?.[action] ?? 'inherit';
   if (choice === 'off') return 'Disabled';
@@ -32,8 +39,8 @@ export function BrainResponsibilities({ config, onSaved, children }: {
   const [notice, setNotice] = useState('');
   const [error, setError] = useState<string | null>(null);
   const container = useRef<HTMLDivElement>(null);
-  const visible = BRAIN_RESPONSIBILITIES.filter(item =>
-    `${item.title} ${item.today} ${item.actions.join(' ')}`.toLowerCase().includes(search.toLowerCase()));
+  const query = search.trim().toLowerCase();
+  const visible = SEARCHABLE_RESPONSIBILITIES.filter(item => item.searchText.includes(query));
   const visibleIds = visible.map(item => item.id).join('|');
   useEffect(() => {
     const root = container.current;
@@ -71,7 +78,7 @@ export function BrainResponsibilities({ config, onSaved, children }: {
       <label className="brain-settings-search"><Search size={14} aria-hidden="true" /><input aria-label="Find a responsibility" placeholder="Find a responsibility…" value={search} onChange={event => setSearch(event.target.value)} /></label>
       <nav aria-label="Brain responsibilities">
         <button type="button" aria-current={active === 'overview' ? 'location' : undefined} onClick={() => jump('overview')}>Overview &amp; models</button>
-        {visible.map(item => <button type="button" key={item.id} aria-current={active === item.id ? 'location' : undefined} onClick={() => jump(item.id)}>{item.title}</button>)}
+        {visible.map(item => <button type="button" key={item.id} title={item.title} aria-current={active === item.id ? 'location' : undefined} onClick={() => jump(item.id)}>{item.navLabel}</button>)}
         <button type="button" aria-current={active === 'jev-prompts' ? 'location' : undefined} onClick={() => jump('jev-prompts')}>JEV policy &amp; questions</button>
       </nav>
       <p className="brain-index-note">Changes save immediately. Templates open in Plan &amp; Documents. Recommendations remain in Inbox → Brain → Decisions.</p>

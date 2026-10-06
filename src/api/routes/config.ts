@@ -19,6 +19,7 @@ import {
   writeTomlConfig,
   configToToml,
   getColeoDir,
+  getConfigPath,
 } from "../../config";
 import type { ColeoConfig, ArmConfig, ArmConfigSummary } from "../../types";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
@@ -198,6 +199,7 @@ export function createConfigRoutes() {
    * PATCH /api/config/brain
    */
   app.patch("/brain", async (c) => {
+    let stage = "save configuration";
     try {
       const updates = await c.req.json<Partial<ColeoConfig["brain"]>>();
       try { validateResponsibilitySettings(updates); } catch (error) { throw HttpError.badRequest(String(error)); }
@@ -210,13 +212,34 @@ export function createConfigRoutes() {
       }
       const config = await updateConfig({ brain: updates as ColeoConfig["brain"] });
       if ("provider" in updates || "model" in updates || "apiKey" in updates) {
+        stage = "refresh model health status after saving configuration";
         c.get("db").run("DELETE FROM infrastructure_health WHERE component = 'brain_model_api'");
       }
       return c.json({ brain: brainConfigResponse(config) });
     } catch (err) {
+      if (err instanceof UnsupportedHarnessError) {
+        throw HttpError.badRequest(
+          `Cannot save Brain settings: defaults.harness is unsupported. Set defaults.harness to "opencode-api" in ${getConfigPath()} ` +
+          `or through Settings, and check the COLEO_DEFAULT_HARNESS environment override. Then retry the Brain setting.`,
+        );
+      }
+      if (err instanceof SyntaxError) throw HttpError.badRequest("Cannot save Brain settings: request body must be valid JSON.");
       if (err instanceof HttpError) throw err;
       const message = err instanceof Error ? err.message : String(err);
-      throw HttpError.internal(`Failed to update config: ${message}`);
+      const remedies: Record<string, string> = {
+        EACCES: "Permission denied. Give the API server user write access to the configuration file and directory.",
+        EPERM: "Operation not permitted. Check file ownership and filesystem restrictions.",
+        ENOENT: "Configuration directory not found. Check COLEO_DIR and create the directory before retrying.",
+        ENOSPC: "No space left on the configuration filesystem. Free disk space and retry.",
+        EROFS: "The configuration filesystem is read-only. Use a writable COLEO_DIR.",
+        EISDIR: "The configuration file path is a directory. Replace it with a config.toml file.",
+      };
+      const code = err instanceof Error && "code" in err && typeof err.code === "string" ? err.code : "";
+      const detail = Object.hasOwn(remedies, code)
+        ? `${code}: ${remedies[code]}`
+        : "See the API server log for the underlying exception.";
+      throw HttpError.internal(`Failed to ${stage}: ${message}`,
+        `Could not ${stage}. Configuration: ${getConfigPath()}. ${detail}`);
     }
   });
 

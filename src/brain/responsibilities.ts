@@ -26,11 +26,14 @@ export function validateResponsibilitySettings(settings: BrainResponsibilitySett
 }
 export interface BrainResponsibility {
   id: string; title: string; today: string; fit: string; gap: string; example: string;
+  /** Compact navigation label; the full title and descriptions remain searchable. */
+  navLabel: string;
   builtinLabel: string | null; scope: string; actions: SwarmActionId[]; templates: string[];
 }
 export const BRAIN_RESPONSIBILITIES: BrainResponsibility[] = [
   {
     "id": "followups",
+    "navLabel": "Arm follow-ups",
     "title": "Follow-up prompts from arm messages",
     "today": "The Brain reads assistant output and stuck-arm signals to decide whether to send another instruction. These paths combine rules, runtime checks, and sometimes model interpretation. A prompt may ask an arm to investigate a problem, report progress, or continue work.",
     "fit": "JEV already evaluates whether a prompt is warranted across the shared window. It can select a real arm and one of six prompt purposes: investigate, report progress, continue the task, verify a fix, record completion, or review a conflict. The existing adapter sends a non-interrupting prompt with quoted evidence.",
@@ -47,6 +50,7 @@ export const BRAIN_RESPONSIBILITIES: BrainResponsibility[] = [
   },
   {
     "id": "new-bugs",
+    "navLabel": "Bug detection",
     "title": "Recognize and log bugs from arm output",
     "today": "Assistant-output interpretation can classify a message as a bug report and create a bug. It shares a processor with task creation and task updates, so turning off the entire processor removes more than bug detection.",
     "fit": "JEV has an implemented create_bug action. It can examine multiple arms\u2019 messages alongside existing bugs, decide that a malfunction is new, select evidence and priority, and call the existing bug-creation endpoint.",
@@ -66,6 +70,7 @@ export const BRAIN_RESPONSIBILITIES: BrainResponsibility[] = [
   },
   {
     "id": "findings",
+    "navLabel": "Discoveries & findings",
     "title": "Record discoveries and task discussion findings",
     "today": "Arms can explicitly submit discoveries and task discussion comments through existing APIs. The Brain also has access to activity and task state that may contain useful findings nobody has recorded.",
     "fit": "Both log_discovery and comment_task are implemented. JEV can notice that a finding in the activity window is worth retaining and attach evidence to a discovery or to a selected task discussion.",
@@ -88,6 +93,7 @@ export const BRAIN_RESPONSIBILITIES: BrainResponsibility[] = [
   },
   {
     "id": "task-state",
+    "navLabel": "Task priority & state",
     "title": "Correct task priority or blocked/pending state",
     "today": "Task-management handlers interpret output, maintain work state, enforce blockers, and apply lifecycle changes. The existing assistant-output schema supports more fields and statuses than the JEV adapter.",
     "fit": "JEV can propose a task priority change or a correction between pending and blocked. Execution checks the target version and prevents status changes that override assignment, planning blocks, dependency blocks, or human-review blocks.",
@@ -104,6 +110,7 @@ export const BRAIN_RESPONSIBILITIES: BrainResponsibility[] = [
   },
   {
     "id": "existing-bugs",
+    "navLabel": "Existing bugs",
     "title": "Update existing bugs",
     "today": "Bug workflows track state, priority, relationships to blocked tasks, and escalation. Some actions change the bug itself; others change tasks or notify the human.",
     "fit": "JEV can select an existing bug, append evidence to its description, and optionally change priority. The patch uses a version precondition so a newer edit is not silently overwritten.",
@@ -121,6 +128,7 @@ export const BRAIN_RESPONSIBILITIES: BrainResponsibility[] = [
   },
   {
     "id": "idle-work",
+    "navLabel": "Idle arms",
     "title": "Nudge idle arms toward available work",
     "today": "promptIdleArms() loads pending/claimed tasks, determines which are available to an arm, checks live harness state and recent activity, and consults the arm state machine. It can then prompt an arm to fetch work.",
     "fit": "JEV can recognize an idle arm with relevant recent evidence and send a continue-task or progress prompt. It can also consider other arms\u2019 activity and previous Brain interventions.",
@@ -138,6 +146,7 @@ export const BRAIN_RESPONSIBILITIES: BrainResponsibility[] = [
   },
   {
     "id": "stalled",
+    "navLabel": "Stalls & loops",
     "title": "Detect stalled, looping, or silent arms",
     "today": "Legacy stuck detection, idle-loop detection, and a separately scheduled health monitor inspect activity and runtime state. These paths can escalate through prompts and other interventions; some also synchronize state or detect completion.",
     "fit": "JEV can compare messages across arms and distinguish an unresolved loop from productive progress or a problem another arm already handled. Prompt, stop, and human-notification adapters are available.",
@@ -162,6 +171,7 @@ export const BRAIN_RESPONSIBILITIES: BrainResponsibility[] = [
   },
   {
     "id": "recovery",
+    "navLabel": "Arm recovery",
     "title": "Stop or recover an unhealthy arm",
     "today": "Existing health/stuck handling can prompt, request compaction, escalate, and stop or mark arms stopped. Permission responses are another path. These operations have different effects even when they all look like \u201crecovery.\u201d",
     "fit": "JEV has a stop_arm adapter that calls the existing kill endpoint, checks the target version, and requires a higher execution score. Prompt and stop share an intervention scope to prevent immediate repeated intervention.",
@@ -181,6 +191,7 @@ export const BRAIN_RESPONSIBILITIES: BrainResponsibility[] = [
   },
   {
     "id": "completion",
+    "navLabel": "Silent completion",
     "title": "Detect silent task completion",
     "today": "checkStuckArms() includes a path for detecting an arm that appears finished without having called the normal completion tool. Existing handling can then enter the task-completion workflow.",
     "fit": "JEV can infer that a follow-up is warranted and prompt the arm to record completion or verify a fix. This is useful assistance but does not itself complete the task.",
@@ -200,6 +211,7 @@ export const BRAIN_RESPONSIBILITIES: BrainResponsibility[] = [
   },
   {
     "id": "blocked-review",
+    "navLabel": "Blocked tasks",
     "title": "Review and escalate blocked tasks",
     "today": "reviewBlockedTasks() selects due tasks, chooses idle review arms, records review ownership and a lease, and reads discussion context. Escalation handling considers blocker age, linked bugs, and previous escalation levels.",
     "fit": "JEV can see some blocked-task and bug state, recommend a priority correction, add a discussion finding, or notify the human through an arm-associated candidate.",
@@ -222,6 +234,7 @@ export const BRAIN_RESPONSIBILITIES: BrainResponsibility[] = [
   },
   {
     "id": "human-messages",
+    "navLabel": "Human messages",
     "title": "Classify direct human messages",
     "today": "processHumanMail() interprets direct messages and routes the resulting intents. It owns a different responsibility from scanning a swarm activity window: carrying out what the human asked, with the right thread context.",
     "fit": "The earlier JEV classification experiments establish a place to compare message interpretation. Typed choices are suitable for identifying one or more intended actions and then selecting their arguments.",
@@ -240,6 +253,7 @@ export const BRAIN_RESPONSIBILITIES: BrainResponsibility[] = [
   },
   {
     "id": "foundation",
+    "navLabel": "Workflow & infrastructure",
     "title": "Planning, claims, dependencies, NATS, and infrastructure",
     "today": "Planning gates decide whether work may start. Queue consumers ingest explicit messages. Claims and dependencies constrain task eligibility. State transitions, persistence, and infrastructure checks keep the swarm coherent and available.",
     "fit": "JEV can contribute selected judgments inside these workflows\u2014for example, whether evidence warrants a follow-up. It depends on the same infrastructure to receive events, inspect state, record decisions, and execute an action.",

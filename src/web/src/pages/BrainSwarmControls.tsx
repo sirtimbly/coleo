@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '@heroui/react';
 import { BrainSettingSwitch } from './BrainSettingSwitch';
 import { api } from '@/lib/api';
+import { ApiRequestError } from '@/lib/workspace-startup';
 import type { BrainConfigResponse } from '@/lib/api';
 
 interface BrainSwarmControlsProps {
@@ -29,7 +30,13 @@ export function BrainSwarmControls({ config, pollIntervalMs, onSaved }: BrainSwa
       onSaved(response.brain);
       setSaved(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save swarm settings');
+      const operation = changes.swarmEvaluationMode === 'off' ? 'disable JEV evaluation'
+        : changes.swarmEvaluationMode === 'execute' ? 'enable JEV action execution'
+        : changes.swarmEvaluationMode === 'shadow' ? 'set JEV to proposal-only evaluation'
+        : 'save the JEV activity window';
+      const detail = err instanceof Error ? err.message : 'Unknown save error';
+      const status = err instanceof ApiRequestError ? `HTTP ${err.status}` : 'network/client error';
+      setError(`Could not ${operation}. ${detail}\nPATCH /api/config/brain · ${status}`);
     } finally {
       setSaving(false);
     }
@@ -43,7 +50,7 @@ export function BrainSwarmControls({ config, pollIntervalMs, onSaved }: BrainSwa
   return (
     <section aria-labelledby="brain-swarm-title" className="rounded-lg bg-surface-secondary/40 px-4 py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="brain-swarm-title" className="text-sm font-semibold">Swarm activity evaluation</h2>
+        <h2 id="brain-swarm-title" className="text-sm font-semibold">JEV swarm evaluation</h2>
         <span className="text-xs text-muted-foreground">
           {!config ? 'Loading…' : mode === 'off' ? 'Off' : mode === 'shadow' ? 'Proposals only' : 'Execution enabled'}
         </span>
@@ -53,15 +60,15 @@ export function BrainSwarmControls({ config, pollIntervalMs, onSaved }: BrainSwa
       </p>
       <div className="my-4 grid gap-4 sm:grid-cols-2">
         <BrainSettingSwitch
-          label="Evaluate swarm activity"
-          description="Record proposed actions each poll. Requires the Brain’s JEV API key."
+          label="Enable JEV evaluation"
+          description="Turn on JEV to review swarm activity and record proposals each poll. Actions run only when execution is enabled. Requires JEV_API_KEY in the Brain process environment."
           selected={mode !== 'off'}
           disabled={!config || saving}
           onChange={enabled => { void save({ swarmEvaluationMode: enabled ? 'shadow' : 'off' }); }}
         />
         <BrainSettingSwitch
-          label="Execute swarm actions"
-          description="Run supported actions that pass confidence and repeat checks."
+          label="Execute JEV actions"
+          description="Allow JEV to execute supported proposals that pass confidence and repeat checks. Leave off for proposal-only evaluation."
           selected={mode === 'execute'}
           disabled={!config || saving || mode === 'off'}
           onChange={enabled => { void save({ swarmEvaluationMode: enabled ? 'execute' : 'shadow' }); }}
@@ -90,7 +97,7 @@ export function BrainSwarmControls({ config, pollIntervalMs, onSaved }: BrainSwa
         {' '}Dev-server restarts and Git preservation remain proposals. These switches control only this evaluator.
       </p>
       <p role="status" className="mt-2 text-xs text-muted-foreground">{saving ? 'Saving…' : saved ? 'Settings saved.' : ''}</p>
-      {error ? <p role="alert" className="mt-2 text-sm text-danger">{error}</p> : null}
+      {error ? <p role="alert" className="mt-2 whitespace-pre-wrap break-words text-sm text-danger">{error}</p> : null}
     </section>
   );
 }

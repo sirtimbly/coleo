@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
@@ -109,6 +109,51 @@ describe("Config API", () => {
       expect((await patch(body)).status).toBe(400);
     }
     expect((await loadConfig(tempDir)).brain.swarmWindowPolls).toBe(20);
+  });
+
+  it("explains an obsolete stored harness when enabling JEV and succeeds after correcting it", async () => {
+    await writeFile(join(tempDir, "config.toml"), '[defaults]\nharness = "opencode"\n');
+    const enable = () => app.request("/api/config/brain", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swarmEvaluationMode: "shadow" }),
+    });
+    const response = await enable();
+    expect(response.status).toBe(400);
+    const { error } = await response.json();
+    expect(error).toContain("defaults.harness");
+    expect(error).toContain('"opencode-api"');
+    expect(error).toContain(join(tempDir, "config.toml"));
+    expect(error).toContain("COLEO_DEFAULT_HARNESS");
+    expect((await loadConfig(tempDir)).brain.swarmEvaluationMode ?? "off").toBe("off");
+    const repair = await app.request("/api/config/defaults", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ harness: "opencode-api" }),
+    });
+    expect(repair.status).toBe(200);
+    expect((await enable()).status).toBe(200);
+    expect((await loadConfig(tempDir)).brain.swarmEvaluationMode).toBe("shadow");
+  });
+
+  it("returns actionable filesystem diagnostics without leaking submitted credentials", async () => {
+    await mkdir(join(tempDir, "config.toml"));
+    const response = await app.request("/api/config/brain", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swarmEvaluationMode: "shadow", apiKey: "secret-not-for-errors" }),
+    });
+    expect(response.status).toBe(500);
+    const { error } = await response.json();
+    expect(error).toContain("EISDIR");
+    expect(error).toContain(join(tempDir, "config.toml"));
+    expect(error).toContain("Replace it with a config.toml file");
+    expect(error).not.toContain("secret-not-for-errors");
+  });
+
+  it("reports malformed Brain settings JSON as a validation error", async () => {
+    const response = await app.request("/api/config/brain", {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: "{",
+    });
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toContain("valid JSON");
   });
 
   it("merges responsibility settings without resetting other choices and validates keys", async () => {
