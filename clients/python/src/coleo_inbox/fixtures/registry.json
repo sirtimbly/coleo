@@ -1,0 +1,554 @@
+{
+  "interactions": {
+    "operations": {
+      "collection.previous": {
+        "label": "Previous item",
+        "kind": "navigation",
+        "target": "focused-item"
+      },
+      "collection.next": {
+        "label": "Next item",
+        "kind": "navigation",
+        "target": "focused-item"
+      },
+      "collection.open": {
+        "label": "Open item",
+        "kind": "navigation",
+        "command": "inbox.open",
+        "target": "focused-item",
+        "value": {
+          "type": "string"
+        }
+      },
+      "collection.back": {
+        "label": "Back / dismiss",
+        "kind": "navigation"
+      },
+      "collection.search": {
+        "label": "Search",
+        "kind": "query",
+        "binding": "query.search",
+        "value": {
+          "type": "string"
+        }
+      },
+      "inbox.facet": {
+        "label": "View",
+        "kind": "query",
+        "binding": "query.facet",
+        "value": {
+          "type": "string",
+          "choices": [
+            "attention",
+            "messages",
+            "brain",
+            "arms",
+            "history",
+            "all"
+          ]
+        }
+      },
+      "inbox.mailbox": {
+        "label": "Mailbox",
+        "kind": "query",
+        "binding": "query.mailbox",
+        "value": {
+          "type": "string",
+          "choices": [
+            "inbox",
+            "sent",
+            "archive"
+          ]
+        }
+      },
+      "inbox.brain-category": {
+        "label": "Brain category",
+        "kind": "query",
+        "binding": "query.brainCategory",
+        "value": {
+          "type": "string",
+          "choices": [
+            "all",
+            "operations",
+            "tasks",
+            "arms",
+            "decisions",
+            "planning",
+            "alerts"
+          ]
+        }
+      },
+      "collection.sort": {
+        "label": "Timestamp order",
+        "kind": "query",
+        "binding": "query.sort.direction",
+        "value": {
+          "type": "string",
+          "choices": [
+            "asc",
+            "desc"
+          ]
+        }
+      },
+      "collection.limit": {
+        "label": "Page size",
+        "kind": "query",
+        "binding": "query.limit",
+        "value": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        }
+      },
+      "collection.presentation": {
+        "label": "Presentation",
+        "kind": "presentation",
+        "binding": "presentation.active",
+        "value": {
+          "type": "string",
+          "choices": [
+            "grid",
+            "cards",
+            "timeline"
+          ]
+        }
+      },
+      "collection.select": {
+        "label": "Toggle item selection",
+        "kind": "navigation",
+        "target": "focused-item"
+      },
+      "collection.select-branch": {
+        "label": "Toggle loaded branch selection",
+        "kind": "navigation",
+        "target": "loaded-descendants"
+      },
+      "collection.collapse": {
+        "label": "Collapse branch",
+        "kind": "navigation",
+        "target": "focused-item"
+      },
+      "collection.expand": {
+        "label": "Expand branch",
+        "kind": "navigation",
+        "target": "focused-item"
+      },
+      "collection.refresh": {
+        "label": "Refresh",
+        "kind": "navigation",
+        "command": "inbox.refresh"
+      },
+      "inbox.mark-read": {
+        "label": "Mark selected read",
+        "kind": "command",
+        "command": "inbox.mark-read",
+        "target": "selected-items",
+        "value": {
+          "type": "string-list"
+        }
+      },
+      "collection.help": {
+        "label": "Show interaction help",
+        "kind": "navigation"
+      }
+    },
+    "profiles": {
+      "collection-navigation": {
+        "schemaVersion": 1,
+        "id": "collection-navigation",
+        "bindings": [
+          {
+            "id": "previous",
+            "operation": "collection.previous",
+            "keyboard": {
+              "shared": [
+                {
+                  "key": "ArrowUp",
+                  "scope": "item"
+                },
+                {
+                  "key": "k",
+                  "scope": "item"
+                }
+              ]
+            }
+          },
+          {
+            "id": "next",
+            "operation": "collection.next",
+            "keyboard": {
+              "shared": [
+                {
+                  "key": "ArrowDown",
+                  "scope": "item"
+                },
+                {
+                  "key": "j",
+                  "scope": "item"
+                }
+              ]
+            }
+          },
+          {
+            "id": "open",
+            "operation": "collection.open",
+            "keyboard": {
+              "shared": [
+                {
+                  "key": "Enter",
+                  "scope": "item"
+                }
+              ]
+            },
+            "cli": {
+              "subcommand": "show"
+            }
+          },
+          {
+            "id": "back",
+            "operation": "collection.back",
+            "keyboard": {
+              "shared": [
+                {
+                  "key": "Escape",
+                  "scope": "help"
+                }
+              ]
+            }
+          },
+          {
+            "id": "search",
+            "operation": "collection.search",
+            "keyboard": {
+              "shared": [
+                {
+                  "key": "/"
+                }
+              ]
+            },
+            "cli": {
+              "flag": "--search",
+              "alias": "-s"
+            }
+          },
+          {
+            "id": "select",
+            "operation": "collection.select",
+            "keyboard": {
+              "shared": [
+                {
+                  "key": "Space",
+                  "scope": "item"
+                }
+              ]
+            }
+          },
+          {
+            "id": "select-branch",
+            "operation": "collection.select-branch",
+            "keyboard": {
+              "shared": [
+                {
+                  "key": "Space",
+                  "scope": "tree"
+                }
+              ]
+            }
+          },
+          {
+            "id": "collapse",
+            "operation": "collection.collapse",
+            "keyboard": {
+              "shared": [
+                {
+                  "key": "ArrowLeft",
+                  "scope": "item"
+                },
+                {
+                  "key": "ArrowLeft",
+                  "scope": "tree"
+                }
+              ]
+            }
+          },
+          {
+            "id": "expand",
+            "operation": "collection.expand",
+            "keyboard": {
+              "shared": [
+                {
+                  "key": "ArrowRight",
+                  "scope": "item"
+                },
+                {
+                  "key": "ArrowRight",
+                  "scope": "tree"
+                }
+              ]
+            }
+          },
+          {
+            "id": "refresh",
+            "operation": "collection.refresh",
+            "keyboard": {
+              "shared": [
+                {
+                  "key": "r"
+                }
+              ]
+            }
+          },
+          {
+            "id": "help",
+            "operation": "collection.help",
+            "keyboard": {
+              "shared": [
+                {
+                  "key": "?"
+                }
+              ]
+            },
+            "cli": {
+              "flag": "--help",
+              "alias": "-h"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "resources": {
+    "messaging": {
+      "fields": [
+        "title",
+        "summary",
+        "source",
+        "timestamp",
+        "unread",
+        "requiresAction"
+      ],
+      "commands": [
+        "inbox.open",
+        "inbox.mark-read",
+        "inbox.refresh"
+      ]
+    }
+  },
+  "widgets": {
+    "resource.identity": {
+      "slots": [
+        "toolbar.primary.identity"
+      ],
+      "bindings": [],
+      "capabilities": [],
+      "layout": {
+        "priority": 0,
+        "collapse": "hide",
+        "overflow": false
+      }
+    },
+    "inbox.facet": {
+      "slots": [
+        "toolbar.primary.context"
+      ],
+      "bindings": [
+        "query.facet"
+      ],
+      "capabilities": [],
+      "layout": {
+        "kind": "choice",
+        "priority": 90,
+        "collapse": "value",
+        "overflow": true
+      }
+    },
+    "collection.search": {
+      "slots": [
+        "toolbar.primary.search"
+      ],
+      "bindings": [
+        "query.search"
+      ],
+      "capabilities": [],
+      "layout": {
+        "kind": "value",
+        "priority": 100,
+        "collapse": "value",
+        "overflow": false
+      }
+    },
+    "inbox.mark-read": {
+      "slots": [
+        "toolbar.primary.actions"
+      ],
+      "bindings": [],
+      "commands": [
+        "inbox.mark-read"
+      ],
+      "capabilities": [],
+      "layout": {
+        "priority": 60,
+        "collapse": "icon",
+        "overflow": true
+      }
+    },
+    "collection.refresh": {
+      "slots": [
+        "toolbar.primary.actions"
+      ],
+      "bindings": [],
+      "commands": [
+        "inbox.refresh"
+      ],
+      "capabilities": [],
+      "layout": {
+        "priority": 70,
+        "collapse": "icon",
+        "overflow": true
+      }
+    },
+    "collection.freshness": {
+      "slots": [
+        "toolbar.primary.state"
+      ],
+      "bindings": [],
+      "capabilities": [],
+      "layout": {
+        "priority": 20,
+        "collapse": "none",
+        "overflow": true
+      }
+    },
+    "collection.count": {
+      "slots": [
+        "toolbar.primary.state"
+      ],
+      "bindings": [],
+      "capabilities": [],
+      "layout": {
+        "priority": 20,
+        "collapse": "none",
+        "overflow": true
+      }
+    },
+    "collection.sort": {
+      "slots": [
+        "toolbar.secondary.sort"
+      ],
+      "bindings": [
+        "query.sort"
+      ],
+      "capabilities": [],
+      "layout": {
+        "kind": "choice",
+        "priority": 40,
+        "collapse": "value",
+        "overflow": true
+      }
+    },
+    "collection.presentation": {
+      "slots": [
+        "toolbar.secondary.presentation"
+      ],
+      "bindings": [
+        "presentation.active"
+      ],
+      "capabilities": [],
+      "layout": {
+        "kind": "choice",
+        "priority": 30,
+        "collapse": "value",
+        "overflow": true
+      }
+    },
+    "collection.selection": {
+      "slots": [
+        "toolbar.secondary.selection"
+      ],
+      "bindings": [],
+      "capabilities": [],
+      "layout": {
+        "priority": 80,
+        "collapse": "none",
+        "overflow": true
+      }
+    },
+    "collection.hierarchy": {
+      "slots": [
+        "toolbar.secondary.presentation"
+      ],
+      "bindings": [
+        "hierarchy.expandedIds"
+      ],
+      "capabilities": []
+    },
+    "collection.insights": {
+      "slots": [
+        "toolbar.secondary.insights"
+      ],
+      "bindings": [
+        "insights.active"
+      ],
+      "capabilities": [],
+      "layout": {
+        "kind": "toggle",
+        "priority": 10,
+        "collapse": "icon",
+        "overflow": true
+      }
+    }
+  },
+  "renderers": {
+    "collection.grid": {
+      "kinds": [
+        "grid"
+      ],
+      "capabilities": [
+        "table"
+      ]
+    },
+    "collection.cards": {
+      "kinds": [
+        "cards"
+      ],
+      "capabilities": [
+        "adaptive-cards"
+      ],
+      "fallback": "collection.list"
+    },
+    "messaging.timeline": {
+      "kinds": [
+        "custom"
+      ],
+      "capabilities": [
+        "timeline"
+      ],
+      "fallback": "collection.list"
+    },
+    "collection.list": {
+      "kinds": [
+        "custom"
+      ],
+      "capabilities": [
+        "text"
+      ]
+    },
+    "messaging.overview": {
+      "kinds": [
+        "insight"
+      ],
+      "capabilities": [
+        "charts"
+      ],
+      "fallback": "metadata.summary"
+    },
+    "metadata.summary": {
+      "kinds": [
+        "insight"
+      ],
+      "capabilities": [
+        "text"
+      ]
+    }
+  }
+}

@@ -1,0 +1,23 @@
+[project]
+name = "coleo-inbox"
+version = "0.1.0"
+description = "Coleo Python CLI and Textual terminal client"
+requires-python = ">=3.12,<3.14"
+dependencies = ["httpx==0.28.1", "rich==14.2.0", "textual==6.3.0", "websockets==15.0.1"]
+
+[project.scripts]
+coleo-inbox = "coleo_inbox.cli:main"
+
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = ["pytest==8.4.2", "pytest-asyncio==1.2.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["clients/python/src/coleo_inbox"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["clients/python/tests"]

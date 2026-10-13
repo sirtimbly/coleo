@@ -1,6 +1,7 @@
 [tools]
 bun = "latest"
-python = "latest"
+python = "3.12.14"
+uv = "latest"
 shellcheck = "latest"
 
 [env]
@@ -19,7 +20,7 @@ run = "bun run brain"
 run = "bun run server"
 
 [tasks.setup]
-run = "bun run setup"
+run = "bun run setup && uv sync --locked"
 
 [tasks.build]
 run = "bun run build"
@@ -74,3 +75,30 @@ run = "bun run docs:preview"
 
 [tasks."docs:deploy:cloudflare"]
 run = "bun run docs:deploy:cloudflare"
+
+[tasks."client:sync"]
+run = "uv sync --locked"
+
+[tasks."client:test"]
+run = "uv run --locked --group dev pytest clients/python/tests -q"
+
+[tasks."client:integration"]
+run = "uv run --locked --group dev python clients/python/run-integration.py"
+
+[tasks."client:cli"]
+run = "uv run --locked coleo-inbox"
+
+[tasks."client:tui"]
+run = "uv run --locked coleo-inbox tui"
+
+[tasks."dev:core"]
+run = "bun run dev:core"
+
+[tasks."dev:all"]
+run = "bun run dev:all"
+
+[tasks."dev:core:restart"]
+run = "bun run dev:core:restart"
+
+[tasks."dev:core:stop"]
+run = "bun run dev:core:stop"
