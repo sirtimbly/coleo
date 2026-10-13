@@ -165,7 +165,8 @@ coleo arm spawn -n worker --terminal tmux --workdir /path/to/repo
 
 ### Prerequisites
 
-- [Bun](https://bun.sh/) runtime (v1.1+)
+- [mise](https://mise.jdx.dev/) for the pinned Bun/Python toolchain
+- [uv](https://docs.astral.sh/uv/) for the Python client environment
 - [NATS Server](https://nats.io/) with JetStream enabled (optional, for distributed arms and stream-backed events)
 - [OpenCode](https://opencode.ai/) CLI (for spawning AI Arms)
 
@@ -173,17 +174,21 @@ This section is for contributors running Coleo from source. For regular usage, i
 
 ### Setup
 
-Dependencies are managed with Bun from the repository root. The root `bun.lock` covers the CLI/server, docs
-toolchain, and the `src/web` workspace; do not create nested lockfiles.
+The monorepo keeps the Python client project at the root (`pyproject.toml` and
+`uv.lock`), the TypeScript backend under `server/src/`, and the React app under
+`server/web-app/`. `mise.toml` is the contributor task/toolchain entry point.
+The root `bun.lock` covers the server, docs toolchain, and web workspace; do not
+create nested lockfiles.
 
 ```bash
 # Clone and install dependencies
 git clone https://github.com/sirtimbly/coleo.git
 cd coleo
-bun run setup
+mise install
+mise run setup
 
 # Initialize Coleo (creates ./.coleo directory and database by default)
-bun run src/cli/index.ts init
+bun run server/src/cli/index.ts init
 
 # Build the web UI
 bun run web:build
@@ -194,13 +199,13 @@ bun run web:build
 ```bash
 # Start the API server
 # If COLEO_NATS_URL is unset, this auto-starts local NATS into ./.coleo/
-bun run src/cli/index.ts serve
+mise run server
 
 # Start the Brain orchestrator
-bun run src/cli/index.ts brain run
+mise run brain
 
 # Development mode for web UI (hot reload)
-bun run web:dev
+mise run web:dev
 ```
 
 ### Available Scripts
@@ -217,6 +222,8 @@ bun run web:dev
 | `bun run test:e2e`         | Run full end-to-end regression tests |
 | `bun run web:dev`          | Start web UI dev server (hot reload) |
 | `bun run web:build`        | Build web UI for production          |
+| `mise run client:test`     | Run Python client tests              |
+| `mise run client:cli`      | Run the Python Rich/Textual client   |
 | `bun run docs:dev`         | Start documentation dev server       |
 
 ### Environment Variables
