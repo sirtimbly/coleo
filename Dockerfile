@@ -9,7 +9,7 @@ WORKDIR /app
 
 # Copy workspace manifests required for dependency resolution
 COPY package.json bun.lock ./
-COPY src/web/package.json ./src/web/package.json
+COPY server/web-app/package.json ./server/web-app/package.json
 
 # Install dependencies
 RUN bun install --frozen-lockfile
@@ -83,7 +83,7 @@ RUN chmod 0755 /usr/local/bin/coleo-hosting-entrypoint
 RUN ln -s /home/coleo/coleo/bin/coleo.ts /usr/local/bin/coleo-cli || true
 
 # Create wrapper script that uses bun
-RUN echo '#!/bin/bash\nbun /home/coleo/coleo/src/cli/index.ts "$@"' > /usr/local/bin/coleo \
+RUN echo '#!/bin/bash\nbun /home/coleo/coleo/server/src/cli/index.ts "$@"' > /usr/local/bin/coleo \
     && chmod +x /usr/local/bin/coleo
 
 # Create projects directory

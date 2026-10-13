@@ -5,7 +5,7 @@
       "package-name": "coleo",
       "release-type": "node",
       "changelog-type": "github",
-      "extra-files": [{ "type": "json", "path": "src/web/package.json", "jsonpath": "$.version" }]
+      "extra-files": [{ "type": "json", "path": "server/web-app/package.json", "jsonpath": "$.version" }]
     }
   }
 }
