@@ -5,6 +5,7 @@ import type { MailThreadLocation, MailThreadProjection } from "./mail-thread-mod
 
 export type MessagingSourceId = "records" | "mail" | "activity" | "events";
 
+/** Select only the backing sources needed to answer the requested query scope and facet. */
 export function messagingSourcesForQuery(query: MessagingQuery): readonly MessagingSourceId[] {
 	if (query.scope === "mail" || query.facet === "messages") return ["mail"];
 	if (query.facet === "attention" || query.facet === "all") return ["records", "mail", "activity", "events"];

@@ -21,7 +21,7 @@ export function createWorkbenchNamedViewRoutes(): Hono {
 	});
 	app.get("/:id", (c) => {
 		const client = z.enum(INTERACTION_CLIENTS).safeParse(c.req.query("client") ?? "web");
-		if (!client.success) throw HttpError.badRequest("client must be web, cli, or tui");
+		if (!client.success) throw HttpError.badRequest(`client must be one of: ${INTERACTION_CLIENTS.join(", ")}`);
 		const view = getNamedResourceView(c.req.param("id"), client.data);
 		if (!view) throw HttpError.notFound(`Named resource view not found: ${c.req.param("id")}`);
 		return c.json(view);

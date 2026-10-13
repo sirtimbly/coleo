@@ -48,6 +48,12 @@ export async function loadMailThreadProjections(coleoDir: string, mailbox: Messa
 	return projectThreads(await readMailInputs(coleoDir), mailbox);
 }
 
+/** Navigation can resolve any mailbox from one authoritative Maildir read. */
+export async function loadMailThreadMailboxProjections(coleoDir: string): Promise<readonly MailThreadProjection[]> {
+	const input = await readMailInputs(coleoDir);
+	return (["inbox", "sent", "archive"] as const).flatMap((mailbox) => projectThreads(input, mailbox));
+}
+
 export function findMailThread(threads: readonly MailThreadProjection[], id: string): MailThreadProjection | undefined {
 	const exact = threads.find((thread) => thread.id === id);
 	if (exact) return exact;

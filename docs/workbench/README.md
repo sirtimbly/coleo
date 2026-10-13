@@ -9,6 +9,14 @@ explains its implementation; the dated entries below preserve migration history.
 
 ## Current architecture (2026-09-21)
 
+**Portability direction update:** the terminal bake-off is concluded in favor of
+Python/Rich + Textual. The Bun CLI remains available during parity work and is
+not deprecated until the gates in the
+[implementation plan](./review/implementation-plan.md) pass. The target monorepo
+layout gives the Python client a root-level project and puts server/web in its
+own directory to leave room for native and mobile clients. That relocation is
+planned, not yet reflected by the current-architecture description below.
+
 The [September architecture review](./review/README.md) compares these ownership
 claims with the implementation. Its [implementation plan](./review/implementation-plan.md)
 records the direction selected on September 29: Messaging first, independent

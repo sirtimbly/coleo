@@ -46,6 +46,9 @@ describe("named resource-view composition", () => {
 	it("rejects invalid bindings, wrong hierarchy slots, duplicate IDs, fields, commands, and future schema versions", () => {
 		const view = parseResourceViewDefinition(fixture, registry);
 		for (const invalid of [
+			{ ...view, toolbar: { maxRows: 3, groups: {} } },
+			{ ...view, toolbar: { maxRows: 2, groups: { "toolbar.unknown": { label: "Invalid", align: "start" } } } },
+			{ ...view, slots: { "toolbar.primary.search": [{ id: "bad", widget: "collection.search", label: "Bad", layout: { priority: -1 } }] } },
 			{ ...view, schemaVersion: 2 }, { ...view, commands: [...view.commands, "execute-javascript"] },
 			{ ...view, slots: { "toolbar.primary.search": [{ id: "bad", widget: "collection.search", label: "Bad", binding: "query.missing" }] } },
 			{ ...view, slots: { "toolbar.secondary.sort": [{ id: "bad", widget: "collection.search", label: "Bad" }] } },
@@ -63,5 +66,12 @@ describe("named resource-view composition", () => {
 		expect(cards.insights).toBeUndefined();
 		expect(cards.query).toEqual(view.query);
 		expect(resolveResourceViewFeatures(cards, registry, new Set(["text"])).insights).toEqual([]);
+	});
+
+	it("merges a control's layout overrides with semantic widget defaults", () => {
+		const view = parseResourceViewDefinition({ ...fixture, slots: { "toolbar.primary.actions": [
+			{ id: "read", widget: "inbox.mark-read", label: "Read", command: "inbox.mark-read", layout: { priority: 4 } },
+		] } }, registry);
+		expect(view.slots["toolbar.primary.actions"]?.[0]?.layout).toEqual({ priority: 4, collapse: "icon", overflow: true });
 	});
 });

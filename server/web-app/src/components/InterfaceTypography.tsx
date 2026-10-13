@@ -26,7 +26,7 @@ function visibleText(element: Element): string {
   return (element.textContent ?? '').replace(/\s+/g, ' ').trim();
 }
 
-function isEligible(element: HTMLElement): boolean {
+function isEligible(element: HTMLElement, includeHidden: boolean): boolean {
   if (element.closest('p, pre, code, input, textarea, select, [contenteditable="true"]')) {
     return false;
   }
@@ -37,16 +37,16 @@ function isEligible(element: HTMLElement): boolean {
   }
 
   const style = window.getComputedStyle(element);
-  const isVisible = style.display !== 'none' && style.visibility !== 'hidden';
+  const isVisible = style.display !== 'none' && (includeHidden || style.visibility !== 'hidden');
   return isVisible && (isControl || Number.parseFloat(style.fontSize) > 12);
 }
 
-function applyInterfaceTypography(): void {
+export function applyInterfaceTypography(root: HTMLElement = document.body, includeHidden = false): void {
   const candidates = new Set<HTMLElement>();
 
-  document.querySelectorAll<HTMLElement>(TYPOGRAPHY_SELECTOR).forEach((element) => candidates.add(element));
+  root.querySelectorAll<HTMLElement>(TYPOGRAPHY_SELECTOR).forEach((element) => candidates.add(element));
 
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       return node.textContent?.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
     },
@@ -58,10 +58,10 @@ function applyInterfaceTypography(): void {
     node = walker.nextNode();
   }
 
-  document.querySelectorAll<HTMLElement>('[data-interface-typography]').forEach((element) => candidates.add(element));
+  root.querySelectorAll<HTMLElement>('[data-interface-typography]').forEach((element) => candidates.add(element));
 
   candidates.forEach((element) => {
-    if (!isEligible(element)) {
+    if (!isEligible(element, includeHidden)) {
       element.removeAttribute('data-interface-typography');
       element.removeAttribute('data-single-word');
       return;
@@ -82,7 +82,7 @@ export function InterfaceTypography() {
     let frame = 0;
     const scheduleUpdate = () => {
       window.cancelAnimationFrame(frame);
-      frame = window.requestAnimationFrame(applyInterfaceTypography);
+      frame = window.requestAnimationFrame(() => applyInterfaceTypography());
     };
 
     scheduleUpdate();

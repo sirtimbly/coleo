@@ -131,13 +131,11 @@ function renderState(data: InboxTableRow): HTMLElement {
 
 const stateFormatter: Formatter = (cell) => renderState(cell.getRow().getData() as InboxTableRow);
 
-function renderSubject(data: InboxTableRow): HTMLElement {
+function renderSubject(data: InboxTableRow, fields?: readonly string[]): HTMLElement {
 	const wrapper = document.createElement("span");
 	wrapper.className = "coleo-inbox-subject";
-	wrapper.append(
-		textElement("strong", "coleo-inbox-subject-title", data.title),
-		textElement("span", "coleo-inbox-subject-summary", data.summary),
-	);
+	if (!fields || fields.includes("title")) wrapper.append(textElement("strong", "coleo-inbox-subject-title", data.title));
+	if (!fields || fields.includes("summary")) wrapper.append(textElement("span", "coleo-inbox-subject-summary", data.summary));
 	return wrapper;
 }
 
@@ -159,6 +157,7 @@ export function InboxCardTable({
 	density,
 	className,
 	serverSort,
+	fields,
 }: {
 	items: InboxProjectionItem[];
 	renderCard: (item: InboxProjectionItem) => ReactNode;
@@ -166,9 +165,11 @@ export function InboxCardTable({
 	density?: "compact" | "comfortable";
 	className?: string;
 	serverSort?: "asc" | "desc";
+	fields?: readonly string[];
 }) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const initialServerSort = useRef(serverSort);
+	const initialFields = useRef(fields);
 	const tableRef = useRef<Tabulator | null>(null);
 	const syncRef = useRef<(() => void) | null>(null);
 	const expandedIdsRef = useRef(new Set<string>());
@@ -330,7 +331,7 @@ export function InboxCardTable({
 				minWidth: 260,
 				widthGrow: 4,
 				responsive: 0,
-				formatter: subjectFormatter,
+				formatter: initialFields.current ? (cell) => renderSubject(cell.getRow().getData() as InboxTableRow, initialFields.current) : subjectFormatter,
 			},
 			{
 				title: "Type",
@@ -350,13 +351,19 @@ export function InboxCardTable({
 				formatter: timeFormatter,
 			},
 		];
+		const fieldNames: Readonly<Record<string, readonly string[]>> = {
+			state: ["unread", "requiresAction"], source: ["source"], title: ["title", "summary"],
+			kind: ["kind"], timestampValue: ["timestamp"],
+		};
+		const visibleColumns = initialFields.current ? columns.filter((column) => column.field === "__expand" ||
+			fieldNames[column.field ?? ""]?.some((field) => initialFields.current!.includes(field))) : columns;
 
 		queueMicrotask(() => {
 			if (disposed) return;
 			const instance = new Tabulator(container, {
 				index: "id",
 				data: [...runtimeRef.current.itemsById.values()].map(projectRow),
-				columns,
+				columns: visibleColumns,
 				height: "100%",
 				layout: "fitColumns",
 				responsiveLayout: "hide",
@@ -415,9 +422,9 @@ export function InboxCardTable({
 							for (const data of changed) {
 								const row = instance.getRow(data.id);
 								if (!row) continue;
-								const subject = row.getCell("title");
-								const state = row.getCell("state");
-								if (subject) subject.getElement().replaceChildren(renderSubject(data));
+								const subject = visibleColumns.some((column) => column.field === "title") ? row.getCell("title") : false;
+								const state = visibleColumns.some((column) => column.field === "state") ? row.getCell("state") : false;
+								if (subject) subject.getElement().replaceChildren(renderSubject(data, initialFields.current));
 								if (state) state.getElement().replaceChildren(renderState(data));
 							}
 						}

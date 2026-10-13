@@ -1,5 +1,10 @@
 /** Early collection-view wire contract. Registries and client implementations remain runtime-only. */
 import { z } from "zod";
+import { interactionBindingSchema, validateInteractionDefinition } from "./interaction-definition";
+import { toolbarControlLayoutOverrideSchema, toolbarControlLayoutSchema } from "./toolbar-layout";
+
+import type { InteractionBinding, InteractionRegistry } from "./interaction-definition";
+import type { ToolbarControlLayout, ToolbarGroupLayout } from "./toolbar-layout";
 
 export const RESOURCE_VIEW_SLOTS = [
 	"toolbar.primary.identity", "toolbar.primary.context", "toolbar.primary.search",
@@ -17,6 +22,7 @@ export interface ResourceViewControl {
 	readonly label: string;
 	readonly binding?: string;
 	readonly command?: string;
+	readonly layout?: ToolbarControlLayout;
 }
 
 export interface ResourceViewRenderer {
@@ -33,7 +39,13 @@ export interface ResourceViewDefinition {
 	readonly resource: string;
 	readonly query: { readonly [key: string]: ViewJsonValue };
 	readonly commands: readonly string[];
+	readonly interactionProfile?: string;
+	readonly interactions?: readonly InteractionBinding[];
 	readonly slots: Readonly<Partial<Record<ResourceViewSlot, readonly ResourceViewControl[]>>>;
+	readonly toolbar?: {
+		readonly maxRows: 1 | 2;
+		readonly groups: Readonly<Partial<Record<ResourceViewSlot, ToolbarGroupLayout>>>;
+	};
 	readonly hierarchy?: {
 		readonly initialExpansion: "collapsed" | "roots" | "all";
 		readonly selectionScope: "loaded-descendants";
@@ -49,6 +61,7 @@ export interface ResourceViewDefinition {
 }
 
 export interface ResourceViewRegistry {
+	readonly interactions?: InteractionRegistry;
 	readonly resources: Readonly<Record<string, {
 		readonly fields: readonly string[];
 		readonly commands: readonly string[];
@@ -60,6 +73,7 @@ export interface ResourceViewRegistry {
 		readonly commands?: readonly string[];
 		readonly capabilities: readonly string[];
 		readonly fallback?: string;
+		readonly layout?: ToolbarControlLayout;
 	}>>;
 	readonly renderers: Readonly<Record<string, {
 		readonly kinds: readonly ("grid" | "cards" | "custom" | "insight")[];
@@ -73,9 +87,13 @@ const rendererSchema = z.object({ id, renderer: id, label: id, fields: z.array(i
 const definitionSchema = z.object({
 	schemaVersion: z.literal(1), id, panelKind: z.literal("collection"), resource: id,
 	query: z.record(z.string(), z.json()), commands: z.array(id),
+	interactionProfile: id.optional(), interactions: z.array(interactionBindingSchema).optional(),
 	slots: z.partialRecord(z.enum(RESOURCE_VIEW_SLOTS), z.array(z.object({
-		id, widget: id, label: id, binding: id.optional(), command: id.optional(),
+		id, widget: id, label: id, binding: id.optional(), command: id.optional(), layout: toolbarControlLayoutOverrideSchema.optional(),
 	}).strict())),
+	toolbar: z.object({ maxRows: z.union([z.literal(1), z.literal(2)]).default(2),
+		groups: z.partialRecord(z.enum(RESOURCE_VIEW_SLOTS), z.object({ label: id, align: z.enum(["start", "end"]) }).strict()).default({}),
+	}).strict().optional(),
 	hierarchy: z.object({ initialExpansion: z.enum(["collapsed", "roots", "all"]),
 		selectionScope: z.literal("loaded-descendants") }).strict().optional(),
 	insights: z.object({ active: id.nullable(), panels: z.array(rendererSchema) }).strict().optional(),
@@ -89,6 +107,7 @@ function requireUnique(values: readonly string[], path: string): void {
 	if (new Set(values).size !== values.length) throw new Error(`${path} contains duplicate IDs`);
 }
 
+/** Parse and validate a portable view against registered resources, controls, renderers, and interactions. */
 export function parseResourceViewDefinition(value: unknown, registry: ResourceViewRegistry): ResourceViewDefinition {
 	const view = definitionSchema.parse(value);
 	const resource = registry.resources[view.resource];
@@ -106,6 +125,9 @@ export function parseResourceViewDefinition(value: unknown, registry: ResourceVi
 		if (!widget.slots.includes(slot as ResourceViewSlot)) throw new Error(`${slot}.${control.id}: incompatible widget slot`);
 		if (control.binding && !widget.bindings.includes(control.binding)) {
 			throw new Error(`${slot}.${control.id}: invalid binding "${control.binding}"`);
+		}
+		if (widget.commands?.length && !control.command) {
+			throw new Error(`${slot}.${control.id}: widget requires a declared command`);
 		}
 		if (control.command && !view.commands.includes(control.command)) {
 			throw new Error(`${slot}.${control.id}: command must be declared in commands`);
@@ -131,7 +153,14 @@ export function parseResourceViewDefinition(value: unknown, registry: ResourceVi
 			}
 		}
 	}
-	return { ...view, query };
+	if (view.interactionProfile || view.interactions?.length) {
+		if (!registry.interactions) throw new Error("The resource registry does not support interactions");
+		validateInteractionDefinition(view, registry.interactions);
+	}
+	const slots = Object.fromEntries(Object.entries(view.slots).map(([slot, controls]) => [slot, controls.map((control) => ({
+		...control, layout: toolbarControlLayoutSchema.parse({ ...registry.widgets[control.widget]?.layout, ...control.layout }),
+	}))]));
+	return { ...view, query, slots };
 }
 
 export interface ResolvedViewFeature {

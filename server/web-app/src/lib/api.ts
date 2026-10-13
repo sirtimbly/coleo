@@ -36,6 +36,7 @@ import type {
 import type { MessagingCollectionPage } from '../../../src/workbench/messaging-collection';
 import type { MessagingQuery, MessagingMailbox } from '../../../src/workbench/messaging-query';
 import type { MailThreadDetail } from '../../../src/workbench/mail-thread-detail';
+import type { ResolvedNamedResourceView } from '../../../src/workbench/named-resource-views';
 
 const API_BASE = '/api';
 
@@ -1616,6 +1617,10 @@ class ApiClient {
     const params = new URLSearchParams({ query: JSON.stringify(query) });
     if (cursor) params.set('cursor', cursor);
     return this.request<MessagingCollectionPage>(`/workbench/inbox?${params}`, { signal });
+  }
+
+  async getNamedResourceView(id: string, signal?: AbortSignal): Promise<ResolvedNamedResourceView> {
+    return this.request<ResolvedNamedResourceView>(`/workbench/named-views/${encodeURIComponent(id)}?client=web`, { signal });
   }
 
   async getMailThread(threadId: string, mailbox: MessagingMailbox, signal?: AbortSignal) {

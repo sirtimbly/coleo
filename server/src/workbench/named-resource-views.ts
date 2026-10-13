@@ -16,14 +16,17 @@ const CLIENT_CAPABILITIES: Readonly<Record<InteractionClient, readonly string[]>
 	web: ["table", "adaptive-cards", "text"],
 	cli: ["table", "text"],
 	tui: ["table", "text"],
+	native: ["table", "adaptive-cards", "text", "timeline"],
 };
-// These describe the bounded browser adapter, the one-shot CLI, and the planned live TUI mappings.
-// Resolving terminal capabilities does not start a client or a live transport.
+// These describe the bounded browser adapter, the one-shot CLI, the live TUI mappings,
+// and the native macOS client (SwiftUI grid/cards/timeline renderers).
+// Resolving client capabilities does not start a client or a live transport.
 const CLIENT_OPERATIONS: Readonly<Record<InteractionClient, readonly string[]>> = {
 	web: ["collection.search", "collection.refresh", "collection.help", "collection.back"],
 	cli: ["collection.search", "inbox.facet", "inbox.mailbox", "inbox.brain-category", "collection.sort", "collection.limit",
 		"collection.presentation", "collection.open", "inbox.mark-read", "collection.help"],
 	tui: Object.keys(MESSAGING_INTERACTIONS.operations),
+	native: Object.keys(MESSAGING_INTERACTIONS.operations),
 };
 
 export interface ResolvedNamedResourceView {

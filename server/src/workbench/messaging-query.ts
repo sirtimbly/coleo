@@ -56,6 +56,7 @@ const querySchema = z.object({
 }).strict();
 
 /** AND filters commute; set-valued filters and duplicate clauses have one canonical identity. */
+/** Validate query input and canonicalize defaults, filters, and facet-specific scope for every client. */
 export function normalizeMessagingQuery(value: unknown = {}): MessagingQuery {
 	const parsed = querySchema.parse(value);
 	if (parsed.scope === "mail" && parsed.facet !== undefined && parsed.facet !== "messages") {
@@ -84,6 +85,7 @@ export function normalizeMessagingQuery(value: unknown = {}): MessagingQuery {
 	};
 }
 
+/** Produce the canonical serialized identity used to bind collection pages and cursors to a query. */
 export function messagingQueryIdentity(query: MessagingQuery): string {
 	return JSON.stringify(normalizeMessagingQuery(query));
 }

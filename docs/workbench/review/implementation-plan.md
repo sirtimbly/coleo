@@ -41,6 +41,57 @@ contracts to the actual React Inbox: scoped reads, source freshness, root paging
 nested selection, ordered refresh, and authenticated socket-only recovery. Its
 focused API/model/browser evidence is separate from the HTML demo evidence.
 
+### Cross-client interaction decision accepted on 2026-10-06
+
+Include a shared interaction definition in the early named-view milestone (1c).
+Coordinate web and TUI keyboard navigation wherever the clients support the same
+operation. CLI flags and subcommands use the same vocabulary, parameters, and
+selection meaning, with mnemonic aliases where practical. Named views reference
+reusable interaction profiles and contribute explicit bindings/overrides. Resolve
+these through the same API as the view so adapters and help text share one source
+of truth. See [Coordinated keyboard and CLI interactions](#coordinated-keyboard-and-cli-interactions)
+for the schema boundary and acceptance checks.
+
+### Terminal stack and repository direction selected by Tim
+
+The TypeScript/OpenTUI versus Python/Rich + Textual bake-off is concluded. Tim
+selects **Python with Rich and Textual** for the full-featured terminal client,
+based on hands-on experience that Textual provides the stronger visual result
+and more complete native terminal features. This is a product/maintenance choice,
+not a claim that the candidates had identical implementation costs or passed an
+unrecorded scorecard. The comparison and its evidence remain in
+[the bake-off record](./terminal-bake-off.md).
+
+The target repository shape is a root-level Python client project alongside a
+server/web application in its own directory, with room for independent native
+and mobile clients. Clients communicate with the existing service API; they do
+not import server internals or access its database, Maildir, or JetStream. Keep
+portable wire contracts and shared fixtures as the cross-language boundary.
+This is a staged migration, not authorization to relocate the server or web app
+in this documentation slice.
+
+Build the complete Python CLI and TUI against the shared Inbox contract and
+fixtures before deprecating the Bun CLI. During parity work, keep the Bun
+snapshot CLI available as a compatibility/reference implementation. Deprecation requires
+documented command/output migration, conformance and integration coverage for
+the Python client, packaging/install verification, and an explicit removal
+milestone. The Inbox-specific OpenTUI candidate has been removed by explicit
+direction before Python parity; its bake-off evidence is historical. The shared
+OpenTUI dependency remains for the separate Arms dashboard. Do not remove that
+unrelated TUI or shared API/domain contracts.
+
+Milestone 1c is implemented in [Named Inbox views and coordinated interactions](./named-inbox-views.md):
+API resolution/validation, a production named browser view, and shared keyboard/
+CLI binding contracts. The browser proof covers search, refresh, and help keys;
+full navigation/folding/selection keyboard parity remains an acceptance gate for
+the live-client slice. Milestone 1d is implemented in
+[Named Inbox CLI snapshots](./inbox-cli.md): definition-driven flags/help,
+text/JSON snapshots, root paging, freshness/partial-result reporting, reply trees,
+targeted inspection, and exact read actions through HTTP. The live TypeScript TUI
+and Python comparison are recorded in the [concluded bake-off](./terminal-bake-off.md).
+The selected continuation is to establish the root-level Python client project,
+complete and verify Python CLI/TUI parity, then deprecate the Bun CLI deliberately.
+
 ## What we are building
 
 Coleo owns the resources and their commands. The workbench arranges ways to see
@@ -89,6 +140,7 @@ a complete shared framework, new toolbar syntax, or a second client.
 | Panel host: browser storage failure | Prevent fallback failures from blocking API persistence |
 | Panel host: classic shell | Retire classic-only code; Golden Layout becomes the sole browser shell |
 | Future clients | Shared serializable contracts; CLI snapshot and TUI live slices before any native-app commitment |
+| Cross-client interactions | Shared operation IDs and interaction profiles coordinate web/TUI shortcuts, CLI flags, and generated help; explicit scope and capability diagnostics |
 | File-authored process templates | Versioned, portable definitions for resource views, actions, toolbars, and workspace starting points; editable without the browser |
 
 This resolves the review's architectural choices. Tim has also selected
@@ -269,6 +321,24 @@ undo/redo, live editor preservation, and scale gates still pass. Keep library
 upgrades out of this extraction.
 
 ## 5. Give panels and controls semantic slots
+
+**Adaptive-toolbar decision accepted on 2026-10-06:** use semantic group labels,
+alignment, and control collapse/overflow priorities in the thin named-view
+definition. The browser measures actual controls and tries one physical row,
+then two maximum. When necessary, hide title/avatar first, collapse button text
+to icons, then move eligible controls into a grouped ellipsis overflow panel.
+Restore controls as space grows. Context and actions can align to opposite sides
+with space between groups. Overflow preserves labels, icons, disabled states,
+and the same command targets. These early layout hints do not freeze the full
+control inventory or toolbar authoring schema. Implementation and checks are
+recorded in [Named Inbox views](./named-inbox-views.md).
+
+Follow-up refinement: prefer the second row before combining dropdowns. Compact
+choices keep their selected values visible even when their labels are hidden.
+Consolidate action buttons into a context panel before choices, and retain toggle
+buttons on the toolbar longer. If choices must move, present distinct labeled
+option-list groups in the same overflow panel. Control kind is semantic metadata,
+so identical filter icons never become the only way to distinguish dropdowns.
 
 Start with an inventory of every existing toolbar widget, field/editor kind,
 action, selection mode, and insight control. Classify all known controls before
@@ -542,6 +612,75 @@ it maps semantic commands to keys and terminal controls. Adapt existing CLI/TUI
 code rather than launching a second terminal framework. Neither gains direct
 database or JetStream access for the sake of reuse.
 
+### Coordinated keyboard and CLI interactions
+
+Extend the thin named-view contract with a serializable interaction definition.
+Use the existing `src/workbench/resource-view-definition.ts` boundary and a
+headless registry/resolver, with shared fixtures. A reusable interaction profile
+supplies collection navigation defaults; named views add resource-specific
+operations and explicit overrides. Operation IDs remain independent of renderer
+choice and toolbar placement. Toolbar buttons, keyboard dispatch, terminal menus,
+and CLI parsing invoke the same registered operation and parameter contract.
+
+The definition needs these concepts:
+
+| Concept | Meaning |
+| --- | --- |
+| Operation | Stable registered ID and label for navigation, a query change, a presentation change, or an API-backed resource command |
+| Binding/arguments | Typed query or presentation binding, command arguments, and explicit target: focused item, selected items, or loaded branch descendants |
+| Keyboard mapping | Key/modifier descriptors, focus scope, and allowed interaction context, shared by web/TUI with declared client overrides |
+| CLI mapping | Long flag or subcommand, optional short alias, value type/arity, and mapping to the same binding or command arguments |
+| Resolution | Required capabilities, declared fallback or unsupported diagnostic, and the effective bindings used to generate help |
+
+Navigation and focus changes are client operations; resource mutations remain
+API-authoritative. A key binding does not authorize an action. Selection follows
+the existing threading contract: branch operations act on an explicit snapshot of
+loaded descendants, and incoming replies are not silently added to that snapshot.
+
+Illustrative defaults to validate against existing application and terminal
+bindings before choosing the shipped profile:
+
+| Operation | Web and TUI keyboard | CLI meaning |
+| --- | --- | --- |
+| Previous/next item | Up/Down; optional `k`/`j` aliases | No one-shot navigation flag needed |
+| Open focused item | Enter | Detail subcommand with explicit item ID |
+| Back/dismiss | Escape | No one-shot navigation flag needed |
+| Focus search | `/` | `--search <text>` |
+| Toggle selection | Space | Explicit item IDs for resource actions |
+| Collapse/expand branch | Left/Right | Tree presentation and expansion options |
+| Refresh | `r` | Run the snapshot command again |
+| Show interaction help | `?` | `--help` |
+
+Prefer readable long CLI flags; short aliases can share a keyboard mnemonic when
+it is unambiguous. A navigation keystroke need not acquire an artificial CLI flag.
+Keep meaningful differences explicit rather than promising literal parity for
+every client feature. The table is a proposed mapping, not implemented bindings.
+
+Resolve defaults and declared overrides deterministically. Validate unknown
+operations, invalid arguments/bindings, duplicate CLI names/aliases, and keyboard
+conflicts in overlapping active scopes. Include inherited profile bindings and
+host-reserved shortcuts in conflict checks; provide actionable diagnostics rather
+than silently selecting a winner. Represent modifiers explicitly and resolve
+platform-dependent modifiers in the adapter.
+
+Keyboard dispatch follows the focused panel and active context. Normal typing,
+editable controls, composition input, and browser/OS shortcuts must remain usable;
+single-character navigation does not fire while entering text. Detail panes and
+dialogs have explicit scopes, and inactive panels cannot handle the same key.
+Disabled/unavailable operations are also disabled for keyboard invocation. Show
+effective shortcuts beside applicable controls and generate web shortcut help,
+TUI help, and CLI help from the resolved definition, including declared fallbacks
+and unsupported operations.
+
+**Acceptance for 1c–1e:** resolve the same named Inbox view and interaction profile
+for all three clients. Shared fixtures cover defaults, overrides, argument types,
+scope conflicts, and capability diagnostics. CLI flags produce the same normalized
+query/command targets as equivalent interactive controls. Web and TUI checks prove
+matching focus/open/back/search/folding/selection behavior, text-entry isolation,
+and exact action targets. Keep browser checks light and cover resolution/conflict
+logic in headless unit tests. The complete toolbar/blueprint schema and file
+authoring format remain gated by their existing inventory and authoring work.
+
 Later, timebox one native spike: load, filter, inspect, and act on the same
 Inbox data, then test offline/reconnect and error paths. Compare SwiftUI's
 native UI plus a service client against Perry's TypeScript/native adapters.
@@ -560,9 +699,9 @@ behavior before extraction, and update this checklist as evidence lands.
 | --- | --- | --- | --- |
 | 1a | `feat(api): unify messaging collection queries` | Existing domain services; minimal query contract | Single scoped endpoint, paging/freshness/partial-failure contract tests |
 | 1b | `fix(web): make messaging refresh ordered and recoverable` | 1a | Single collection load path; burst, stale-response, reconnect browser checks |
-| 1c | `feat(workbench): resolve named collection-view definitions` | 1a; thin composition/registry contract | Same named query, fields, two toolbar tiers, optional metadata, commands, and capability diagnostics through the API |
-| 1d | `feat(cli): expose named inbox snapshots` | 1a, 1c | CLI text/JSON matches the browser's resolved view; scope/freshness/partial results are explicit |
-| 1e | `feat(tui): prove a live named inbox view` | 1b, 1c, 1d | Same view and commands, HTTP snapshots plus change/recovery protocol, terminal mappings and explicit fallbacks |
+| 1c | `feat(workbench): resolve named collection-view definitions` | 1a; thin composition/registry contract | Same named query, fields, two toolbar tiers, optional metadata, commands, interaction profiles, validated bindings, and capability diagnostics through the API |
+| 1d | `feat(cli): expose named inbox snapshots` | 1a, 1c | CLI text/JSON matches the browser's resolved view; flags/commands/help use shared interactions; scope/freshness/partial results are explicit |
+| 1e | `feat(tui): prove a live named inbox view` | 1b, 1c, 1d | Same view and commands, HTTP snapshots plus change/recovery protocol, coordinated web/TUI shortcuts and help, terminal mappings and explicit fallbacks |
 | 2a | `feat(workbench): persist independent panel view state` | Minimal panel schema | Two same-resource panels stay independent across restore |
 | 2b | `fix(workbench): track unseen changes per panel` | 1b, 2a | Query-relevant changes and observation rules; no sibling clearing |
 | 2c | `fix(web): save settings with a canonical round trip` | 2a | Success/failure and same-panel request ordering; no durable drafts |
@@ -576,7 +715,10 @@ behavior before extraction, and update this checklist as evidence lands.
 | 4e | `feat(workbench): add blueprint authoring assistance` | 4b schema and capability registry; iterate alongside 4c–4d | Web and local-editor completions, hover, diagnostics, offline schema support, and shared semantic fixtures |
 | 5a | `refactor(web): separate workspace policy from renderer lifetime` | Relevant behavior coverage | Host/sheet/feature seams split without remount regressions |
 | 5b | `fix(web): consolidate remaining projection refresh owners` | 1b's proven controller | Tasks/Processes use one policy; no burst/order regressions |
-| 6 | Extend the CLI/TUI rewrite across remaining resource recipes | Early named Inbox proof; extracted models and blueprint contracts | Same query/action/composition semantics across clients, with documented terminal exceptions |
+| 6a | Establish monorepo client/server layout and root Python client project | Python/Textual selected; current build/release paths inventoried | Root Python project is independently installable/testable; server and web relocation has an explicit, verified migration path |
+| 6b | Complete Python Inbox CLI/TUI and extend to remaining resource recipes | 6a; shared wire fixtures and named-view contracts | Python client covers supported query/action/composition semantics; conformance, fault recovery, packaging, and migration docs pass |
+| 6c | Deprecate Bun CLI and retire Inbox OpenTUI adapter | 6b exit gate and release/migration plan | Python CLI is the supported terminal client; old commands have a documented transition; unrelated Arms TUI and service contracts remain intact |
+| 6d | Extend the Python CLI/TUI across remaining resource recipes | 6b; extracted models and blueprint contracts | Same query/action/composition semantics across clients, with documented terminal exceptions |
 | Later | Profile ownership, cross-client conflict handling, native spike | Actual product demand | Separate scoped plans; no blockage of Messaging or editor work |
 
 Initial 1a/1b implementation evidence is recorded in

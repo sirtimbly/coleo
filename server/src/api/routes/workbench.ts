@@ -16,6 +16,7 @@ import { broadcast } from "../websocket";
 import { createWorkbenchAttentionRoutes } from "./workbench-attention";
 import { createWorkbenchCardRoutes } from "./workbench-cards";
 import { createWorkbenchInboxRoutes } from "./workbench-inbox";
+import { createWorkbenchNamedViewRoutes } from "./workbench-named-views";
 
 import type { Database } from "bun:sqlite";
 
@@ -208,6 +209,7 @@ export function createWorkbenchRoutes(options: WorkbenchRouteOptions = {}) {
 	app.route("/attention", createWorkbenchAttentionRoutes());
 	app.route("/cards", createWorkbenchCardRoutes());
 	app.route("/inbox", createWorkbenchInboxRoutes({ coleoDir }));
+	app.route("/named-views", createWorkbenchNamedViewRoutes());
 
 	app.get("/bootstrap", async (c) => {
 		const db = c.get("db");

@@ -1,7 +1,7 @@
 /** Serializable interaction intent. Client handlers, DOM events, and CLI parsers stay in adapters. */
 import { z } from "zod";
 
-export const INTERACTION_CLIENTS = ["web", "cli", "tui"] as const;
+export const INTERACTION_CLIENTS = ["web", "cli", "tui", "native"] as const;
 export type InteractionClient = typeof INTERACTION_CLIENTS[number];
 export type InteractionScope = "collection" | "item" | "tree" | "help";
 export type KeyModifier = "control" | "meta" | "alt" | "shift" | "primary";
@@ -22,6 +22,7 @@ export const interactionBindingSchema = z.object({
 		shared: z.array(keyboardBindingSchema).default([]),
 		web: z.array(keyboardBindingSchema).optional(),
 		tui: z.array(keyboardBindingSchema).optional(),
+		native: z.array(keyboardBindingSchema).optional(),
 	}).strict().optional(),
 	cli: z.union([
 		z.object({ flag: z.string().regex(/^--[a-z][a-z0-9-]*$/), alias: z.string().regex(/^-[a-zA-Z]$/).optional() }).strict(),
@@ -181,7 +182,8 @@ export function resolveInteractions(
 	return { schemaVersion: 1, profileId: view.interactionProfile ?? null, client,
 		bindings: bindings.filter((binding) => !binding.disabled).map((binding) => {
 			const operation = registry.operations[binding.operation]!;
-			const keyboard = client === "cli" ? [] : binding.keyboard?.[client] ?? binding.keyboard?.shared ?? [];
+			const specific = client === "web" || client === "tui" || client === "native" ? binding.keyboard?.[client] : undefined;
+			const keyboard = client === "cli" ? [] : specific ?? binding.keyboard?.shared ?? [];
 			const mapped = client === "cli" ? !!binding.cli : keyboard.length > 0;
 			const available = mapped && supportedOperations.has(binding.operation);
 			return { ...operation, id: binding.id, operation: binding.operation, keyboard, cli: binding.cli, available,

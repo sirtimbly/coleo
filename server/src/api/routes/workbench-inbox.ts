@@ -3,6 +3,7 @@ import { getColeoDir } from "../../config";
 
 import { HttpError } from "../middleware";
 import { loadMessagingCollection, parseMessagingRequest } from "../messaging-collection";
+import { resolveMessagingReference } from "../messaging-reference";
 import { listWorkbenchInboxPage, mapInboxAttention } from "../workbench-inbox-page";
 import { sanitizeEventData } from "./events";
 import { getInboxEventRecord } from "./inbox-event-record";
@@ -10,13 +11,16 @@ import { getWorkbenchInboxRecord } from "./workbench-inbox-record";
 
 import type { Database } from "bun:sqlite";
 import type { InboxAttentionRow } from "../workbench-inbox-page";
+import type { MessagingReferenceDependencies } from "../messaging-reference";
 
 interface InboxContext {
 	Variables: { db: Database };
 }
 
-export function createWorkbenchInboxRoutes(options: { coleoDir?: string } = {}) {
+export function createWorkbenchInboxRoutes(options: { coleoDir?: string; referenceDependencies?: MessagingReferenceDependencies } = {}) {
 	const app = new Hono<InboxContext>();
+	app.get("/references/:reference", async (c) => c.json(await resolveMessagingReference(c.get("db"), options.coleoDir ?? getColeoDir(),
+		c.req.param("reference"), c.req.query("profileId") ?? "local", options.referenceDependencies)));
 
 	app.get("/events/:itemKey", async (c) => {
 		const event = await getInboxEventRecord(c.req.param("itemKey"), c.req.query("sequence"));

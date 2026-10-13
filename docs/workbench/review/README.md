@@ -14,6 +14,19 @@ ordered refresh ownership, visible partial-source behavior, and socket-only
 recovery checks. Native CLI/TUI and the remaining resource recipes follow their
 own portability and extraction gates.
 
+The [named Inbox view milestone](./named-inbox-views.md) adds API resolution,
+shared interaction profiles, and a browser consumer with generated help and
+explicit presentation fallbacks. The [named Inbox CLI snapshot](./inbox-cli.md)
+now proves the contract through an actual HTTP-only terminal client; the live TUI
+is the next delivery slice, now organized as a
+[TypeScript/OpenTUI versus Python/Rich + Textual bake-off](./terminal-bake-off.md),
+with hands-on evaluation and a codebase tour before stack selection.
+
+The terminal bake-off is concluded: Tim selected Python/Rich + Textual based on
+its visual quality and feature coverage. The [historical test guide](./terminal-bake-off-review.md)
+remains reproducible; the [implementation plan](./implementation-plan.md) now
+tracks the monorepo migration, Python parity, and Bun CLI deprecation gates.
+
 Coleo has useful tools on a crowded bench. The strongest abstraction is already
 working: a resource can appear in several views without making its renderer
 the owner of the resource. Stable identities, targeted Inbox details, API-owned

@@ -51,7 +51,7 @@ function decodeCursor(value: string | undefined, queryId: string): CollectionCur
 }
 
 /** Capture a retained sequence boundary; scan through sparse windows rather than assuming a short prefix is exhaustive. */
-async function retainedSnapshot(store: IEventStore, pinned: CollectionCursor["events"]): Promise<{
+export async function retainedMessagingSnapshot(store: IEventStore, pinned: CollectionCursor["events"]): Promise<{
 	events: EventData[]; boundary: NonNullable<CollectionCursor["events"]>;
 }> {
 	if (!store.isInitialized()) throw new Error("Retained event store is unavailable");
@@ -133,7 +133,7 @@ export async function loadMessagingCollection(
 	})();
 	const needsEvents = requested.includes("activity") || requested.includes("events");
 	const timeout = dependencies.sourceTimeoutMs ?? 12000;
-	const retained = needsEvents ? deadline(retainedSnapshot(dependencies.store ?? eventStore, cursor?.events ?? null), timeout) : null;
+	const retained = needsEvents ? deadline(retainedMessagingSnapshot(dependencies.store ?? eventStore, cursor?.events ?? null), timeout) : null;
 	let boundary = cursor?.events ?? null;
 	const sourceResults = await Promise.all(requested.map(async (id): Promise<{ items: MessagingItem[]; state: MessagingSourceState }> => {
 		try {

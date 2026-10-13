@@ -3,6 +3,7 @@
  */
 
 import type { ChangeEvent, ReactNode } from "react";
+import { useId } from "react";
 import type { Selection } from "@heroui/react";
 import { Button, Dropdown, Label } from "@heroui/react";
 import { ChevronDown, ListFilter, Search, SlidersHorizontal } from "lucide-react";
@@ -46,10 +47,10 @@ export function ProjectionMenuTrigger({
 			)}
 		>
 			<ListFilter className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-			<span className="shrink-0 text-muted-foreground">{label}</span>
-			<span className="min-w-0 truncate font-semibold text-foreground">{summary}</span>
+			<span data-toolbar-label className="shrink-0 text-muted-foreground">{label}</span>
+			<span data-toolbar-value className="min-w-0 truncate font-semibold text-foreground">{summary}</span>
 			{count !== undefined ? (
-				<span className="shrink-0 tabular-nums text-muted-foreground">{count}</span>
+				<span data-toolbar-label className="shrink-0 tabular-nums text-muted-foreground">{count}</span>
 			) : null}
 			<ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
 		</Button>
@@ -63,6 +64,7 @@ export function ProjectionFilterMenu({
 	onChange,
 	className,
 	isDisabled = false,
+	inline = false,
 }: {
 	label: string;
 	value: string;
@@ -70,7 +72,9 @@ export function ProjectionFilterMenu({
 	onChange: (value: string) => void;
 	className?: string;
 	isDisabled?: boolean;
+	inline?: boolean;
 }) {
+	const radioName = useId();
 	const selected = options.find((option) => option.id === value) ?? options[0];
 	const handleSelectionChange = (selection: Selection) => {
 		if (isDisabled) return;
@@ -82,6 +86,14 @@ export function ProjectionFilterMenu({
 	};
 
 	if (!selected) return null;
+	if (inline) return <fieldset className="min-w-0 w-full" disabled={isDisabled} aria-label={label}>
+		<legend className="mb-1 text-xs font-semibold text-muted-foreground">{label}</legend>
+		{options.map((option) => <label key={option.id} className="flex items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-surface-secondary">
+			<input type="radio" name={radioName} checked={value === option.id} onChange={() => { if (!isDisabled) onChange(option.id); }} aria-label={option.label} />
+			<span className="min-w-0 flex-1">{option.label}</span>
+			{option.count !== undefined && <span className="text-muted-foreground">{option.count}</span>}
+		</label>)}
+	</fieldset>;
 
 	return (
 		<Dropdown>
@@ -122,12 +134,14 @@ export function ProjectionSearch({
 	placeholder = "Search this view…",
 	className,
 	isDisabled = false,
+	shortcut,
 }: {
 	value: string;
 	onChange: (value: string) => void;
 	placeholder?: string;
 	className?: string;
 	isDisabled?: boolean;
+	shortcut?: string;
 }) {
 	const handleChange = (event: ChangeEvent<HTMLInputElement>) => onChange(event.target.value);
 	return (
@@ -137,6 +151,8 @@ export function ProjectionSearch({
 				type="search"
 				disabled={isDisabled}
 				name="projection-search"
+				title={shortcut ? `Search (${shortcut})` : undefined}
+				aria-keyshortcuts={shortcut}
 				aria-label={placeholder.replace(/…$/, "")}
 				autoComplete="off"
 				value={value}

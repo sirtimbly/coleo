@@ -5,14 +5,16 @@ import { indexResourceHierarchy, hierarchySelectionSummaries, toggleHierarchySel
 
 import type { MailThreadProjection } from "../../../src/workbench/mail-thread-model";
 
-export function MessagingThreadTree({ thread, selectedIds, onSelectionChange, onOpenMessage }: {
+export function MessagingThreadTree({ thread, selectedIds, onSelectionChange, onOpenMessage, initialExpansion = "all" }: {
 	thread: MailThreadProjection;
 	selectedIds: ReadonlySet<string>;
 	onSelectionChange: (ids: ReadonlySet<string>) => void;
 	onOpenMessage: (messageId: string) => void;
+	initialExpansion?: "collapsed" | "roots" | "all";
 }) {
 	const index = useMemo(() => indexResourceHierarchy(thread.hierarchy), [thread.hierarchy]);
-	const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+	const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set(initialExpansion === "all" ? []
+		: index.preorder.filter((id) => initialExpansion === "collapsed" || !thread.hierarchy.rootIds.includes(id))));
 	const expanded = new Set(index.preorder.filter((id) => !collapsed.has(id)));
 	const rows = visibleHierarchyRows(index, expanded).filter((row) => row.node.selectable);
 	const summaries = hierarchySelectionSummaries(index, selectedIds);

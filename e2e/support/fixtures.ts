@@ -10,8 +10,10 @@
 import type { Page, Route } from "@playwright/test";
 import { fixtureMessagingPage, fixtureThreads } from "./messaging";
 import type { FixtureMail } from "./messaging";
+import { getNamedResourceView } from "../../src/workbench/named-resource-views";
 
 interface MockApiOptions {
+	layoutMode?: "classic" | "golden";
 	arms?: unknown[];
 	tasks?: Array<Record<string, unknown>>;
 	bugs?: Array<Record<string, unknown>>;
@@ -44,10 +46,10 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 	const inboxRecords = [...options.inbox ?? []] as FixtureMail[];
 	const archiveRecords = [...options.archive ?? []] as FixtureMail[];
 
-	await page.addInitScript(() => {
-		window.localStorage.setItem("coleo-layout-mode", "classic");
+	await page.addInitScript((layoutMode) => {
+		window.localStorage.setItem("coleo-layout-mode", layoutMode);
 		window.localStorage.setItem("coleo:workbench-profile", "local");
-	});
+	}, options.layoutMode ?? "classic");
 
 	await page.route("**/api/**", async (route) => {
 		const request = route.request();
@@ -114,6 +116,10 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 				views: viewRecords,
 				layouts: [],
 			});
+		}
+		if (path.startsWith("/api/workbench/named-views/")) {
+			const view = getNamedResourceView(decodeURIComponent(path.split("/").at(-1)!), "web");
+			return view ? json(route, view) : json(route, { error: "Named resource view not found" }, 404);
 		}
 		if (path === "/api/workbench/inbox") {
 			if (url.searchParams.has("query")) return json(route, fixtureMessagingPage({ ...options, inbox: inboxRecords, archive: archiveRecords },

@@ -18,7 +18,8 @@ createRoot(document.getElementById('root')!).render(
           persister,
           buster: '2026-07-query-cache-v2',
           dehydrateOptions: {
-            shouldDehydrateQuery: (query) => query.queryKey[0] !== 'tasks',
+            // Reusable definitions resolve against the current API instead of browser-persisted bindings.
+            shouldDehydrateQuery: (query) => query.queryKey[0] !== 'tasks' && query.queryKey[0] !== 'named-resource-view',
           },
         }}
       >

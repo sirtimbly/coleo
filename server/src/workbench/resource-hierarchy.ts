@@ -38,6 +38,7 @@ export interface HierarchySelectionSummary {
 	readonly complete: boolean;
 }
 
+/** Validate a versioned parent forest and index it in stable source preorder for shared client adapters. */
 export function indexResourceHierarchy<T>(hierarchy: ResourceHierarchy<T>): ResourceHierarchyIndex<T> {
 	if (hierarchy.schemaVersion !== 1) throw new Error("Unsupported hierarchy schema version");
 	const byId = new Map<string, ResourceHierarchyNode<T>>();
@@ -105,6 +106,7 @@ export function visibleHierarchyRows<T>(
 	return rows;
 }
 
+/** Summarize selected selectable members per node, keeping incomplete child coverage explicit. */
 export function hierarchySelectionSummaries<T>(
 	index: ResourceHierarchyIndex<T>, selectedIds: ReadonlySet<string>,
 ): ReadonlyMap<string, HierarchySelectionSummary> {
@@ -122,6 +124,7 @@ export function hierarchySelectionSummaries<T>(
 	return summaries;
 }
 
+/** Return a node and its loaded descendants in source order, rejecting unknown roots. */
 export function hierarchySubtreeIds<T>(index: ResourceHierarchyIndex<T>, id: string): string[] {
 	if (!index.byId.has(id)) throw new Error(`Unknown hierarchy node: ${id}`);
 	const ids: string[] = [];
