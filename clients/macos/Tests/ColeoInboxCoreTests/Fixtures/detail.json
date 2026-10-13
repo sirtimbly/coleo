@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 1,
+  "thread": {
+    "id": "<first@example.test>",
+    "mailbox": "inbox",
+    "subject": "Unicode 日本語 🐙 and a deliberately long Inbox subject for narrow terminals",
+    "messageCount": 3,
+    "mailboxMessageCount": 2,
+    "unreadCount": 2,
+    "lastMessageAt": "2026-10-09T12:02:00.000Z",
+    "hierarchy": {
+      "schemaVersion": 1,
+      "rootIds": [
+        "thread:inbox:<first@example.test>"
+      ],
+      "nodes": [
+        {
+          "id": "thread:inbox:<first@example.test>",
+          "parentId": null,
+          "kind": "group",
+          "selectable": false,
+          "childrenComplete": true,
+          "data": {
+            "title": "Unicode 日本語 🐙 and a deliberately long Inbox subject for narrow terminals",
+            "summary": "Branch reply body.",
+            "timestamp": "2026-10-09T12:02:00.000Z",
+            "source": "inbox · 3 messages",
+            "unread": true,
+            "requiresAction": true,
+            "locations": []
+          }
+        },
+        {
+          "id": "message:<first@example.test>",
+          "parentId": "thread:inbox:<first@example.test>",
+          "kind": "resource",
+          "selectable": true,
+          "childrenComplete": true,
+          "data": {
+            "title": "Unicode 日本語 🐙 and a deliberately long Inbox subject for narrow terminals",
+            "summary": "# Review\n\nFull **Markdown** content, not just the summary.",
+            "timestamp": "2026-10-09T12:00:00.000Z",
+            "source": "Tim",
+            "from": "Tim",
+            "mailbox": "inbox",
+            "messageId": "<first@example.test>",
+            "locations": [
+              {
+                "mailbox": "inbox",
+                "messageId": "first",
+                "seen": false
+              }
+            ],
+            "unread": true,
+            "requiresAction": true
+          }
+        },
+        {
+          "id": "message:<reply@example.test>",
+          "parentId": "message:<first@example.test>",
+          "kind": "resource",
+          "selectable": true,
+          "childrenComplete": true,
+          "data": {
+            "title": "Re: Unicode",
+            "summary": "Sent-only context must be skipped by read.",
+            "timestamp": "2026-10-09T12:01:00.000Z",
+            "source": "Brain",
+            "from": "Brain",
+            "mailbox": "sent",
+            "messageId": "<reply@example.test>",
+            "locations": [
+              {
+                "mailbox": "sent",
+                "messageId": "reply",
+                "seen": true
+              }
+            ],
+            "unread": false,
+            "requiresAction": false
+          }
+        },
+        {
+          "id": "message:<branch@example.test>",
+          "parentId": "message:<first@example.test>",
+          "kind": "resource",
+          "selectable": true,
+          "childrenComplete": true,
+          "data": {
+            "title": "Re: Unicode",
+            "summary": "Branch reply body.",
+            "timestamp": "2026-10-09T12:02:00.000Z",
+            "source": "Arm",
+            "from": "Arm",
+            "mailbox": "inbox",
+            "messageId": "<branch@example.test>",
+            "locations": [
+              {
+                "mailbox": "inbox",
+                "messageId": "branch",
+                "seen": false
+              }
+            ],
+            "unread": true,
+            "requiresAction": true
+          }
+        }
+      ],
+      "complete": true
+    },
+    "diagnostics": [],
+    "aliases": [
+      "<first@example.test>",
+      "Unicode 日本語 🐙 and a deliberately long Inbox subject for narrow terminals",
+      "<reply@example.test>",
+      "Unicode",
+      "<branch@example.test>"
+    ],
+    "revision": "fixture-revision-1"
+  },
+  "messages": [
+    {
+      "id": "first",
+      "from": "Tim",
+      "to": "Tim",
+      "subject": "Unicode 日本語 🐙 and a deliberately long Inbox subject for narrow terminals",
+      "timestamp": "2026-10-09T12:00:00.000Z",
+      "body": "# Review\n\nFull **Markdown** content, not just the summary."
+    },
+    {
+      "id": "reply",
+      "from": "Brain",
+      "to": "Tim",
+      "subject": "Re: Unicode",
+      "timestamp": "2026-10-09T12:01:00.000Z",
+      "body": "Sent-only context must be skipped by read."
+    },
+    {
+      "id": "branch",
+      "from": "Arm",
+      "to": "Tim",
+      "subject": "Re: Unicode",
+      "timestamp": "2026-10-09T12:02:00.000Z",
+      "body": "Branch reply body."
+    }
+  ]
+}

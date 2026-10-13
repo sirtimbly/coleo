@@ -1,0 +1,753 @@
+{
+  "schemaVersion": 1,
+  "client": "native",
+  "definition": {
+    "schemaVersion": 1,
+    "id": "inbox-triage",
+    "panelKind": "collection",
+    "resource": "messaging",
+    "query": {
+      "schemaVersion": 1,
+      "scope": "inbox",
+      "profileId": "local",
+      "facet": "attention",
+      "mailbox": "inbox",
+      "brainCategory": "all",
+      "search": "",
+      "filters": [],
+      "sort": {
+        "field": "timestamp",
+        "direction": "desc"
+      },
+      "limit": 100
+    },
+    "commands": [
+      "inbox.open",
+      "inbox.mark-read",
+      "inbox.refresh"
+    ],
+    "interactionProfile": "collection-navigation",
+    "interactions": [
+      {
+        "id": "facet",
+        "operation": "inbox.facet",
+        "cli": {
+          "flag": "--facet"
+        }
+      },
+      {
+        "id": "mailbox",
+        "operation": "inbox.mailbox",
+        "cli": {
+          "flag": "--mailbox"
+        }
+      },
+      {
+        "id": "brain-category",
+        "operation": "inbox.brain-category",
+        "cli": {
+          "flag": "--brain-category"
+        }
+      },
+      {
+        "id": "sort",
+        "operation": "collection.sort",
+        "cli": {
+          "flag": "--sort"
+        }
+      },
+      {
+        "id": "limit",
+        "operation": "collection.limit",
+        "cli": {
+          "flag": "--limit"
+        }
+      },
+      {
+        "id": "presentation",
+        "operation": "collection.presentation",
+        "cli": {
+          "flag": "--presentation"
+        }
+      },
+      {
+        "id": "mark-read",
+        "operation": "inbox.mark-read",
+        "cli": {
+          "subcommand": "mark-read"
+        }
+      }
+    ],
+    "slots": {
+      "toolbar.primary.identity": [
+        {
+          "id": "heading",
+          "widget": "resource.identity",
+          "label": "Inbox triage",
+          "layout": {
+            "priority": 0,
+            "collapse": "hide",
+            "overflow": false
+          }
+        }
+      ],
+      "toolbar.primary.context": [
+        {
+          "id": "facet",
+          "widget": "inbox.facet",
+          "label": "View",
+          "binding": "query.facet",
+          "layout": {
+            "priority": 90,
+            "kind": "choice",
+            "collapse": "value",
+            "overflow": true
+          }
+        }
+      ],
+      "toolbar.primary.search": [
+        {
+          "id": "search",
+          "widget": "collection.search",
+          "label": "Search",
+          "binding": "query.search",
+          "layout": {
+            "priority": 100,
+            "kind": "value",
+            "collapse": "value",
+            "overflow": false
+          }
+        }
+      ],
+      "toolbar.primary.actions": [
+        {
+          "id": "mark-read",
+          "widget": "inbox.mark-read",
+          "label": "Mark read",
+          "command": "inbox.mark-read",
+          "layout": {
+            "priority": 60,
+            "collapse": "icon",
+            "overflow": true
+          }
+        },
+        {
+          "id": "refresh",
+          "widget": "collection.refresh",
+          "label": "Refresh",
+          "command": "inbox.refresh",
+          "layout": {
+            "priority": 70,
+            "collapse": "icon",
+            "overflow": true
+          }
+        }
+      ],
+      "toolbar.primary.state": [
+        {
+          "id": "count",
+          "widget": "collection.count",
+          "label": "Results",
+          "layout": {
+            "priority": 20,
+            "collapse": "none",
+            "overflow": true
+          }
+        }
+      ],
+      "toolbar.secondary.sort": [
+        {
+          "id": "sort",
+          "widget": "collection.sort",
+          "label": "Sort",
+          "binding": "query.sort",
+          "layout": {
+            "priority": 40,
+            "kind": "choice",
+            "collapse": "value",
+            "overflow": true
+          }
+        }
+      ],
+      "toolbar.secondary.presentation": [
+        {
+          "id": "display",
+          "widget": "collection.presentation",
+          "label": "Presentation",
+          "binding": "presentation.active",
+          "layout": {
+            "priority": 30,
+            "kind": "choice",
+            "collapse": "value",
+            "overflow": true
+          }
+        }
+      ],
+      "toolbar.secondary.selection": [
+        {
+          "id": "selection",
+          "widget": "collection.selection",
+          "label": "Selected resources",
+          "layout": {
+            "priority": 80,
+            "collapse": "none",
+            "overflow": true
+          }
+        }
+      ],
+      "toolbar.secondary.insights": [
+        {
+          "id": "insights",
+          "widget": "collection.insights",
+          "label": "Metadata overview",
+          "binding": "insights.active",
+          "layout": {
+            "priority": 10,
+            "kind": "toggle",
+            "collapse": "icon",
+            "overflow": true
+          }
+        }
+      ]
+    },
+    "toolbar": {
+      "maxRows": 2,
+      "groups": {
+        "toolbar.primary.identity": {
+          "label": "Identity",
+          "align": "start"
+        },
+        "toolbar.primary.context": {
+          "label": "Context",
+          "align": "start"
+        },
+        "toolbar.primary.search": {
+          "label": "Search",
+          "align": "start"
+        },
+        "toolbar.primary.actions": {
+          "label": "Actions",
+          "align": "end"
+        },
+        "toolbar.primary.state": {
+          "label": "Status",
+          "align": "end"
+        },
+        "toolbar.secondary.sort": {
+          "label": "Ordering",
+          "align": "start"
+        },
+        "toolbar.secondary.presentation": {
+          "label": "Presentation",
+          "align": "start"
+        },
+        "toolbar.secondary.selection": {
+          "label": "Selection",
+          "align": "end"
+        },
+        "toolbar.secondary.insights": {
+          "label": "Insights",
+          "align": "end"
+        }
+      }
+    },
+    "hierarchy": {
+      "initialExpansion": "all",
+      "selectionScope": "loaded-descendants"
+    },
+    "insights": {
+      "active": null,
+      "panels": [
+        {
+          "id": "overview",
+          "renderer": "messaging.overview",
+          "label": "Inbox metadata",
+          "fields": [
+            "unread",
+            "requiresAction",
+            "timestamp"
+          ]
+        }
+      ]
+    },
+    "presentation": {
+      "active": "grid",
+      "renderers": [
+        {
+          "id": "grid",
+          "renderer": "collection.grid",
+          "label": "Resource grid",
+          "fields": [
+            "title",
+            "source",
+            "timestamp",
+            "unread",
+            "requiresAction"
+          ],
+          "kind": "grid"
+        },
+        {
+          "id": "cards",
+          "renderer": "collection.cards",
+          "label": "Resource cards",
+          "fields": [
+            "title",
+            "summary",
+            "source",
+            "timestamp"
+          ],
+          "kind": "cards"
+        },
+        {
+          "id": "timeline",
+          "renderer": "messaging.timeline",
+          "label": "Activity timeline",
+          "fields": [
+            "title",
+            "summary",
+            "timestamp"
+          ],
+          "kind": "custom"
+        }
+      ]
+    }
+  },
+  "queryIdentity": "{\"schemaVersion\":1,\"scope\":\"inbox\",\"profileId\":\"local\",\"facet\":\"attention\",\"mailbox\":\"inbox\",\"brainCategory\":\"all\",\"search\":\"\",\"filters\":[],\"sort\":{\"field\":\"timestamp\",\"direction\":\"desc\"},\"limit\":100}",
+  "features": {
+    "slots": {
+      "toolbar.primary.identity": [
+        {
+          "id": "heading",
+          "implementation": "resource.identity"
+        }
+      ],
+      "toolbar.primary.context": [
+        {
+          "id": "facet",
+          "implementation": "inbox.facet"
+        }
+      ],
+      "toolbar.primary.search": [
+        {
+          "id": "search",
+          "implementation": "collection.search"
+        }
+      ],
+      "toolbar.primary.actions": [
+        {
+          "id": "mark-read",
+          "implementation": "inbox.mark-read"
+        },
+        {
+          "id": "refresh",
+          "implementation": "collection.refresh"
+        }
+      ],
+      "toolbar.primary.state": [
+        {
+          "id": "count",
+          "implementation": "collection.count"
+        }
+      ],
+      "toolbar.secondary.sort": [
+        {
+          "id": "sort",
+          "implementation": "collection.sort"
+        }
+      ],
+      "toolbar.secondary.presentation": [
+        {
+          "id": "display",
+          "implementation": "collection.presentation"
+        }
+      ],
+      "toolbar.secondary.selection": [
+        {
+          "id": "selection",
+          "implementation": "collection.selection"
+        }
+      ],
+      "toolbar.secondary.insights": [
+        {
+          "id": "insights",
+          "implementation": "collection.insights"
+        }
+      ]
+    },
+    "insights": [
+      {
+        "id": "overview",
+        "implementation": "metadata.summary",
+        "diagnostic": "Using metadata.summary instead of messaging.overview"
+      }
+    ],
+    "presentation": [
+      {
+        "id": "grid",
+        "implementation": "collection.grid"
+      },
+      {
+        "id": "cards",
+        "implementation": "collection.cards"
+      },
+      {
+        "id": "timeline",
+        "implementation": "messaging.timeline"
+      }
+    ]
+  },
+  "interactions": {
+    "schemaVersion": 1,
+    "profileId": "collection-navigation",
+    "client": "native",
+    "bindings": [
+      {
+        "label": "Previous item",
+        "kind": "navigation",
+        "target": "focused-item",
+        "id": "previous",
+        "operation": "collection.previous",
+        "keyboard": [
+          {
+            "key": "ArrowUp",
+            "modifiers": [],
+            "scope": "item"
+          },
+          {
+            "key": "k",
+            "modifiers": [],
+            "scope": "item"
+          }
+        ],
+        "available": true
+      },
+      {
+        "label": "Next item",
+        "kind": "navigation",
+        "target": "focused-item",
+        "id": "next",
+        "operation": "collection.next",
+        "keyboard": [
+          {
+            "key": "ArrowDown",
+            "modifiers": [],
+            "scope": "item"
+          },
+          {
+            "key": "j",
+            "modifiers": [],
+            "scope": "item"
+          }
+        ],
+        "available": true
+      },
+      {
+        "label": "Open item",
+        "kind": "navigation",
+        "command": "inbox.open",
+        "target": "focused-item",
+        "value": {
+          "type": "string"
+        },
+        "id": "open",
+        "operation": "collection.open",
+        "keyboard": [
+          {
+            "key": "Enter",
+            "modifiers": [],
+            "scope": "item"
+          }
+        ],
+        "cli": {
+          "subcommand": "show"
+        },
+        "available": true
+      },
+      {
+        "label": "Back / dismiss",
+        "kind": "navigation",
+        "id": "back",
+        "operation": "collection.back",
+        "keyboard": [
+          {
+            "key": "Escape",
+            "modifiers": [],
+            "scope": "help"
+          }
+        ],
+        "available": true
+      },
+      {
+        "label": "Search",
+        "kind": "query",
+        "binding": "query.search",
+        "value": {
+          "type": "string"
+        },
+        "id": "search",
+        "operation": "collection.search",
+        "keyboard": [
+          {
+            "key": "/",
+            "modifiers": [],
+            "scope": "collection"
+          }
+        ],
+        "cli": {
+          "flag": "--search",
+          "alias": "-s"
+        },
+        "available": true
+      },
+      {
+        "label": "Toggle item selection",
+        "kind": "navigation",
+        "target": "focused-item",
+        "id": "select",
+        "operation": "collection.select",
+        "keyboard": [
+          {
+            "key": "Space",
+            "modifiers": [],
+            "scope": "item"
+          }
+        ],
+        "available": true
+      },
+      {
+        "label": "Toggle loaded branch selection",
+        "kind": "navigation",
+        "target": "loaded-descendants",
+        "id": "select-branch",
+        "operation": "collection.select-branch",
+        "keyboard": [
+          {
+            "key": "Space",
+            "modifiers": [],
+            "scope": "tree"
+          }
+        ],
+        "available": true
+      },
+      {
+        "label": "Collapse branch",
+        "kind": "navigation",
+        "target": "focused-item",
+        "id": "collapse",
+        "operation": "collection.collapse",
+        "keyboard": [
+          {
+            "key": "ArrowLeft",
+            "modifiers": [],
+            "scope": "item"
+          },
+          {
+            "key": "ArrowLeft",
+            "modifiers": [],
+            "scope": "tree"
+          }
+        ],
+        "available": true
+      },
+      {
+        "label": "Expand branch",
+        "kind": "navigation",
+        "target": "focused-item",
+        "id": "expand",
+        "operation": "collection.expand",
+        "keyboard": [
+          {
+            "key": "ArrowRight",
+            "modifiers": [],
+            "scope": "item"
+          },
+          {
+            "key": "ArrowRight",
+            "modifiers": [],
+            "scope": "tree"
+          }
+        ],
+        "available": true
+      },
+      {
+        "label": "Refresh",
+        "kind": "navigation",
+        "command": "inbox.refresh",
+        "id": "refresh",
+        "operation": "collection.refresh",
+        "keyboard": [
+          {
+            "key": "r",
+            "modifiers": [],
+            "scope": "collection"
+          }
+        ],
+        "available": true
+      },
+      {
+        "label": "Show interaction help",
+        "kind": "navigation",
+        "id": "help",
+        "operation": "collection.help",
+        "keyboard": [
+          {
+            "key": "?",
+            "modifiers": [],
+            "scope": "collection"
+          }
+        ],
+        "cli": {
+          "flag": "--help",
+          "alias": "-h"
+        },
+        "available": true
+      },
+      {
+        "label": "View",
+        "kind": "query",
+        "binding": "query.facet",
+        "value": {
+          "type": "string",
+          "choices": [
+            "attention",
+            "messages",
+            "brain",
+            "arms",
+            "history",
+            "all"
+          ]
+        },
+        "id": "facet",
+        "operation": "inbox.facet",
+        "keyboard": [],
+        "cli": {
+          "flag": "--facet"
+        },
+        "available": false,
+        "diagnostic": "No native keyboard binding for inbox.facet"
+      },
+      {
+        "label": "Mailbox",
+        "kind": "query",
+        "binding": "query.mailbox",
+        "value": {
+          "type": "string",
+          "choices": [
+            "inbox",
+            "sent",
+            "archive"
+          ]
+        },
+        "id": "mailbox",
+        "operation": "inbox.mailbox",
+        "keyboard": [],
+        "cli": {
+          "flag": "--mailbox"
+        },
+        "available": false,
+        "diagnostic": "No native keyboard binding for inbox.mailbox"
+      },
+      {
+        "label": "Brain category",
+        "kind": "query",
+        "binding": "query.brainCategory",
+        "value": {
+          "type": "string",
+          "choices": [
+            "all",
+            "operations",
+            "tasks",
+            "arms",
+            "decisions",
+            "planning",
+            "alerts"
+          ]
+        },
+        "id": "brain-category",
+        "operation": "inbox.brain-category",
+        "keyboard": [],
+        "cli": {
+          "flag": "--brain-category"
+        },
+        "available": false,
+        "diagnostic": "No native keyboard binding for inbox.brain-category"
+      },
+      {
+        "label": "Timestamp order",
+        "kind": "query",
+        "binding": "query.sort.direction",
+        "value": {
+          "type": "string",
+          "choices": [
+            "asc",
+            "desc"
+          ]
+        },
+        "id": "sort",
+        "operation": "collection.sort",
+        "keyboard": [],
+        "cli": {
+          "flag": "--sort"
+        },
+        "available": false,
+        "diagnostic": "No native keyboard binding for collection.sort"
+      },
+      {
+        "label": "Page size",
+        "kind": "query",
+        "binding": "query.limit",
+        "value": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "id": "limit",
+        "operation": "collection.limit",
+        "keyboard": [],
+        "cli": {
+          "flag": "--limit"
+        },
+        "available": false,
+        "diagnostic": "No native keyboard binding for collection.limit"
+      },
+      {
+        "label": "Presentation",
+        "kind": "presentation",
+        "binding": "presentation.active",
+        "value": {
+          "type": "string",
+          "choices": [
+            "grid",
+            "cards",
+            "timeline"
+          ]
+        },
+        "id": "presentation",
+        "operation": "collection.presentation",
+        "keyboard": [],
+        "cli": {
+          "flag": "--presentation"
+        },
+        "available": false,
+        "diagnostic": "No native keyboard binding for collection.presentation"
+      },
+      {
+        "label": "Mark selected read",
+        "kind": "command",
+        "command": "inbox.mark-read",
+        "target": "selected-items",
+        "value": {
+          "type": "string-list"
+        },
+        "id": "mark-read",
+        "operation": "inbox.mark-read",
+        "keyboard": [],
+        "cli": {
+          "subcommand": "mark-read"
+        },
+        "available": false,
+        "diagnostic": "No native keyboard binding for inbox.mark-read"
+      }
+    ]
+  }
+}
