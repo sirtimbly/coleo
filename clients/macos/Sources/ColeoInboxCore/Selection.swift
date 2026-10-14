@@ -70,6 +70,7 @@ public struct SelectionEntry: Equatable, Sendable {
 /// unselected), and a revision change makes the plan fail loudly instead of
 /// silently upgrading, matching `selection.Selection`/`Session` in Python.
 public struct SelectionState: Equatable, Sendable {
+    public init() {}
     public private(set) var entries: [String: SelectionEntry] = [:]
     public var count: Int { entries.count }
     public var isEmpty: Bool { entries.isEmpty }

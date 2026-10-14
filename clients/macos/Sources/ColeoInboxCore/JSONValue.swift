@@ -42,7 +42,7 @@ public indirect enum JSONValue: Equatable, Sendable {
         }
     }
 
-    static func escape(_ value: String) -> String {
+    public static func escape(_ value: String) -> String {
         var out = "\""
         for scalar in value.unicodeScalars {
             switch scalar {

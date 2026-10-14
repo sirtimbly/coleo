@@ -52,7 +52,7 @@ public struct ResolvedFeature: Equatable, Sendable, Identifiable {
     public var diagnostic: String?
 }
 
-public struct ResolvedView: Equatable, Sendable {
+public struct ResolvedView: Sendable {
     public var client: String
     public var viewID: String
     public var resource: String

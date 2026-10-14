@@ -1,8 +1,9 @@
 import Foundation
 
-public enum APIError: Error, CustomStringConvertible {
+public enum APIError: Error, LocalizedError, CustomStringConvertible {
     case message(String)
     public var description: String { switch self { case .message(let text): return text } }
+    public var errorDescription: String? { description }
 }
 
 public protocol InboxTransport: Sendable {
@@ -33,10 +34,14 @@ public struct URLSessionTransport: InboxTransport {
     }
 
     public func request(path: String, body: JSONValue?, queryItems: [(String, String)]) async throws -> JSONValue {
-        var components = URLComponents(url: baseURL.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))), resolvingAgainstBaseURL: false)
-        if !queryItems.isEmpty {
-            components?.queryItems = queryItems.map { URLQueryItem(name: $0.0, value: $0.1) }
-        }
+        // API paths already percent-encode each resource ID. appendingPathComponent
+        // would encode those percent signs again, breaking mail/reference lookups.
+        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
+        let basePath = components?.percentEncodedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/")) ?? ""
+        let requestPath = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        components?.percentEncodedPath = "/" + [basePath, requestPath].filter { !$0.isEmpty }.joined(separator: "/")
+        components?.queryItems = queryItems.isEmpty ? nil : queryItems.map { URLQueryItem(name: $0.0, value: $0.1) }
+        components?.fragment = nil
         guard let url = components?.url else { throw APIError.message("Invalid API URL") }
         var request = URLRequest(url: url)
         request.timeoutInterval = 15
@@ -54,7 +59,7 @@ public struct URLSessionTransport: InboxTransport {
         do {
             (data, response) = try await session.data(for: request)
         } catch {
-            throw APIError.message("Inbox API request failed: \(type(of: error)); check COLEO_API_URL")
+            throw APIError.message("Inbox API request failed: \(error.localizedDescription); check COLEO_API_URL")
         }
         let value = try? JSONValue.decode(data)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
@@ -164,12 +169,13 @@ public func collectionRows(items: [InboxItem], expansion: String, folded: Set<St
         }
         var hidden = Set<String>()
         for (node, depth) in flattened.rows where node.id != item.id {
-            if hidden.contains(node.parentId ?? "") || mutableFolded.contains(node.parentId ?? "") {
+            let parent = node.parentId ?? item.id // root group nodes hang off the item, as in the TUI
+            if hidden.contains(parent) || mutableFolded.contains(parent) {
                 hidden.insert(node.id)
                 continue
             }
             let children = flattened.children[node.id] ?? []
-            rows.append(CollectionRow(id: node.id, parentId: node.parentId, depth: depth + 1, itemID: item.id,
+            rows.append(CollectionRow(id: node.id, parentId: parent, depth: depth + 1, itemID: item.id,
                                       selectable: node.selectable, title: node.title, summary: node.summary,
                                       timestamp: node.timestamp, source: node.source, unread: node.unread,
                                       requiresAction: node.requiresAction, hasChildren: !children.isEmpty))

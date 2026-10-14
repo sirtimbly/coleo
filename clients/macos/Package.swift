@@ -10,11 +10,12 @@ let package = Package(
     ],
     targets: [
         .target(name: "ColeoInboxCore"),
-        .executableTarget(name: "ColeoInboxMac", dependencies: ["ColeoInboxCore"]),
+        .executableTarget(name: "ColeoInboxMac", dependencies: ["ColeoInboxCore"], resources: [.copy("Resources/modules.json")]),
         .testTarget(
             name: "ColeoInboxCoreTests",
             dependencies: ["ColeoInboxCore"],
             resources: [.copy("Fixtures")]
         ),
+        .testTarget(name: "ColeoInboxMacTests", dependencies: ["ColeoInboxMac", "ColeoInboxCore"]),
     ]
 )

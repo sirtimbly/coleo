@@ -91,6 +91,18 @@ run = "uv run --locked coleo-inbox"
 [tasks."client:tui"]
 run = "uv run --locked coleo-inbox tui"
 
+[tasks."client:mac:build"]
+run = "swift build --package-path clients/macos"
+
+[tasks."client:mac:test"]
+run = "swift test --package-path clients/macos"
+
+[tasks."client:mac:run"]
+run = "swift run --package-path clients/macos ColeoInboxMac"
+
+[tasks."client:mac:app"]
+run = "bash clients/macos/scripts/make-app.sh"
+
 [tasks."dev:core"]
 run = "bun run dev:core"
 

@@ -1,11 +1,12 @@
 import CryptoKit
 import Foundation
 
-public enum ContractError: Error, Equatable, CustomStringConvertible {
+public enum ContractError: Error, LocalizedError, Equatable, CustomStringConvertible {
     case invalid(String)
     public var description: String {
         switch self { case .invalid(let message): return message }
     }
+    public var errorDescription: String? { description }
 }
 
 /// Short stable reference shown in place of a full ID, identical to the Python

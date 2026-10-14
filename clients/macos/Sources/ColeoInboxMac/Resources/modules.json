@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "modules": [
+    { "id": "inbox", "title": "Inbox", "description": "Items needing your attention", "symbol": "tray.full", "renderer": "messaging", "namedView": "inbox-triage", "facet": "attention" },
+    { "id": "tasks", "title": "Tasks", "description": "Project work, status, and assignments", "symbol": "checklist", "renderer": "tasks" },
+    { "id": "bugs", "title": "Bugs", "description": "Reports, priorities, and resolutions", "symbol": "ladybug", "renderer": "bugs" },
+    { "id": "brain", "title": "Brain", "description": "Orchestrator status and planning health", "symbol": "brain", "renderer": "brain" },
+    { "id": "dashboard", "title": "Dashboard", "description": "Project progress and system overview", "symbol": "chart.bar.xaxis", "renderer": "dashboard" }
+  ]
+}
