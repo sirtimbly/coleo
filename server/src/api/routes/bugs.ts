@@ -15,6 +15,7 @@ import {
   parseResourceListFilters,
 } from "./resource-list-filters";
 import { assertValidResourceMetadataTags } from "./resource-metadata";
+import { createListCsvRoutes } from "./list-csv";
 
 export interface Bug {
   id: string;
@@ -321,6 +322,7 @@ interface BugsContext {
 
 export function createBugsRoutes() {
   const app = new Hono<BugsContext>();
+  app.route("/csv", createListCsvRoutes("bugs"));
 
   // List bugs with filtering
   app.get("/", async (c) => {

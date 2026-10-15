@@ -23,6 +23,8 @@ import {
 	parseResourceListFilters,
 } from "./resource-list-filters";
 import { assertValidResourceMetadataTags } from "./resource-metadata";
+import { createListCsvRoutes } from "./list-csv";
+import { createTaskMaintenanceRoutes } from "./task-maintenance";
 
 interface ChecklistItem {
 	id: number;
@@ -386,6 +388,8 @@ function determineConsensusStatus(entries: ConsensusEntry[]): ConsensusState {
 
 export function createTasksRoutes() {
 	const app = new Hono<TasksContext>();
+	app.route("/csv", createListCsvRoutes("tasks"));
+	app.route("/maintenance", createTaskMaintenanceRoutes());
 
 	/**
 	 * List all tasks
