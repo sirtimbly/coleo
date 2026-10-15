@@ -12,6 +12,12 @@ public struct ModuleRecord: Identifiable, Sendable {
     public var owner: String { json["assignedArmName"]?.string ?? json["assigneeArmName"]?.string
         ?? json["assignedTo"]?.string ?? json["assigneeArmId"]?.string ?? "Unassigned" }
 
+    public var clipboardSummary: String {
+        [id, title, status, priority, owner]
+            .map { $0.replacingOccurrences(of: "\t", with: " ").replacingOccurrences(of: "\n", with: " ") }
+            .joined(separator: "\t")
+    }
+
     public init(json: JSONValue, kind: String) throws {
         guard let id = json["id"]?.string, !id.isEmpty else { throw ContractError.invalid("Resource has no ID") }
         self.id = id

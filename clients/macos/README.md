@@ -5,6 +5,27 @@ The Inbox uses the same shared contracts as the Python Rich/Textual client (`cli
 only to the Coleo HTTP/WebSocket API: no SQLite, Maildir, JetStream, or
 TypeScript runtime dependency.
 
+### Tasks and Bugs sorting
+
+The `sorting` object on each Tasks/Bugs entry in `modules.json` defines available
+sort fields and `defaultOrder`. Supported fields are `title`, `status`, `priority`,
+and `owner`. A field's optional `values` array defines its ascending value order;
+without it, text uses natural localized sorting. Unknown values follow declared
+values in ascending order. Descending reverses that order.
+
+Starter defaults sort critical-priority work first, then title. Tasks use
+`critical, high, normal, low`; Bugs use `critical, high, medium, low`. Status
+progression is declared separately for each module. Reset Sort restores the JSON
+default. Header sorting (macOS 14.4+) and Table Options use the same definitions;
+Table Options also works on earlier supported versions. Sorting covers loaded
+rows and persists through refresh and pagination within a tab.
+
+After changing the external catalog, use **Modules → Reload Module Catalog** and
+open a new tab. Existing tabs retain their launch recipes. Catalogs without
+`sorting` retain server order and expose no column sorting. The Python starter
+catalog carries the same metadata for shared use; Python does not yet apply these
+native table sort settings.
+
 The server resolves the view for `client=native` (added beside `web`/`cli`/`tui`
 in `server/src/workbench/interaction-definition.ts`). The app builds its
 toolbar, presentations, fields, metadata panel, and keyboard shortcuts from
@@ -49,6 +70,27 @@ instead of hard-coding the Inbox layout:
 
 ## Modules and launcher
 
+### Keyboard shortcuts
+
+Standard shortcuts route through native menus to the active document:
+
+| Shortcut | Action |
+|---|---|
+| ⌘F | Find in Inbox, Tasks, or Bugs |
+| ⌘R | Refresh active module |
+| ⌃⌘S | Toggle active sidebar |
+| ⇧⌘R | Mark Inbox selection read (when permitted) |
+| ⇧⌘B | Select focused Inbox branch |
+| ⇧⌘/ | Inbox keyboard help; Escape closes help |
+| ⌘T / ⌘N | New tab / window of the active module |
+
+With the Inbox collection focused, the resolved template also provides arrows,
+j/k, Enter, Space, `/`, `r`, and `?`. Space selects the item in grid mode or the
+branch in tree presentations. Text entry, sidebar navigation, and reading-pane
+text selection retain native keyboard behavior.
+
+### Opening modules
+
 Use **Modules** in the menu bar or the native tab bar's **+** button.
 The searchable popover offers **New Tab / New Window**.
 Drag a tab out into a separate window; **Window → Merge All Windows** brings
@@ -67,11 +109,16 @@ Tasks/Bugs currently provide browsing and inspection; create/edit workflows
 remain in the web client. Non-Inbox modules refresh every 15 seconds and on ⌘R.
 Source failures preserve and label previous snapshots. Search submits with Return.
 
-The catalog is `Sources/ColeoInboxMac/Resources/modules.json`, included in both
-SwiftPM builds and the app bundle. **Modules → Load Module Catalog…** validates
-and installs a JSON catalog at `~/Library/Application Support/Coleo/modules.json`.
-Its entries augment/override bundled IDs; importing another file replaces the
-installed catalog. Already open documents retain their launch recipe.
+The active catalog is an external JSON file read at startup and through
+**Modules → Reload Module Catalog**. Its entries are authoritative; there is no
+merge with bundled defaults. The default path is
+`~/Library/Application Support/Coleo/modules.json`, seeded once from
+`Sources/ColeoInboxMac/Resources/modules.json` if absent on first setup.
+**Choose Module Catalog…** validates a file and remembers its location without
+copying it. You can choose the source-tree file for development. **Show Module
+Catalog in Finder** reveals the active file. Edits require an explicit reload or
+restart, not a rebuild. Invalid reloads retain the last valid catalog. Already
+open documents retain their launch recipe.
 
 ```json
 {

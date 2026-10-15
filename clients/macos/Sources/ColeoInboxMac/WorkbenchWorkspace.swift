@@ -24,27 +24,46 @@ final class WorkbenchWorkspace: ObservableObject {
         }
     }
     private var launches: [UUID: Launch] = [:]
-    private let installedURL: URL
+    @Published private(set) var catalogURL: URL
+    private static let catalogPathKey = "coleo.moduleCatalogPath"
 
-    init() {
-        installedURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    init(catalogURL: URL? = nil) {
+        let defaultURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Coleo/modules.json")
+        if let catalogURL {
+            self.catalogURL = catalogURL
+        } else if let path = UserDefaults.standard.string(forKey: Self.catalogPathKey) {
+            self.catalogURL = URL(fileURLWithPath: path)
+        } else {
+            self.catalogURL = defaultURL
+            // The packaged file is only a first-run starter. Existing catalogs
+            // are authoritative and never merged with or replaced by the bundle.
+            if !FileManager.default.fileExists(atPath: defaultURL.path) {
+                do {
+                    guard let starter = Bundle.main.url(forResource: "modules", withExtension: "json")
+                        ?? Bundle.module.url(forResource: "modules", withExtension: "json") else {
+                        throw ContractError.invalid("Starter module catalog is missing")
+                    }
+                    try FileManager.default.createDirectory(at: defaultURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try FileManager.default.copyItem(at: starter, to: defaultURL)
+                } catch {
+                    self.error = "Could not create module catalog: \(error.localizedDescription)"
+                    modules = [.inbox]
+                    return
+                }
+            }
+        }
         reloadCatalog()
     }
 
     func reloadCatalog() {
         do {
-            guard let url = Bundle.main.url(forResource: "modules", withExtension: "json")
-                ?? Bundle.module.url(forResource: "modules", withExtension: "json") else {
-                throw ContractError.invalid("Bundled module catalog is missing")
-            }
-            modules = try ModuleCatalog.decode(Data(contentsOf: url)).modules
-            if FileManager.default.fileExists(atPath: installedURL.path) {
-                merge(try ModuleCatalog.decode(Data(contentsOf: installedURL)).modules)
-            }
+            let catalog = try ModuleCatalog.decode(Data(contentsOf: catalogURL))
+            modules = catalog.modules
+            error = nil
         } catch {
             if modules.isEmpty { modules = [.inbox] }
-            self.error = error.localizedDescription
+            self.error = "Could not read \(catalogURL.path): \(error.localizedDescription)"
         }
     }
 
@@ -53,24 +72,23 @@ final class WorkbenchWorkspace: ObservableObject {
         panel.allowedContentTypes = [.json]
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.message = "Load module launch recipes from a Coleo module catalog."
+        panel.message = "Choose the catalog to read at startup and on Reload. Edits to this file do not require rebuilding the app."
+        panel.directoryURL = catalogURL.deletingLastPathComponent()
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             let data = try Data(contentsOf: url)
-            _ = try ModuleCatalog.decode(data)
-            try FileManager.default.createDirectory(at: installedURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try data.write(to: installedURL, options: .atomic)
-            reloadCatalog()
+            let catalog = try ModuleCatalog.decode(data)
+            catalogURL = url
+            UserDefaults.standard.set(url.path, forKey: Self.catalogPathKey)
+            modules = catalog.modules
+            error = nil
         } catch {
             self.error = "Could not load modules: \(error.localizedDescription)"
         }
     }
 
-    private func merge(_ incoming: [WorkbenchModule]) {
-        for module in incoming {
-            if let index = modules.firstIndex(where: { $0.id == module.id }) { modules[index] = module }
-            else { modules.append(module) }
-        }
+    func revealCatalog() {
+        NSWorkspace.shared.activateFileViewerSelecting([catalogURL])
     }
 
     func launch(_ module: WorkbenchModule, in destination: ModuleDestination, using openWindow: OpenWindowAction) {
@@ -83,17 +101,28 @@ final class WorkbenchWorkspace: ObservableObject {
 
     func attach(_ window: NSWindow, document: ModuleDocument) {
         window.tabbingIdentifier = "coleo.workbench"
-        window.title = document.module.title
+        window.tab.title = document.module.title
         let launch = launches.removeValue(forKey: document.id)
         // Explicit New Window must not be auto-tabbed by the system preference.
         window.tabbingMode = launch == nil ? .automatic : .disallowed
+        if launch?.destination == .tab, let parent = launch?.parent, parent !== window {
+            // SwiftUI creates every document at defaultSize. Match the existing
+            // window before AppKit (and accessibility-based window managers) sees
+            // the new tab, rather than letting that default resize the group.
+            window.setFrame(parent.frame, display: false)
+            window.title = parent.title
+            window.subtitle = parent.subtitle
+        }
         DispatchQueue.main.async { [weak window] in
             guard let window else { return }
-            window.tabbingMode = .automatic
             if launch?.destination == .tab, let parent = launch?.parent, parent !== window {
+                // Use the latest frame: the window manager may have tiled the
+                // parent between document creation and this attachment callback.
+                window.setFrame(parent.frame, display: false)
                 parent.addTabbedWindow(window, ordered: .above)
                 window.makeKeyAndOrderFront(nil)
             }
+            window.tabbingMode = .automatic
             if window.tabGroup?.isTabBarVisible == false { window.toggleTabBar(nil) }
         }
     }

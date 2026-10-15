@@ -29,12 +29,14 @@ struct ContentView: View {
                             .frame(minWidth: 300, idealWidth: collectionWidth(view), maxWidth: .infinity, maxHeight: .infinity)
                             .background(ModuleColumnDefaults(sidebarWidth: 160,
                                 collectionWidth: collectionWidth(view), sidebarVisible: sidebarVisible))
+                            .background(CollectionKeyboard(enabled: !showHelp && !searchFocused) { key, modifiers in
+                                handleKey(key, modifiers: modifiers, view: view)
+                            })
                         detailColumn
                             .frame(minWidth: 280, idealWidth: 400, maxWidth: .infinity, maxHeight: .infinity)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .navigationTitle(session.module.title)
             } else {
                 VStack(spacing: 12) {
                     ModuleControlBar { Spacer() }
@@ -51,6 +53,14 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showHelp) { helpView }
+        .focusedSceneValue(\.workbenchActions, WorkbenchActions(
+            refresh: { session.scheduleRefresh() },
+            find: { searchFocused = true },
+            toggleSidebar: { sidebarVisible.toggle() },
+            help: { showHelp = true },
+            markRead: !session.selection.isEmpty && session.complete && session.view?.commands.contains("inbox.mark-read") == true
+                ? { Task { await session.markRead() } } : nil,
+            selectBranch: session.focusID != nil ? { toggleFocusedBranch() } : nil))
         .onChange(of: session.focusID) { _, id in
             guard let row = session.rows.first(where: { $0.id == id }) else {
                 session.clearDetail()
@@ -252,10 +262,10 @@ struct ContentView: View {
         switch command {
         case "inbox.refresh":
             Button { session.scheduleRefresh() } label: { Label(control.label, systemImage: "arrow.clockwise") }
-                .help(control.label).keyboardShortcut("r", modifiers: .command)
+                .help("\(control.label) (⌘R)")
         case "inbox.mark-read":
             Button { Task { await session.markRead() } } label: { Label(control.label, systemImage: "envelope.open") }
-                .help(control.label).keyboardShortcut("r", modifiers: [.command, .shift])
+                .help("\(control.label) (⇧⌘R)")
                 .disabled(session.selection.isEmpty || !session.complete)
         default:
             unsupported(control)
@@ -311,6 +321,10 @@ struct ContentView: View {
                     .help(session.connection).lineLimit(1)
                 if !session.complete { Label("Partial data", systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
                 Spacer()
+                Button("Select All") { session.selectAll() }
+                    .buttonStyle(.borderless)
+                    .disabled(!session.complete || session.items.isEmpty)
+                    .help("Select all loaded items, including collapsed threads (⌘A). Unloaded pages are not selected.")
                 if !session.selection.isEmpty {
                     Text("\(session.selection.count) selected").lineLimit(1)
                     Button("Clear") { session.selection.clear() }.buttonStyle(.borderless)
@@ -379,7 +393,6 @@ struct ContentView: View {
             }
         }
         .listStyle(.inset)
-        .onKeyPress { press in handleKey(press, view: view) }
     }
 
     private func cardRow(_ row: CollectionRow, fields: [String]) -> some View {
@@ -528,48 +541,41 @@ struct ContentView: View {
 
     // MARK: Keyboard (driven by resolved bindings, not hard-coded operations)
 
-    private func handleKey(_ press: KeyPress, view: ResolvedView) -> KeyPress.Result {
-        guard !searchFocused, press.modifiers.intersection([.command, .control, .option]).isEmpty else { return .ignored }
-        let character: String
-        switch press.key {
-        case .upArrow: character = "arrowup"
-        case .downArrow: character = "arrowdown"
-        case .leftArrow: character = "arrowleft"
-        case .rightArrow: character = "arrowright"
-        case .return: character = "enter"
-        case .escape: character = "escape"
-        case .space: character = "space"
-        default: character = press.characters.lowercased()
+    private func toggleFocusedBranch() {
+        if let row = session.rows.first(where: { $0.id == session.focusID }) { session.toggleSelection(row, branch: true) }
+    }
+
+    private func handleKey(_ key: String, modifiers: Set<String>, view: ResolvedView) -> Bool {
+        if key.lowercased() == "a", modifiers == ["command"] {
+            session.selectAll()
+            return true
         }
-        let indexed = session.rows.enumerated().first { $0.element.id == session.focusID }?.offset ?? 0
-        for binding in view.bindings where binding.available {
-            guard binding.keyboard.contains(where: { $0.key.lowercased() == character && $0.modifiers.isEmpty }) else { continue }
-            switch binding.operation {
-            case "collection.next":
-                if indexed + 1 < session.rows.count { session.focusID = session.rows[indexed + 1].id }
-            case "collection.previous":
-                if indexed > 0 { session.focusID = session.rows[indexed - 1].id }
-            case "collection.select":
-                if let row = session.rows.first(where: { $0.id == session.focusID }) { session.toggleSelection(row) }
-            case "collection.refresh": session.scheduleRefresh()
-            case "collection.search": searchFocused = true
-            case "collection.help": showHelp = true
-            case "collection.open":
-                if let row = session.rows.first(where: { $0.id == session.focusID }) { Task { await session.openDetail(row) } }
-            case "collection.collapse", "collection.expand":
-                if let row = session.rows.first(where: { $0.id == session.focusID }), row.hasChildren {
-                    let shouldFold = binding.operation == "collection.collapse"
-                    if session.folded.contains(row.id) != shouldFold { session.toggleFold(row) }
-                }
-            default: return .ignored
+        let tree = view.renderers.first { $0.id == session.presentation }?.kind != "grid"
+        guard let operation = keyboardOperation(bindings: view.bindings, key: key, modifiers: modifiers, tree: tree) else { return false }
+        let indexed = session.rows.firstIndex { $0.id == session.focusID }
+        switch operation {
+        case "collection.next":
+            let next = indexed.map { $0 + 1 } ?? 0
+            if next < session.rows.count { session.focusID = session.rows[next].id }
+        case "collection.previous":
+            let previous = indexed.map { max(0, $0 - 1) } ?? 0
+            if previous < session.rows.count { session.focusID = session.rows[previous].id }
+        case "collection.select":
+            if let row = session.rows.first(where: { $0.id == session.focusID }) { session.toggleSelection(row) }
+        case "collection.select-branch": toggleFocusedBranch()
+        case "collection.refresh": session.scheduleRefresh()
+        case "collection.search": searchFocused = true
+        case "collection.help": showHelp = true
+        case "collection.open":
+            if let row = session.rows.first(where: { $0.id == session.focusID }) { Task { await session.openDetail(row) } }
+        case "collection.collapse", "collection.expand":
+            if let row = session.rows.first(where: { $0.id == session.focusID }), row.hasChildren {
+                let shouldFold = operation == "collection.collapse"
+                if session.folded.contains(row.id) != shouldFold { session.toggleFold(row) }
             }
-            return .handled
+        default: return false
         }
-        if press.key == .space, let row = session.rows.first(where: { $0.id == session.focusID }) {
-            session.toggleSelection(row)
-            return .handled
-        }
-        return .ignored
+        return true
     }
 
     // MARK: Help (generated from resolved bindings)
@@ -577,6 +583,8 @@ struct ContentView: View {
     private var helpView: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Keyboard").font(.headline)
+            Text("⌘F Find · ⌘R Refresh · ⇧⌘R Mark read · ⇧⌘B Select branch · ⌃⌘S Sidebar · ⇧⌘/ Help")
+                .font(.caption)
             if let view = session.view {
                 ForEach(view.bindings) { binding in
                     HStack {
@@ -595,7 +603,7 @@ struct ContentView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text(countText).font(.caption)
-            Button("Close") { showHelp = false }
+            Button("Close") { showHelp = false }.keyboardShortcut(.cancelAction)
         }
         .padding()
         .frame(minWidth: 520)

@@ -82,6 +82,23 @@ final class ColeoInboxCoreTests: XCTestCase {
         XCTAssertThrowsError(try selectionTargets(items: page.items, complete: true, profileId: "local", refs: ["@missing0"]))
     }
 
+    func testSelectAllIncludesLoadedMembersAndIsIdempotent() throws {
+        let json = try fixture("page")
+        let page = try InboxPage(json: json, expectedQuery: MessagingQuery(json: json["query"]!), expectedCursor: nil)
+        var state = SelectionState()
+        try state.toggle(items: page.items, complete: true, profileId: "local", identifier: "message:<branch@example.test>")
+        let existing = state.entries["message:<branch@example.test>"]
+        try state.selectAll(items: page.items, complete: true, profileId: "local")
+        XCTAssertEqual(state.count, 3)
+        XCTAssertEqual(state.entries["message:<branch@example.test>"], existing)
+        let selected = state
+        try state.selectAll(items: page.items, complete: true, profileId: "local")
+        XCTAssertEqual(state, selected)
+        XCTAssertThrowsError(try state.selectAll(items: page.items, complete: false, profileId: "local"))
+        XCTAssertEqual(state, selected)
+        XCTAssertEqual(try state.plan(complete: true, profileId: "local").threads.values.first?.revision, "fixture-revision-1")
+    }
+
     func testCollectionRowsRespectFolding() throws {
         let pageJSON = try fixture("page")
         let query = try MessagingQuery(json: pageJSON["query"]!)

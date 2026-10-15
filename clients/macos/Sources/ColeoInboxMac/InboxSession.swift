@@ -220,6 +220,14 @@ final class InboxSession: ObservableObject {
 
     // MARK: Selection / actions
 
+    func selectAll() {
+        do {
+            try selection.selectAll(items: items, complete: complete, profileId: query.profileId)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
     func toggleSelection(_ row: CollectionRow, branch: Bool = false) {
         do {
             try selection.toggle(items: items, complete: complete, profileId: query.profileId, identifier: row.id, branch: branch)

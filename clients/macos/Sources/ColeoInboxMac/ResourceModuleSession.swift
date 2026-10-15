@@ -5,6 +5,15 @@ import Foundation
 /// paging/filter state; overview sources fail independently and label stale data.
 @MainActor
 final class ResourceModuleSession: ObservableObject {
+    /// Keep a concrete task-group payload: the previous async tuple-return path
+    /// reproduced SIGBUS/result corruption in Swift 6.3.3 release builds under
+    /// RefreshStressTests. This preserves parallel requests without that path.
+    private struct OverviewResult: Sendable {
+        let source: String
+        let value: JSONValue?
+        let error: String?
+    }
+
     let module: WorkbenchModule
     @Published var records: [ModuleRecord] = []
     @Published var total = 0
@@ -118,21 +127,25 @@ final class ResourceModuleSession: ObservableObject {
                 let sources = module.renderer == "brain" ? [("brain", "/api/brain/status")]
                     : [("brain", "/api/brain/status"), ("tasks", "/api/tasks/stats"), ("bugs", "/api/bugs/stats")]
                 let transport = transport
-                let results = await withTaskGroup(of: (String, JSONValue?, String?).self) { group in
+                let results = await withTaskGroup(of: OverviewResult.self) { group in
                     for (name, path) in sources {
                         group.addTask {
-                            do { return (name, try await transport.request(path: path), nil) }
-                            catch { return (name, nil, error.localizedDescription) }
+                            do {
+                                let value = try await transport.request(path: path)
+                                return OverviewResult(source: name, value: value, error: nil)
+                            } catch {
+                                return OverviewResult(source: name, value: nil, error: error.localizedDescription)
+                            }
                         }
                     }
-                    var values: [(String, JSONValue?, String?)] = []
+                    var values: [OverviewResult] = []
                     for await value in group { values.append(value) }
                     return values
                 }
                 guard version == generation, !Task.isCancelled else { return }
-                for (name, value, failure) in results {
-                    if let value { snapshots[name] = value }
-                    sourceErrors[name] = failure
+                for result in results {
+                    if let value = result.value { snapshots[result.source] = value }
+                    sourceErrors[result.source] = result.error
                 }
             }
             guard version == generation, !Task.isCancelled else { return }

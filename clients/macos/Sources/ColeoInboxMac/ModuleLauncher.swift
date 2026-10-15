@@ -27,8 +27,9 @@ struct ModuleCommands: Commands {
                 }
             }
             Divider()
-            Button("Load Module Catalog…") { workspace.importCatalog() }
+            Button("Choose Module Catalog…") { workspace.importCatalog() }
             Button("Reload Module Catalog") { workspace.reloadCatalog() }
+            Button("Show Module Catalog in Finder") { workspace.revealCatalog() }
         }
     }
 

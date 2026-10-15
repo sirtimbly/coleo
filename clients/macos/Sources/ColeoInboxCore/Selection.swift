@@ -77,6 +77,22 @@ public struct SelectionState: Equatable, Sendable {
 
     public mutating func clear() { entries.removeAll() }
 
+    /// Add all loaded records and selectable thread members, including folded
+    /// descendants. Existing entries retain their original revision snapshots.
+    public mutating func selectAll(items: [InboxItem], complete: Bool, profileId: String) throws {
+        let plan = try selectionTargets(items: items, complete: complete, profileId: profileId, refs: items.map(\.id))
+        var updated = entries
+        for record in plan.records where updated[record] == nil {
+            updated[record] = SelectionEntry(record: record)
+        }
+        for (itemID, thread) in plan.threads {
+            for member in thread.memberIds where updated[member] == nil {
+                updated[member] = SelectionEntry(itemID: itemID, thread: thread, member: member)
+            }
+        }
+        entries = updated
+    }
+
     public mutating func toggle(items: [InboxItem], complete: Bool, profileId: String, identifier: String, branch: Bool = false) throws {
         let plan = try selectionTargets(items: items, complete: complete, profileId: profileId, refs: [identifier], branch: branch)
         var members: [(String, SelectionEntry)] = plan.records.map { ($0, SelectionEntry(record: $0)) }

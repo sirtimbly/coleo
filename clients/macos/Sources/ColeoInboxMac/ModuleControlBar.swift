@@ -27,6 +27,5 @@ struct ModuleSidebarToggle: View {
         }
         .labelStyle(.iconOnly)
         .help(isVisible ? "Hide Sidebar" : "Show Sidebar")
-        .keyboardShortcut("s", modifiers: [.command, .control])
     }
 }

@@ -29,6 +29,7 @@ export default defineConfig({
 						{ text: "Task Workflow", link: "/guides/task-workflow" },
 						{ text: "Planning Gate", link: "/guides/planning-gate" },
 						{ text: "CLI", link: "/guides/cli" },
+						{ text: "macOS Client", link: "/guides/macos-client" },
 						{ text: "Docker", link: "/guides/docker" },
 						{ text: "Versions and Upgrades", link: "/guides/versioning" },
 						{ text: "IMAP Gateway", link: "/guides/imap-gateway" },

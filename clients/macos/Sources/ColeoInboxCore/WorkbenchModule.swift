@@ -13,6 +13,7 @@ public struct WorkbenchModule: Codable, Hashable, Identifiable, Sendable {
     public let mailbox: String?
     public let brainCategory: String?
     public let presentation: String?
+    public var sorting: ModuleSorting? = nil
 
     public static let inbox = WorkbenchModule(id: "inbox", title: "Inbox", description: "Items needing your attention",
         symbol: "tray.full", renderer: "messaging", namedView: "inbox-triage", facet: "attention",
@@ -48,6 +49,12 @@ public struct ModuleCatalog: Codable, Sendable {
                 throw ContractError.invalid("Messaging modules need a named view")
             }
             _ = try module.initialQuery(from: MessagingQuery())
+            if let sorting = module.sorting {
+                guard ["tasks", "bugs"].contains(module.renderer) else {
+                    throw ContractError.invalid("Module sorting is supported for Tasks and Bugs")
+                }
+                try sorting.validated()
+            }
         }
         return catalog
     }

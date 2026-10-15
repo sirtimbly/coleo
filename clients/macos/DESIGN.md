@@ -100,6 +100,11 @@ Cards have a system control background and an accent outline when focused.
   responder. There is no separate launcher button. New windows show the tab bar
   even with one document so the plus remains discoverable. Native plus-to-picker
   and picker-to-Brain-tab behavior were verified through Accessibility.
+  The active catalog is an external file read on startup or explicit reload.
+  Choose Module Catalog remembers the selected path without copying; Show Module
+  Catalog in Finder reveals it. The bundled JSON only seeds first-run defaults.
+  Reload replaces the launcher list atomically after validation and preserves
+  the last valid list on failure.
 - **Domain collections:** Tasks and Bugs use native status sidebars, SwiftUI
   Tables, toolbar search, and resizable detail cards. Tables fill available height;
   loading, empty, retained-data, and detail-error states stay explicit.
@@ -154,6 +159,15 @@ module, with launcher/search/actions beneath it and dividers confined to the
 pane area. All 21 tests and the release app build pass for this layout.
 
 ## Do's and Don'ts
+
+Keyboard follow-up: standard shortcuts use menu Commands with focused-scene
+actions rather than hidden-tab button key equivalents. Declared Inbox keys use
+a window-local AppKit event monitor scoped to the collection pane, preserving
+text entry and other native controls. Matching supports modifiers, literal `?`,
+and tree-scope precedence for branch selection. The help sheet has native Escape
+dismissal. All 24 Swift tests pass; live ⌘F-to-search was verified. Further live
+key checks were interrupted by SIGUSR1 termination of the app process, so full
+physical-key/tab-switch verification remains pending.
 
 - **Do** preserve native controls, semantic type/color, and independent window state.
 - **Do** map template semantics to macOS surfaces and expose unsupported diagnostics.

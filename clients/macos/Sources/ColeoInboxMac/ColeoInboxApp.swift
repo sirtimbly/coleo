@@ -20,6 +20,7 @@ struct ColeoInboxApp: App {
         .windowStyle(.titleBar)
         .commands {
             ModuleCommands(workspace: workspace)
+            WorkbenchKeyboardCommands()
         }
         Settings {
             SettingsView()
@@ -42,7 +43,6 @@ private struct ModuleWindow: View {
             }
         }
             .frame(minWidth: 860, minHeight: 480)
-            .navigationTitle(document.module.title)
             .focusedSceneValue(\.workbenchModule, document.module)
             .alert("Module catalog unavailable", isPresented: Binding(
                 get: { workspace.error != nil }, set: { if !$0 { workspace.error = nil } })) {
