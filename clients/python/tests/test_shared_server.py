@@ -9,7 +9,7 @@ from coleo_inbox.contracts import reference
 from coleo_inbox.options import parse
 from coleo_inbox.snapshot import load
 from coleo_inbox.session import Session
-from textual.widgets import Button, Select, Tree
+from textual.widgets import Button, OptionList, Select, Tree
 
 pytestmark = pytest.mark.skipif(not os.getenv("COLEO_TEST_API_URL"), reason="Set COLEO_TEST_API_URL for shared service conformance")
 
@@ -79,7 +79,12 @@ async def test_actual_tui_controls_without_keyboard_and_frozen_revision():
             assert app.tui_view == actual_tui  # no patched availability fixture
 
             async def choose(identifier, value):
-                app.query_one(f"#{identifier}", Select).value = value
+                if identifier == "facet":
+                    facets = app.query_one("#facet", OptionList)
+                    facets.highlighted = facets.get_option_index(value)
+                    facets.action_select()
+                else:
+                    app.query_one(f"#{identifier}", Select).value = value
                 await pilot.pause()
 
             await choose("facet", "brain")

@@ -4,14 +4,18 @@ import asyncio
 from rich.text import Text
 from textual import events, on
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, DataTable, Footer, Input, Markdown, Select, Static, Tree
+from textual.message_pump import MessagePump
+from textual.widgets import Button, DataTable, Footer, Input, Markdown, OptionList, Select, Static, Tree
+from textual.widgets.option_list import Option
 
 from .contracts import hierarchy, reference
-from .presentation import age, clean, detail_markdown, source_label, state
+from .presentation import age, clean, source_label, state
 from .session import Session
 from .snapshot import metadata_values
+from .workspace_widgets import ColumnDivider, WorkspaceColumns
+from .detail_document import DetailDocument
 
 
 class Help(ModalScreen):
@@ -31,10 +35,12 @@ class Help(ModalScreen):
         self.dismiss()
 
 
-class InboxApp(App):
+class InboxSurface(MessagePump):
+    """Inbox behavior shared by document panes and the standalone test host."""
+    embedded = False
     TITLE = "Coleo Inbox · Python / Textual"
     CSS = """
-    #controls, #actions { height: 3; overflow-x: auto; overflow-y: hidden; }
+    #controls, #actions { height: 3; overflow-x: auto; overflow-y: hidden; background: $surface; }
     #controls Select { min-width: 12; }
     #controls Input { min-width: 20; }
     #controls Input { width: 2fr; }
@@ -44,22 +50,22 @@ class InboxApp(App):
     #status { height: auto; max-height: 4; padding: 0 1; }
     #metadata-panel { height: auto; max-height: 9; overflow-y: auto; padding: 0 1; border: solid $accent; }
     #body { height: 1fr; }
-    #collection { width: 1fr; }
     #grid, #cards { height: 1fr; }
-    #detail { width: 1fr; border-left: solid $accent; padding: 0 1; overflow-y: auto; }
-    .narrow #detail { width: 100%; }
-    .narrow.detail-open #collection { display: none; }
-    .narrow #detail { display: none; }
-    .narrow.detail-open #detail { display: block; }
+    #detail { padding: 0 1; overflow-y: auto; }
+    #facet { height: auto; border: none; padding: 0; }
+    .sidebar-label { height: 1; margin: 1 1 0 1; color: $text-muted; }
+    #inbox-sidebar Select { width: 100%; }
+    #inbox-sidebar Static { height: auto; }
     #help-dialog { margin: 2 4; padding: 1 2; background: $surface; border: solid $accent; overflow-y: auto; }
     """
     BINDINGS = [("ctrl+c", "quit", "Quit"), ("ctrl+q", "quit", "Quit"),
+                ("ctrl+o", "modules", "Modules"),
                 ("escape", "back", "Back"), ("f1", "help", "Help"),
                 ("ctrl+b", "branch", "Select branch"), ("ctrl+r", "read", "Mark read"),
                 ("ctrl+l", "more", "Load more")]
 
-    def __init__(self, api, view, options, live=True):
-        super().__init__()
+    def __init__(self, api, view, options, live=True, **kwargs):
+        super().__init__(**kwargs)
         self.session = Session(api, view, options, self.update_view)
         self.live_enabled = live
         self.folded = set()
@@ -78,29 +84,58 @@ class InboxApp(App):
         # eligibility. In the canonical view, facet/mailbox/sort/presentation
         # and mark-read have no TUI keys but remain supported native controls.
         q = self.session.options.query
-        with Horizontal(id="controls"):
-            yield Input(q["search"], placeholder="Search · Enter to apply", id="search")
-            yield Select([(f, f) for f in ("attention", "messages", "brain", "arms", "history", "all")], value=q["facet"], allow_blank=False, id="facet")
-            yield Select([(f, f) for f in ("inbox", "sent", "archive")], value=q["mailbox"], allow_blank=False, id="mailbox")
-            yield Select([(f, f) for f in ("all", "operations", "tasks", "arms", "decisions", "planning", "alerts")], value=q["brainCategory"], allow_blank=False, id="category")
-            yield Select([(f, f) for f in ("desc", "asc")], value=q["sort"]["direction"], allow_blank=False, id="sort")
         with Horizontal(id="actions"):
+            if not self.embedded:
+                yield Button("Modules", id="modules")
+            yield Button("Sidebar", id="inbox-sidebar-toggle", tooltip="Show or hide navigation")
             yield Button("Refresh", id="refresh")
-            yield Button("More", id="more")
             yield Button("Read", id="read")
             yield Button("Branch", id="branch")
             yield Button("Clear", id="clear")
+            yield Button("More", id="more")
+        with Horizontal(id="controls"):
+            yield Input(q["search"], placeholder="Search · Enter to apply", id="search")
             yield Select([(r["label"], r["id"]) for r in self.session.view["definition"]["presentation"]["renderers"]], value=self.session.options.presentation, allow_blank=False, id="presentation")
-            yield Button("?", id="help")
             yield Button("Metadata [m]", id="metadata")
-        yield Static("Loading…", id="status", markup=False)
+            yield Button("?", id="help")
         yield Static("", id="metadata-panel", markup=False)
-        with Horizontal(id="body"):
-            with Vertical(id="collection"):
+        with WorkspaceColumns(id="body"):
+            with VerticalScroll(id="inbox-sidebar", classes="workspace-sidebar"):
+                yield Static("Views", classes="sidebar-label", markup=False)
+                yield OptionList(*(Option(f.title() if f != "all" else "All items", id=f) for f in
+                                   ("attention", "messages", "brain", "arms", "history", "all")), id="facet")
+                yield Static("Mailbox", classes="sidebar-label", markup=False)
+                yield Select([(f, f) for f in ("inbox", "sent", "archive")], value=q["mailbox"], allow_blank=False, id="mailbox")
+                yield Static("Brain category", classes="sidebar-label", markup=False)
+                yield Select([(f, f) for f in ("all", "operations", "tasks", "arms", "decisions", "planning", "alerts")], value=q["brainCategory"], allow_blank=False, id="category")
+                yield Static("Sort", classes="sidebar-label", markup=False)
+                yield Select([("Newest first", "desc"), ("Oldest first", "asc")], value=q["sort"]["direction"], allow_blank=False, id="sort")
+            yield ColumnDivider("sidebar", classes="sidebar-divider")
+            with Vertical(id="collection", classes="workspace-collection"):
                 yield DataTable(id="grid", cursor_type="row")
                 yield Tree("Inbox", id="cards")
-            yield Markdown("# Inbox\n\nSelect a row and press Enter to inspect full content.", id="detail")
-        yield Footer()
+            yield ColumnDivider("collection", classes="detail-divider")
+            yield DetailDocument(id="detail", classes="workspace-detail")
+        yield Static("Loading…", id="status", markup=False)
+
+    def action_modules(self):
+        from .module_app import ModulePicker
+        if self.embedded:
+            self.app.action_modules()
+        else:
+            self.app.push_screen(ModulePicker(), self.open_module)
+
+    def open_module(self, module):
+        if module:
+            if self.embedded:
+                self.app.open_module(module)
+            elif module != "inbox":
+                self.app.exit(module)
+
+    @on(Button.Pressed, "#modules")
+    def module_button(self, event):
+        event.stop()
+        self.action_modules()
 
     async def on_mount(self):
         self.ready = True
@@ -116,6 +151,7 @@ class InboxApp(App):
             await self.session.refresh()
 
     async def on_unmount(self):
+        self.ready = False
         await self.session.close()
         if self.detail_task:
             self.detail_task.cancel()
@@ -132,10 +168,15 @@ class InboxApp(App):
         self.rendering = True
         snapshot = self.session.snapshot
         mode = self.session.options.presentation
+        columns = self.query_one(WorkspaceColumns)
+        columns.set_presentation(mode == "grid")
+        columns.set_class(self.has_class("detail-open"), "inspecting")
         with self.prevent(Select.Changed):
             q = self.session.options.query
-            for identifier, value in (("facet", q["facet"]), ("mailbox", q["mailbox"]), ("category", q["brainCategory"]), ("sort", q["sort"]["direction"])):
+            for identifier, value in (("mailbox", q["mailbox"]), ("category", q["brainCategory"]), ("sort", q["sort"]["direction"])):
                 self.query_one(f"#{identifier}", Select).value = value
+        facets = ("attention", "messages", "brain", "arms", "history", "all")
+        self.query_one("#facet", OptionList).highlighted = facets.index(q["facet"])
         table = self.query_one("#grid", DataTable)
         tree = self.query_one("#cards", Tree)
         table.display = mode == "grid"
@@ -152,7 +193,7 @@ class InboxApp(App):
             status += "\n" + self.session.error
         self.query_one("#status", Static).update(clean(status))
         self.update_metadata()
-        pane_width = max(20, self.size.width if self.size.width < 100 else self.size.width // 2)
+        pane_width = max(20, self.query_one("#collection").size.width or 64)
         table.clear(columns=True)
         table.add_column("Ref", width=9)
         table.add_column("Subject", width=max(8, pane_width - (46 if pane_width >= 95 else 23)))
@@ -206,13 +247,19 @@ class InboxApp(App):
             self.focus_id = self.visible_ids[0]
             table.move_cursor(row=0)
         if focused_tree_node:
-            tree.select_node(focused_tree_node)
+            with self.prevent(Tree.NodeSelected):
+                tree.select_node(focused_tree_node)
         self.rendering = False
 
     @on(Input.Submitted, "#search")
     def search(self, event):
         self.change_query(search=event.value)
         self.query_one("#grid" if self.session.options.presentation == "grid" else "#cards").focus()
+
+    @on(OptionList.OptionSelected, "#facet")
+    def facet_selected(self, event):
+        self.change_query(facet=event.option.id)
+        event.stop()
 
     def update_metadata(self):
         panels = self.session.view["definition"].get("insights", {}).get("panels", [])
@@ -249,6 +296,7 @@ class InboxApp(App):
     def change_query(self, **changes):
         self.detail_generation += 1
         self.remove_class("detail-open")
+        self.query_one(WorkspaceColumns).remove_class("inspecting")
         self.folded.clear()
         self.initialized_threads.clear()
         self.session.query(**changes)
@@ -309,24 +357,24 @@ class InboxApp(App):
         if self.detail_task:
             self.detail_task.cancel()
         self.add_class("detail-open")
-        self.query_one("#detail", Markdown).update("Loading full content…")
+        self.query_one(WorkspaceColumns).add_class("inspecting")
+        self.query_one("#detail", DetailDocument).update("Loading full content…")
         async def fetch():
             try:
                 target, detail = await self.session.api.inspect(identifier, self.session.options.query["profileId"])
                 if generation == self.detail_generation:
-                    text = detail_markdown(detail)
-                    if target["diagnostics"]:
-                        text = "\n\n".join(target["diagnostics"]) + "\n\n" + text
-                    self.query_one("#detail", Markdown).update(text)
+                    self.query_one("#detail", DetailDocument).show_detail(detail, target["diagnostics"])
             except Exception as exc:
                 if generation == self.detail_generation:
-                    self.query_one("#detail", Markdown).update(f"Detail unavailable: {clean(exc)}")
+                    self.query_one("#detail", DetailDocument).update(f"Detail unavailable: {clean(exc)}")
         self.detail_task = asyncio.create_task(fetch())
 
     @on(Button.Pressed)
     async def button(self, event):
         action = event.button.id
-        if action == "refresh":
+        if action == "inbox-sidebar-toggle":
+            self.query_one(WorkspaceColumns).toggle_sidebar()
+        elif action == "refresh":
             self.session.dirty.set()
         elif action == "more":
             self.action_more()
@@ -368,6 +416,7 @@ class InboxApp(App):
 
     def action_back(self):
         self.remove_class("detail-open")
+        self.query_one(WorkspaceColumns).remove_class("inspecting")
         self.query_one("#grid" if self.session.options.presentation == "grid" else "#cards").focus()
 
     def action_help(self):
@@ -391,10 +440,10 @@ class InboxApp(App):
             if snapshot["metadata"]:
                 lines.append("## Active metadata: " + str(snapshot["metadataPanelId"]))
                 lines += [f"{m['label']}: {m['value'] if m['value'] is not None else 'unknown'} ({m['scope']})" for m in snapshot["metadata"]]
-        self.push_screen(Help("\n\n".join(lines)))
+        self.app.push_screen(Help("\n\n".join(lines)))
 
     async def on_key(self, event: events.Key):
-        if isinstance(self.focused, (Input, Select)) or isinstance(self.screen, Help):
+        if isinstance(self.app.focused, (Input, Select, OptionList, ColumnDivider)) or isinstance(self.app.screen, ModalScreen):
             return
         if event.key == "m":
             self.action_metadata()
@@ -402,7 +451,7 @@ class InboxApp(App):
             event.prevent_default()
             return
         mapping = {"ArrowUp": "up", "ArrowDown": "down", "ArrowLeft": "left", "ArrowRight": "right", "Space": "space", "Enter": "enter", "Escape": "escape"}
-        scope = "tree" if isinstance(self.focused, Tree) else "item"
+        scope = "tree" if isinstance(self.app.focused, Tree) else "item"
         for b in (self.tui_view or {}).get("interactions", {}).get("bindings", []):
             if not b["available"]:
                 continue
@@ -415,7 +464,7 @@ class InboxApp(App):
                 if op in ("collection.next", "collection.previous"):
                     if event.key in ("up", "down"):
                         return
-                    widget = self.focused
+                    widget = self.app.focused
                     if isinstance(widget, DataTable):
                         widget.move_cursor(row=max(0, min(len(self.visible_ids) - 1, widget.cursor_row + (1 if op.endswith("next") else -1))))
                     elif isinstance(widget, Tree):
@@ -441,3 +490,19 @@ class InboxApp(App):
                 event.stop()
                 event.prevent_default()
                 return
+
+
+class InboxPane(InboxSurface, Vertical):
+    """One independently owned Inbox document inside the workbench."""
+    embedded = True
+    DEFAULT_CSS = InboxSurface.CSS
+    BINDINGS = InboxSurface.BINDINGS
+
+
+class InboxApp(InboxSurface, App):
+    """Standalone host retained for focused Inbox protocol/PTY tests."""
+    BINDINGS = InboxSurface.BINDINGS
+    CSS = InboxSurface.CSS
+    def compose(self):
+        yield from super().compose()
+        yield Footer()

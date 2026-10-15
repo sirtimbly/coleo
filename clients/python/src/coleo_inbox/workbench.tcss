@@ -1,0 +1,27 @@
+/* Keep application chrome outside document-owned controls and split panes. */
+#document-bar {
+    height: 3;
+    background: $surface;
+    align-vertical: middle;
+}
+#documents { width: 1fr; height: 3; }
+#new-module, #close-document { width: 5; min-width: 5; margin: 0 1 0 0; }
+#workspace-message { height: auto; padding: 0 1; color: $text-warning; }
+#document-content { height: 1fr; }
+InboxPane, ModulePane { height: 1fr; }
+InboxPane #actions, ModulePane #module-actions { height: 1; }
+InboxPane #actions Button, ModulePane #module-actions Button {
+    height: 1;
+    min-height: 1;
+    border: none;
+    margin-right: 1;
+    padding: 0 1;
+}
+InboxPane #controls, ModulePane #module-controls { height: 3; }
+InboxPane #status, ModulePane #module-status {
+    background: $surface;
+    color: $text-muted;
+    padding: 0 1;
+}
+InboxPane #grid, ModulePane #module-grid { background: $background; }
+InboxPane #detail, ModulePane #module-detail-pane { background: $surface; }

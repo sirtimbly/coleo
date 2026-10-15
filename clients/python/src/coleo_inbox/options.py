@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 
 from .contracts import normalize
 
-HOST = {"--view": True, "--json": False, "--cursor": True, "--pages": True, "--profile": True,
+HOST = {"--catalog": True, "--view": True, "--json": False, "--cursor": True, "--pages": True, "--profile": True,
         "--tree": False, "--expand": True, "--branch": False, "--metadata": True,
         "--help": False, "-h": False, "--width": True, "--color": True}
 
@@ -35,7 +35,7 @@ def requested_view(args):
     return result
 
 
-def parse(args, view):
+def parse(args, view, recipe=None):
     flags, commands = {}, {}
     for b in view["interactions"]["bindings"]:
         if not b["available"] or not b.get("cli"):
@@ -47,7 +47,7 @@ def parse(args, view):
                     raise ValueError(f"Conflicting flag {name}")
                 flags[name] = b
         else:
-            if cli["subcommand"] in ("tui", "views", "validate") or cli["subcommand"] in commands:
+            if cli["subcommand"] in ("tui", "views", "validate", "modules", "tasks", "bugs", "brain", "dashboard") or cli["subcommand"] in commands:
                 raise ValueError("Conflicting command")
             commands[cli["subcommand"]] = b
     supplied, bound, positions = {}, {}, []
@@ -87,8 +87,10 @@ def parse(args, view):
                 raise ValueError(f"{name}: choose {', '.join(spec['choices'])}")
         dest[key] = (b, value) if b else value
     definition = view["definition"]
-    q = normalize(definition["query"])
-    presentation = definition["presentation"]["active"]
+    defaults = {key: getattr(recipe, key) for key in ("facet", "mailbox", "brainCategory")
+                if recipe is not None and getattr(recipe, key) is not None}
+    q = normalize({**definition["query"], **defaults})
+    presentation = (recipe.presentation if recipe else None) or definition["presentation"]["active"]
     changes = {}
     for b, value in bound.values():
         if b["operation"] == "collection.help":

@@ -9,6 +9,11 @@ from coleo_inbox.api import Api
 from coleo_inbox.contracts import compact, normalize, reference, sources
 
 
+@pytest.fixture(autouse=True)
+def isolated_client_catalog(tmp_path, monkeypatch):
+    monkeypatch.setenv("COLEO_CONFIG_DIR", str(tmp_path / "client-config"))
+
+
 def fixture(name):
     return json.loads(files("coleo_inbox").joinpath(f"fixtures/{name}.json").read_text())
 
