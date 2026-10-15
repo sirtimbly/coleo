@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Coleo: smooth adaptation of server/web-app/public/favicon.svg,
+     with the coral/violet palette and raised arms of docs/public/coleo-pet-v2.png. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0.8" y2="1">
+      <stop stop-color="#f5f3ff"/><stop offset=".48" stop-color="#e4def6"/><stop offset="1" stop-color="#b8b8dd"/>
+    </linearGradient>
+    <radialGradient id="light" cx=".22" cy=".05" r=".95">
+      <stop stop-color="#ffffff" stop-opacity=".95"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#ffffff"/><stop offset=".48" stop-color="#ffffff" stop-opacity=".6"/><stop offset=".7" stop-color="#716a9d" stop-opacity=".2"/><stop offset="1" stop-color="#ffffff" stop-opacity=".8"/>
+    </linearGradient>
+    <linearGradient id="arms" x1="0" y1="0" x2=".35" y2="1">
+      <stop stop-color="#c38aef"/><stop offset=".46" stop-color="#9654d5"/><stop offset="1" stop-color="#5e309e"/>
+    </linearGradient>
+    <linearGradient id="body" x1=".18" y1="0" x2=".78" y2="1">
+      <stop stop-color="#ffb29c"/><stop offset=".3" stop-color="#ff8592"/><stop offset=".65" stop-color="#f1639d"/><stop offset="1" stop-color="#ba63d9"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2=".6" y2="1">
+      <stop stop-color="#fff7e9" stop-opacity=".86"/><stop offset="1" stop-color="#fff7e9" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="eye" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#211b42"/><stop offset="1" stop-color="#493065"/>
+    </linearGradient>
+    <filter id="tileShadow" x="-.2" y="-.2" width="1.4" height="1.5">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#29213e" flood-opacity=".22"/>
+    </filter>
+    <filter id="petShadow" x="-.3" y="-.3" width="1.6" height="1.7">
+      <feDropShadow dx="0" dy="20" stdDeviation="16" flood-color="#513167" flood-opacity=".3"/>
+    </filter>
+  </defs>
+  <!-- Inset macOS rounded-square silhouette, with transparent outer margins. -->
+  <rect x="64" y="64" width="896" height="896" rx="202" fill="url(#tile)" filter="url(#tileShadow)"/>
+  <rect x="65" y="65" width="894" height="894" rx="201" fill="url(#light)"/>
+  <rect x="68" y="68" width="888" height="888" rx="198" fill="none" stroke="url(#rim)" stroke-width="5"/>
+  <g filter="url(#petShadow)">
+    <!-- Four independent outer arms; four lower arms form the body silhouette. -->
+    <g fill="none" stroke="url(#arms)" stroke-width="76" stroke-linecap="round">
+      <path d="M358 562 C249 565 208 493 249 416"/>
+      <path d="M666 562 C775 565 816 493 775 416"/>
+      <path d="M366 632 C275 727 175 673 201 596"/>
+      <path d="M658 632 C749 727 849 673 823 596"/>
+    </g>
+    <g fill="none" stroke="#e6b1ff" stroke-opacity=".6" stroke-width="10" stroke-linecap="round">
+      <path d="M324 549 C252 535 229 477 252 429"/>
+      <path d="M700 549 C772 535 795 477 772 429"/>
+      <path d="M325 650 C266 693 206 659 208 613"/>
+      <path d="M699 650 C758 693 818 659 816 613"/>
+    </g>
+    <path d="M512 218
+      C371 218 295 321 295 450 C295 526 325 567 351 601
+      C364 646 339 704 285 729 C251 745 256 788 294 793
+      C361 802 413 732 427 676
+      C437 723 419 763 396 790 C371 821 393 852 425 845
+      C478 833 503 752 502 700
+      C504 684 520 684 522 700
+      C521 752 546 833 599 845 C631 852 653 821 628 790
+      C605 763 587 723 597 676 C611 732 663 802 730 793
+      C768 788 773 745 739 729 C685 704 660 646 673 601
+      C699 567 729 526 729 450 C729 321 653 218 512 218 Z"
+      fill="url(#body)"/>
+    <path d="M329 405 C342 304 412 248 503 245 C432 265 385 312 367 396 C361 423 326 431 329 405 Z" fill="url(#shine)"/>
+    <ellipse cx="408" cy="535" rx="40" ry="22" fill="#e94f83" opacity=".36"/>
+    <ellipse cx="616" cy="535" rx="40" ry="22" fill="#e94f83" opacity=".36"/>
+    <rect x="391" y="433" width="53" height="73" rx="26.5" fill="url(#eye)"/>
+    <rect x="580" y="433" width="53" height="73" rx="26.5" fill="url(#eye)"/>
+    <ellipse cx="409" cy="452" rx="10" ry="12" fill="#ffffff"/>
+    <ellipse cx="598" cy="452" rx="10" ry="12" fill="#ffffff"/>
+    <path d="M483 531 Q512 564 541 531" fill="none" stroke="#643153" stroke-width="13" stroke-linecap="round"/>
+  </g>
+</svg>

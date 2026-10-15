@@ -1,0 +1,51 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0.8" y2="1">
+      <stop stop-color="#f5f3ff" />
+      <stop offset=".48" stop-color="#e4def6" />
+      <stop offset="1" stop-color="#b8b8dd" />
+    </linearGradient>
+    <radialGradient id="light" cx=".22" cy=".05" r=".95">
+      <stop stop-color="#ffffff" stop-opacity=".95" />
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#ffffff" />
+      <stop offset=".48" stop-color="#ffffff" stop-opacity=".6" />
+      <stop offset=".7" stop-color="#716a9d" stop-opacity=".2" />
+      <stop offset="1" stop-color="#ffffff" stop-opacity=".8" />
+    </linearGradient>
+    <linearGradient id="arms" x1="0" y1="0" x2=".35" y2="1">
+      <stop stop-color="#c38aef" />
+      <stop offset=".46" stop-color="#9654d5" />
+      <stop offset="1" stop-color="#5e309e" />
+    </linearGradient>
+    <linearGradient id="body" x1=".18" y1="0" x2=".78" y2="1">
+      <stop stop-color="#ffb29c" />
+      <stop offset=".3" stop-color="#ff8592" />
+      <stop offset=".65" stop-color="#f1639d" />
+      <stop offset="1" stop-color="#ba63d9" />
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2=".6" y2="1">
+      <stop stop-color="#fff7e9" stop-opacity=".86" />
+      <stop offset="1" stop-color="#fff7e9" stop-opacity="0" />
+    </linearGradient>
+    <linearGradient id="eye" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#211b42" />
+      <stop offset="1" stop-color="#493065" />
+    </linearGradient>
+    <filter id="tileShadow" x="-.2" y="-.2" width="1.4" height="1.5">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#29213e" flood-opacity=".22" />
+    </filter>
+    <filter id="petShadow" x="-.3" y="-.3" width="1.6" height="1.7">
+      <feDropShadow dx="0" dy="20" stdDeviation="16" flood-color="#513167" flood-opacity=".3" />
+    </filter>
+  </defs>
+  <g fill="none" stroke="url(#arms)" stroke-width="76" stroke-linecap="round">
+    <path d="M358 562 C249 565 208 493 249 416" />
+    <path d="M666 562 C775 565 816 493 775 416" />
+    <path d="M366 632 C275 727 175 673 201 596" />
+    <path d="M658 632 C749 727 849 673 823 596" />
+  </g>
+</svg>
