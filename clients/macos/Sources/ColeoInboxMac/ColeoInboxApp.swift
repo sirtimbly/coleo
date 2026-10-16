@@ -6,6 +6,7 @@ import SwiftUI
 @main
 struct ColeoInboxApp: App {
     @StateObject private var workspace = WorkbenchWorkspace()
+    @StateObject private var notifications = MessageNotifications()
 
     init() { NSWindow.allowsAutomaticWindowTabbing = true }
 
@@ -13,6 +14,7 @@ struct ColeoInboxApp: App {
         WindowGroup("Coleo Workbench", id: "workbench", for: ModuleDocument.self) { $document in
             ModuleWindow(document: document)
                 .environmentObject(workspace)
+                .task { notifications.start() }
         } defaultValue: {
             ModuleDocument(module: .inbox)
         }
@@ -23,7 +25,7 @@ struct ColeoInboxApp: App {
             WorkbenchKeyboardCommands()
         }
         Settings {
-            SettingsView()
+            SettingsView(notifications: notifications)
         }
     }
 }
@@ -86,11 +88,13 @@ extension Notification.Name {
 
 /// Standard macOS Settings scene shared by every workbench window.
 struct SettingsView: View {
+    @ObservedObject var notifications: MessageNotifications
     @State private var urlText = ""
     @State private var keyText = ""
 
     var body: some View {
-        Form {
+        ScrollView {
+          Form {
             TextField("API URL", text: $urlText)
                 .textFieldStyle(.roundedBorder)
             SecureField("API key (X-API-Key)", text: $keyText)
@@ -104,9 +108,11 @@ struct SettingsView: View {
                     NotificationCenter.default.post(name: .inboxSettingsChanged, object: nil)
                 }
             }
+            NotificationSettingsSection(notifications: notifications)
+          }
         }
         .padding()
-        .frame(width: 420)
+        .frame(width: 620, height: 620)
         .onAppear {
             let settings = InboxSettings.load()
             urlText = settings.url.absoluteString
