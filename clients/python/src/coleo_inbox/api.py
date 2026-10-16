@@ -1,9 +1,17 @@
 import os
+import re
 from urllib.parse import quote
 
 import httpx
 
 from .contracts import compact, hierarchy, normalize, reference
+from .connections import validate_url
+
+
+class ApiError(ValueError):
+    def __init__(self, category, message, status=None, *, legacy_message=False):
+        super().__init__(message if legacy_message else f"{category}: {message}")
+        self.category, self.status = category, status
 
 
 def encoded(value):
@@ -12,7 +20,7 @@ def encoded(value):
 
 class Api:
     def __init__(self, url=None, key=None, transport=None):
-        self.url = (url or os.getenv("COLEO_API_URL", "http://127.0.0.1:8080")).rstrip("/")
+        self.url = validate_url(url if url is not None else os.getenv("COLEO_API_URL", "http://127.0.0.1:8080"))
         self.key = key if key is not None else os.getenv("COLEO_API_KEY", "")
         self.client = httpx.AsyncClient(base_url=self.url, timeout=15, transport=transport,
                                        headers={"Authorization": f"Bearer {self.key}", "X-API-Key": self.key} if self.key else {})
@@ -20,16 +28,36 @@ class Api:
     async def close(self):
         await self.client.aclose()
 
-    async def request(self, path, body=None, params=None):
+    async def request(self, path, body=None, params=None, *, method=None):
         try:
-            r = await self.client.request("GET" if body is None else "POST", path, json=body, params=params)
-            value = r.json()
-        except (httpx.HTTPError, ValueError) as exc:
-            raise ValueError(f"Inbox API request failed: {type(exc).__name__}; check COLEO_API_URL") from exc
+            r = await self.client.request(method or ("GET" if body is None else "POST"), path, json=body, params=params)
+        except httpx.TimeoutException as exc:
+            raise ApiError("timeout", "Server did not respond in time; run coleo-client doctor") from exc
+        except httpx.HTTPError as exc:
+            category = "tls" if any(word in str(exc).lower() for word in ("ssl", "certificate", "tls")) else "unreachable"
+            raise ApiError(category, "Cannot reach server; check --server / COLEO_API_URL and run coleo-client doctor") from exc
         if r.is_error:
-            raise ValueError(value.get("error", f"HTTP {r.status_code}") if isinstance(value, dict) else f"HTTP {r.status_code}")
+            category = "authentication" if r.status_code in (401, 403) else "unsupported-capability" if r.status_code in (404, 405, 501) else "request"
+            remedy = "check COLEO_API_KEY" if category == "authentication" else "check server version and requested resource" if category == "unsupported-capability" else "check request and server logs"
+            # Preserve existing domain error text while redacting credentials.
+            if category == "request":
+                try:
+                    error = r.json().get("error")
+                except (ValueError, AttributeError):
+                    error = None
+                if isinstance(error, str) and error:
+                    if self.key:
+                        error = error.replace(self.key, "[redacted]")
+                    error = re.sub(r"(?i)(https?://)[^\s/@]+:[^\s/@]+@", r"\1[redacted]@", error)
+                    error = re.sub(r"(?i)(api[_-]?key|token|password|authorization)([\s:=]+)[^\s,;]+", r"\1\2[redacted]", error)
+                    raise ApiError(category, error, r.status_code, legacy_message=True)
+            raise ApiError(category, f"HTTP {r.status_code}; {remedy}", r.status_code)
+        try:
+            value = r.json()
+        except ValueError as exc:
+            raise ApiError("invalid-response", "Server returned non-JSON data; check --server and proxy configuration", r.status_code) from exc
         if not isinstance(value, dict):
-            raise ValueError("Expected API object envelope")
+            raise ApiError("invalid-response", "Expected API object envelope", r.status_code)
         return value
 
     async def view(self, identifier, client="cli"):

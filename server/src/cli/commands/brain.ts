@@ -10,6 +10,8 @@ import {
   getServiceStatus,
   getServiceLogs,
   formatUptime,
+  registerServiceProcess,
+  unregisterServiceProcess,
 } from "../../daemon";
 import { createSqliteBrainDb } from "../../db/brain-db-adapter";
 
@@ -81,6 +83,7 @@ export function registerBrainCommands(program: Command): void {
       });
 
       await brain.init();
+      await registerServiceProcess("brain");
 
       process.on("SIGINT", () => {
         console.log("\nShutting down brain...");
@@ -101,6 +104,7 @@ export function registerBrainCommands(program: Command): void {
         await brain.run();
         await brain.shutdown();
       }
+      await unregisterServiceProcess("brain");
     });
 
   brainCmd

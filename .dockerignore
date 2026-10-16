@@ -2,7 +2,7 @@
 .github
 .coleo
 node_modules
-server/web-app/node_modules
+clients/web/node_modules
 dist
 docs/.vitepress/cache
 docs/.vitepress/dist

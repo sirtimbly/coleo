@@ -16,9 +16,10 @@ describe("Cloudflare control runtime", () => {
     ).text();
 
     expect(entrypoint.indexOf('qdrant "${qdrant_args[@]}" &')).toBeGreaterThan(-1);
-    expect(entrypoint.indexOf("bun /home/coleo/coleo/src/scripts/jetstream-transcript-indexer.ts &")).toBeGreaterThan(
-      entrypoint.indexOf('curl -fsS "http://127.0.0.1:${PORT}/api/health"'),
-    );
+    const readiness = entrypoint.indexOf('curl -fsS "http://127.0.0.1:${API_PORT}/api/health"');
+    expect(readiness).toBeGreaterThan(-1);
+    expect(entrypoint.indexOf("bun /home/coleo/coleo/src/scripts/jetstream-transcript-indexer.ts &"))
+      .toBeGreaterThan(readiness);
   });
 
   test("persists consistent snapshots instead of live Qdrant storage", async () => {

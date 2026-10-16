@@ -26,11 +26,15 @@ wheels = [
 
 [[package]]
 name = "coleo-inbox"
-version = "0.1.0"
+version = "0.14.4"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
     { name = "rich" },
+]
+
+[package.optional-dependencies]
+tui = [
     { name = "textual" },
     { name = "websockets" },
 ]
@@ -39,20 +43,25 @@ dependencies = [
 dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "textual" },
+    { name = "websockets" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = "==0.28.1" },
     { name = "rich", specifier = "==14.2.0" },
-    { name = "textual", specifier = "==6.3.0" },
-    { name = "websockets", specifier = "==15.0.1" },
+    { name = "textual", marker = "extra == 'tui'", specifier = "==6.3.0" },
+    { name = "websockets", marker = "extra == 'tui'", specifier = "==15.0.1" },
 ]
+provides-extras = ["tui"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = "==8.4.2" },
     { name = "pytest-asyncio", specifier = "==1.2.0" },
+    { name = "textual", specifier = "==6.3.0" },
+    { name = "websockets", specifier = "==15.0.1" },
 ]
 
 [[package]]

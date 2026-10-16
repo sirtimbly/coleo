@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Coleo component release manifest",
+  "type": "object",
+  "required": ["schemaVersion", "version", "commit", "components"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+([-+][A-Za-z0-9.-]+)?$" },
+    "commit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "components": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "enum": ["operator", "client", "web", "macos", "bun", "uv"] },
+      "additionalProperties": { "$ref": "#/$defs/component" }
+    }
+  },
+  "$defs": {
+    "component": {
+      "type": "object",
+      "required": ["version", "artifacts", "compatibility"],
+      "additionalProperties": false,
+      "properties": {
+        "version": { "type": "string" },
+        "runtime": { "enum": ["bun", "uv"] },
+        "dependencies": { "type": "array", "uniqueItems": true, "items": { "enum": ["client"] } },
+        "python": { "type": "string", "pattern": "^3\\.[0-9]+\\.[0-9]+$" },
+        "wheel": { "type": "string" },
+        "signed": { "type": "boolean" },
+        "notarized": { "type": "boolean" },
+        "compatibility": {
+          "type": "object",
+          "required": ["testedServer", "requiredCapabilities"],
+          "additionalProperties": false,
+          "properties": {
+            "testedServer": { "type": "string" },
+            "requiredCapabilities": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "artifacts": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "enum": ["any", "darwin-x64", "darwin-arm64", "linux-x64", "linux-arm64"] },
+          "additionalProperties": { "$ref": "#/$defs/artifact" }
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["url", "sha256", "size", "format"],
+      "additionalProperties": false,
+      "properties": {
+        "url": { "type": "string", "pattern": "^https://.+/releases/download/[^/]+/.+$" },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "size": { "type": "integer", "minimum": 1 },
+        "format": { "enum": ["tar.gz", "zip", "wheel"] },
+        "entry": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

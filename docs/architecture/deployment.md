@@ -2,7 +2,8 @@
 
 Coleo supports automated deployments with arm consensus and optional human approval.
 
-For local-process development outside Docker, `coleo serve` is the matching single-host runtime entrypoint.
+For local-process development outside Docker, `coleo-server run` starts the API.
+Launch the separately installed browser client with `coleo-client web`.
 When `COLEO_NATS_URL` is unset, it will try to bootstrap a local standalone `nats-server` into the active `.coleo/` directory.
 
 ## Self-Hosted Runtime Topologies
@@ -29,9 +30,10 @@ By default it binds only to loopback:
 - API on `http://localhost:8080`
 - NATS on `nats://localhost:4222`
 
-When serving the Observatory through `coleo web`, it must serve a built Vite bundle from
-`src/web/dist` or `dist/web`. If the browser ever loads `/src/main.tsx`, the server is
-serving source HTML instead of the built app and the UI will fail to boot.
+The web component contains its built browser assets and a standalone host. The API
+process serves API and WebSocket traffic only. Bundled container deployments launch
+the web component separately and proxy public API traffic to the internal API
+listener; see [container hosting](../guides/docker) for port configuration.
 
 This is the intended first step for:
 

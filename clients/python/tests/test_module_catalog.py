@@ -95,15 +95,15 @@ async def test_cli_reads_catalog_each_invocation_and_dispatches_alias(tmp_path):
 
 
 async def test_messaging_recipe_defaults_allow_explicit_cli_overrides(tmp_path, protocol):
-    path = write_catalog(tmp_path / "modules.json", identifier="mail", renderer="messaging",
+    path = write_catalog(tmp_path / "modules.json", identifier="project-mail", renderer="messaging",
                          namedView="inbox-triage", facet="messages", presentation="cards")
     output = io.StringIO()
-    assert await run(["mail", "--catalog", str(path), "--json"], protocol.api(), output) == 0
+    assert await run(["project-mail", "--catalog", str(path), "--json"], protocol.api(), output) == 0
     result = json.loads(output.getvalue())
     assert result["query"]["facet"] == "messages"
     assert result["presentation"]["id"] == "cards"
     output = io.StringIO()
-    assert await run(["mail", "--facet", "all", "--presentation", "grid", "--catalog", str(path), "--json"], protocol.api(), output) == 0
+    assert await run(["project-mail", "--facet", "all", "--presentation", "grid", "--catalog", str(path), "--json"], protocol.api(), output) == 0
     assert json.loads(output.getvalue())["query"]["facet"] == "all"
 
 

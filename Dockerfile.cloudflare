@@ -4,11 +4,11 @@ FROM oven/bun:1.3-debian AS builder
 WORKDIR /app
 
 COPY package.json bun.lock ./
-COPY server/web-app/package.json ./server/web-app/package.json
+COPY clients/web/package.json ./clients/web/package.json
 RUN bun install --frozen-lockfile
 
 COPY . .
-RUN bun run build
+RUN bun run build:with-web
 
 FROM oven/bun:1.3-debian
 
@@ -33,7 +33,8 @@ RUN chown -R coleo:coleo /home/coleo/coleo \
     && chmod +x /usr/local/bin/coleo
 
 COPY --chown=coleo:coleo docker/cloudflare-entrypoint.sh /home/coleo/cloudflare-entrypoint.sh
-RUN chmod +x /home/coleo/cloudflare-entrypoint.sh
+COPY docker/coleo-web /usr/local/bin/coleo-web
+RUN chmod +x /home/coleo/cloudflare-entrypoint.sh /usr/local/bin/coleo-web
 
 USER coleo
 ENV COLEO_DIR=/home/coleo/.coleo

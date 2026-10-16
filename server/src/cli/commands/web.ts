@@ -1,5 +1,4 @@
 import { Command } from "commander";
-import { serve } from "bun";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { existsSync, readFileSync, realpathSync } from "fs";
@@ -12,6 +11,7 @@ import {
 	formatUptime,
 } from "../../daemon";
 import { resolveApiUrl } from "../../network-config";
+import { createWebServer, WEB_DIST_HINT } from "../web-server";
 
 // Resolve the actual path (follows symlinks for linked packages)
 const __dirname = dirname(realpathSync(fileURLToPath(import.meta.url)));
@@ -36,7 +36,11 @@ export function isBuiltWebDist(path: string): boolean {
 	}
 }
 
-async function findWebDist(): Promise<string | null> {
+export async function findWebDist(): Promise<string | null> {
+	// An explicit artifact is authoritative; never silently use a different build.
+	if (process.env.COLEO_WEB_DIST) {
+		return isBuiltWebDist(process.env.COLEO_WEB_DIST) ? process.env.COLEO_WEB_DIST : null;
+	}
 	// 1. Try relative to the actual file location (resolves symlinks)
 	// When built: dist/commands/web.js -> dist/web/
 	const builtPath = join(dirname(__dirname), "../web");
@@ -58,8 +62,8 @@ async function findWebDist(): Promise<string | null> {
 				if (isBuiltWebDist(webDistPath)) {
 					return webDistPath;
 				}
-				// Also check src/web/dist for development
-				const srcWebPath = join(currentDir, "src/web/dist");
+				// Also check the sibling web client for development
+				const srcWebPath = join(currentDir, "clients/web/dist");
 				if (isBuiltWebDist(srcWebPath)) {
 					return srcWebPath;
 				}
@@ -75,7 +79,7 @@ async function findWebDist(): Promise<string | null> {
 
 	// 3. Development mode: check CWD paths
 	const devPaths = [
-		join(process.cwd(), "src/web/dist"),
+		join(process.cwd(), "clients/web/dist"),
 		join(process.cwd(), "dist/web"),
 	];
 
@@ -101,7 +105,7 @@ async function startWebServer(options: {
 
 	if (!distPath) {
 		console.error("Error: Web UI build not found.");
-		console.error("Please run: bun run web:build");
+		console.error(WEB_DIST_HINT);
 		process.exit(1);
 	}
 
@@ -112,41 +116,11 @@ async function startWebServer(options: {
 	console.log(`API server expected at: ${apiUrl}`);
 	console.log("Press Ctrl+C to stop\n");
 
-	const server = serve({
+	await createWebServer({
 		port: options.port,
-		hostname: options.host,
-		fetch(req) {
-			const url = new URL(req.url);
-			let pathname = url.pathname;
-
-			// Handle API proxy - redirect to the actual API server
-			if (pathname.startsWith("/api") || pathname.startsWith("/ws")) {
-				const targetUrl = new URL(pathname, apiUrl);
-				targetUrl.search = url.search;
-				return fetch(targetUrl.toString(), {
-					method: req.method,
-					headers: req.headers,
-					body: req.body,
-				});
-			}
-
-			// Serve static files
-			if (pathname === "/") {
-				pathname = "/index.html";
-			}
-
-			const filePath = join(distPath!, pathname);
-			const file = Bun.file(filePath);
-
-			// If file exists, serve it
-			if (file.size > 0) {
-				return new Response(file);
-			}
-
-			// For SPA routing: return index.html for non-file paths
-			const indexPath = join(distPath!, "index.html");
-			return new Response(Bun.file(indexPath));
-		},
+		host: options.host,
+		distPath,
+		apiUrl,
 	});
 
 	// Keep the process running

@@ -8,6 +8,11 @@ require_cmd codesign
 require_cmd xcrun
 
 cd "$(dirname "$0")/.."
+VERSION="${COLEO_VERSION:-$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' ../../package.json | head -n 1)}"
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "COLEO_VERSION must be a numeric release version" >&2
+  exit 1
+fi
 swift build -c release
 BIN="$(swift build -c release --show-bin-path)/ColeoInboxMac"
 APP=".build/ColeoInbox.app"
@@ -20,7 +25,7 @@ xcrun actool Artwork/AppIcon.icon --compile "$APP/Contents/Resources" \
   --platform macosx --minimum-deployment-target 14.0 --target-device mac \
   --app-icon AppIcon --include-all-app-icons \
   --output-partial-info-plist .build/icon-info.plist
-cat > "$APP/Contents/Info.plist" <<'PLIST'
+cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -32,7 +37,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleIconName</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
+  <key>CFBundleVersion</key><string>$VERSION</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict>

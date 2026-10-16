@@ -14,6 +14,7 @@ import { getNatsManager } from "../../nats/server";
 import { COMMAND_STREAM_NAME } from "../../nats/command-types";
 import { getProjectDurableName, getProjectScope } from "../../project-scope";
 import { broadcast } from "../websocket";
+import type { IEventStore } from "../../nats/jetstream-types";
 
 interface ActivityContext {
   Variables: {
@@ -122,6 +123,7 @@ interface ArmMetadata {
 }
 
 interface TranscriptEntry {
+  sequence: number | null;
   timestamp: string;
   armId: string;
   action: string;
@@ -374,12 +376,75 @@ function toIsoTimestamp(value: unknown): string | null {
   return null;
 }
 
-export function createActivityRoutes() {
+/**
+ * Read canonical stream positions, not timestamp-derived or payload-provided IDs.
+ * The existing queryEvents reader returns a bounded tail when `since` is set;
+ * it cannot safely implement a forward cursor. getEvent resolves the actual
+ * JetStream sequence and reports expired/deleted positions as null.
+ */
+async function readTranscriptSequencePage(
+  store: IEventStore,
+  afterSequence: number,
+  limit: number,
+  scanLimit: number,
+  matches: (event: EventData) => boolean,
+) {
+  const metrics = await store.getStreamMetrics();
+  const highWatermark = metrics.lastSequence;
+  const firstSequence = metrics.firstSequence;
+  const events: Array<{ armId: string; event: EventData }> = [];
+  let cursor = afterSequence;
+  let scannedSequences = 0;
+  let missingSequences = 0;
+  const gap = afterSequence > highWatermark
+    ? "cursor-ahead-of-stream"
+    : afterSequence > 0 && afterSequence < firstSequence - 1
+      ? "retention"
+      : null;
+  if (!gap) {
+    // Zero explicitly means the beginning of currently retained history.
+    cursor = Math.max(afterSequence, firstSequence - 1, 0);
+    while (cursor < highWatermark && scannedSequences < scanLimit && events.length < limit) {
+      // At most 16 outstanding reads. Prefetched positions beyond a full result
+      // page are deliberately NOT acknowledged by nextCursor.
+      const count = Math.min(16, highWatermark - cursor, scanLimit - scannedSequences);
+      const batch = await Promise.all(Array.from({ length: count }, (_, i) => store.getEvent(cursor + i + 1)));
+      for (const event of batch) {
+        cursor++;
+        scannedSequences++;
+        if (!event) {
+          missingSequences++;
+        } else if (event.armId && matches(event)) {
+          events.push({ armId: event.armId, event: { ...event, sequence: cursor } });
+        }
+        if (events.length >= limit) break;
+      }
+    }
+  }
+  const truncated = !gap && cursor < highWatermark;
+  return {
+    events,
+    pagination: {
+      limit, returned: events.length, order: "sequence-asc", cursorMode: "sequence-v1",
+      nextCursor: cursor, highWatermark, firstSequence, scannedSequences, missingSequences,
+      // hasMore means unscanned stream positions, not a promise of filter matches.
+      hasMore: truncated, truncated,
+      truncationReason: truncated ? (events.length >= limit ? "result-limit" : "scan-limit") : null,
+      gap: gap || (missingSequences > 0 ? "missing-sequences" : null),
+    },
+  };
+}
+
+export function createActivityRoutes(transcriptStore: IEventStore = eventStore) {
   const app = new Hono<ActivityContext>();
 
   /**
    * Transcript view of arm events ordered oldest-first.
    * GET /api/activity/transcript?armId=A,B&host=devbox&project=coleo&since=...
+   * Opt-in afterSequence=0 starts retained history; subsequent nextCursor values
+   * resume exclusive of the last scanned position, including filtered positions.
+   * Cursor mode returns arm-associated events (nonempty event.armId) in canonical
+   * stream order, retaining since/until as filters. Keep filters fixed when paging.
    */
   app.get("/transcript", async (c) => {
     const db = c.get("db");
@@ -388,6 +453,12 @@ export function createActivityRoutes() {
     const hostFilter = c.req.query("host")?.trim() || null;
     const projectFilter = c.req.query("project")?.trim() || null;
     const requestedArmIds = parseIdList(c.req.query("armId"), c.req.query("armIds"));
+    const rawAfterSequence = c.req.query("afterSequence");
+    const afterSequence = rawAfterSequence === undefined ? undefined : Number(rawAfterSequence);
+    if (rawAfterSequence !== undefined && (!/^\d+$/.test(rawAfterSequence)
+      || !Number.isSafeInteger(afterSequence) || afterSequence! < 0)) {
+      return c.json({ error: "afterSequence must be a nonnegative safe integer" }, 400);
+    }
 
     const sinceQuery = parseDateQuery(c.req.query("since"));
     if (sinceQuery.error) {
@@ -399,7 +470,7 @@ export function createActivityRoutes() {
       return c.json({ error: untilQuery.error }, 400);
     }
 
-    if (!eventStore.isInitialized()) {
+    if (!transcriptStore.isInitialized()) {
       return c.json({
         transcript: [],
         pagination: { limit, returned: 0, hasMore: false, order: "asc" },
@@ -457,6 +528,36 @@ export function createActivityRoutes() {
         }
       }
 
+      if (afterSequence !== undefined) {
+        const projectKey = getProjectScope().projectKey;
+        const armIds = effectiveArmIds === null ? null : new Set(effectiveArmIds);
+        const page = await readTranscriptSequencePage(transcriptStore, afterSequence, limit, scanLimit, (event) => {
+          if (!eventMatchesProject(event, projectKey) || (armIds && !armIds.has(event.armId!))) return false;
+          const time = new Date(event.timestamp).getTime();
+          return Number.isFinite(time)
+            && (!sinceQuery.value || time >= sinceQuery.value.getTime())
+            && (!untilQuery.value || time <= untilQuery.value.getTime());
+        });
+        return c.json({
+          transcript: page.events.map(({ armId, event }) => {
+            const metadata = armMetadata.get(armId);
+            return {
+              sequence: event.sequence!, timestamp: event.timestamp, armId, action: event.type,
+              text: buildTranscriptText(event.type, event.data), details: event.data,
+              partitions: {
+                armId, host: metadata?.host || null, project: metadata?.project || null,
+                workdir: metadata?.workdir || null,
+              },
+            } satisfies TranscriptEntry;
+          }),
+          pagination: page.pagination,
+          filters: {
+            armIds: requestedArmIds, host: hostFilter, project: projectFilter,
+            since: sinceQuery.value?.toISOString() || null, until: untilQuery.value?.toISOString() || null,
+          },
+        });
+      }
+
       if (effectiveArmIds && effectiveArmIds.length === 0) {
         return c.json({
           transcript: [],
@@ -475,7 +576,7 @@ export function createActivityRoutes() {
       if (effectiveArmIds && effectiveArmIds.length > 0) {
         const perArmResults = await Promise.all(
           effectiveArmIds.map(async (armId) => {
-            const events = await eventStore.queryEvents({
+            const events = await transcriptStore.queryEvents({
               subject: `coleo.events.arm.${subjectToken(armId)}.>`,
               since: sinceQuery.value,
               until: untilQuery.value,
@@ -489,7 +590,7 @@ export function createActivityRoutes() {
         );
         scopedEvents = perArmResults.flat();
       } else {
-        const events = await eventStore.queryEvents({
+        const events = await transcriptStore.queryEvents({
           subject: "coleo.events.arm.>",
           since: sinceQuery.value,
           until: untilQuery.value,
@@ -512,6 +613,7 @@ export function createActivityRoutes() {
         const details = event.data || {};
         const metadata = armMetadata.get(armId);
         return {
+          sequence: event.sequence ?? null,
           timestamp: event.timestamp,
           armId,
           action: event.type,
@@ -534,6 +636,10 @@ export function createActivityRoutes() {
           hasMore: scopedEvents.length > transcript.length,
           order: "asc",
           scannedEvents: scopedEvents.length,
+          // The legacy query reader cannot prove exhaustion of its scan window.
+          // Keep hasMore/order compatible; null explicitly means unknown.
+          truncated: scopedEvents.length > transcript.length ? true : null,
+          cursorSupported: true,
         },
         filters: {
           armIds: requestedArmIds,

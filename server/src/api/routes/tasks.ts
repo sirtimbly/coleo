@@ -404,6 +404,7 @@ export function createTasksRoutes() {
 	 *   - viewFilters: JSON-encoded saved view filters
 	 *   - limit: max results (default 100)
 	 *   - offset: pagination offset
+	 *   - sort: created-desc for newest first; omitted preserves workspace order
 	 */
 	app.get("/", (c) => {
 		const db = c.get("db");
@@ -418,6 +419,10 @@ export function createTasksRoutes() {
 		const viewFilters = parseResourceListFilters(c.req.query("viewFilters"));
 		const limit = Math.min(parseInt(c.req.query("limit") || "100", 10), 500);
 		const offset = parseInt(c.req.query("offset") || "0", 10);
+		const sort = c.req.query("sort");
+		if (sort !== undefined && sort !== "created-desc") {
+			throw HttpError.badRequest("sort must be created-desc when supplied");
+		}
 
 		const scopeConditions: string[] = [];
 		const scopeParams: (string | number)[] = [];
@@ -509,7 +514,7 @@ export function createTasksRoutes() {
       LEFT JOIN arms a ON t.assigned_to = a.id
       ${whereClause}
       ORDER BY
-        t.order_key ASC,
+        ${sort === "created-desc" ? "t.created_at DESC, t.id ASC" : `t.order_key ASC,
         CASE t.status
           WHEN 'draft' THEN 1
           WHEN 'in_progress' THEN 2
@@ -527,7 +532,7 @@ export function createTasksRoutes() {
           WHEN 'normal' THEN 3
           WHEN 'low' THEN 4
         END,
-        t.created_at DESC
+        t.created_at DESC`}
       ${paginationClause}
     `)
 			.all(...queryParams, ...(useUnicodeFallback ? [] : [limit, offset])) as TaskRow[];

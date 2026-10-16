@@ -1,6 +1,9 @@
-import { describe, it, beforeEach, afterEach, expect } from "bun:test";
+import { describe, it, beforeEach, afterEach, expect, spyOn } from "bun:test";
 import { Hono } from "hono";
 import { Database } from "bun:sqlite";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createTasksRoutes, type Task } from "../routes/tasks";
 import { createTaskDiscussionsRoutes } from "../routes/task-discussions";
 import { HttpError } from "../middleware/error";
@@ -105,11 +108,35 @@ async function addComment(
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
+const PROVIDER_ENV_KEYS = [
+	"COLEO_DIR", "COLEO_BRAIN_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL",
+	"COLEO_BRAIN_PROVIDER", "COLEO_BRAIN_MODEL", "OPENAI_MODEL",
+] as const;
+
 describe("POST /api/tasks/:id/prepare", () => {
 	let db: Database;
 	let app: Hono<{ Variables: { db: Database } }>;
+	let originalEnv: Map<string, string | undefined>;
+	let directory: string | undefined;
+	let restoreFetch: (() => void) | undefined;
+	let unexpectedFetches: number;
 
-	beforeEach(() => {
+	beforeEach(async () => {
+		originalEnv = new Map(PROVIDER_ENV_KEYS.map((key) => [key, process.env[key]]));
+		directory = undefined;
+		restoreFetch = undefined;
+		unexpectedFetches = 0;
+		// Route tests must never call a real provider, even if isolation regresses.
+		const denyFetch: FetchLike = async () => {
+			unexpectedFetches++;
+			throw new Error("Unexpected provider fetch in task-preparation fixture");
+		};
+		const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(denyFetch as typeof fetch);
+		restoreFetch = () => fetchSpy.mockRestore();
+		for (const key of PROVIDER_ENV_KEYS) delete process.env[key];
+		directory = await mkdtemp(join(tmpdir(), "coleo-task-preparation-"));
+		process.env.COLEO_DIR = directory;
+		await writeFile(join(directory, "config.toml"), '[brain]\nprovider = "openai"\nmodel = "fixture-model"\n');
 		db = createTestDb();
 		const tasksApp = createTasksRoutes();
 		const discussionsApp = createTaskDiscussionsRoutes();
@@ -129,14 +156,24 @@ describe("POST /api/tasks/:id/prepare", () => {
 		});
 	});
 
-	afterEach(() => {
-		db.close();
+	afterEach(async () => {
+		try {
+			db?.close();
+		} finally {
+			try {
+				restoreFetch?.();
+			} finally {
+				for (const [key, value] of originalEnv) {
+					if (value === undefined) delete process.env[key];
+					else process.env[key] = value;
+				}
+				if (directory) await rm(directory, { recursive: true, force: true });
+			}
+		}
+		expect(unexpectedFetches).toBe(0);
 	});
 
 	it("returns a fallback definition when no brain API key is configured", async () => {
-		const originalApiKey = process.env.OPENAI_API_KEY;
-		delete process.env.OPENAI_API_KEY;
-
 		const task = await createTask(app, "Build feature", "We need a feature");
 		await addComment(app, task.id, "Use React for the UI");
 
@@ -151,9 +188,7 @@ describe("POST /api/tasks/:id/prepare", () => {
 		expect(body.prepared.subject).toBe("Build feature");
 		expect(body.prepared.description).toContain("We need a feature");
 
-		if (originalApiKey !== undefined) {
-			process.env.OPENAI_API_KEY = originalApiKey;
-		}
+		expect(unexpectedFetches).toBe(0);
 	});
 
 	it("calls the configured LLM and parses the returned JSON", async () => {
@@ -164,8 +199,10 @@ describe("POST /api/tasks/:id/prepare", () => {
 		await addComment(app, task.id, "Use React for the UI");
 
 		const mockFetch: FetchLike = async (_input, init) => {
+			expect(_input).toBe("https://api.test.example.com/v1/chat/completions");
+			expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer test-key");
 			const body = init?.body ? JSON.parse(init.body as string) : {};
-			expect(body.model).toBeDefined();
+			expect(body.model).toBe("fixture-model");
 			expect(body.messages[1].content).toContain("Use React for the UI");
 
 			return Response.json({
@@ -198,8 +235,6 @@ describe("POST /api/tasks/:id/prepare", () => {
 		expect(prepared.requirements).toEqual(["Create component files", "Wire up state"]);
 		expect(prepared.priority).toBe("high");
 
-		delete process.env.OPENAI_API_KEY;
-		delete process.env.OPENAI_BASE_URL;
 	});
 
 	it("returns 404 for a missing task", async () => {

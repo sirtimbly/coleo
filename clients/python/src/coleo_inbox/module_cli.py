@@ -18,14 +18,22 @@ class Parser(argparse.ArgumentParser):
 
 async def run_module(args, api, stdout, recipe=None):
     module = recipe.renderer if recipe else args[0]
-    parser = Parser(prog=f"coleo-inbox {args[0]}", description=recipe.description if recipe else MODULES[module].description, add_help=False)
+    parser = Parser(prog=f"coleo-client {args[0]}", description=recipe.description if recipe else MODULES[module].description, add_help=False)
+    if module == "brain":
+        parser.epilog = ("Controls target the selected API server. For local process lifecycle use "
+                         "coleo-server brain run/start/stop/restart/status/logs. "
+                         "Legacy brain prompt:task and prompt:context remain local diagnostics.")
+    elif module == "tasks":
+        parser.epilog = ("sync/reparse operate on the server workspace, not the client working directory. "
+                         "Explicit list shows newest first and defaults to 20 rows; "
+                         "the default module snapshot uses workspace order and 100 rows.")
     parser.add_argument("--help", "-h", action="store_true")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--width", type=int, default=100)
     parser.add_argument("--color", choices=("auto", "always", "never"), default="auto")
     if module in ("tasks", "bugs"):
         operations = ("list", "show", "csv-export", "csv-import", "csv-edit")
-        parser.add_argument("operation", choices=operations + (("discuss", "discussions", "sync", "reparse", "unclaim") if module == "tasks" else ()), nargs="?", default="list")
+        parser.add_argument("operation", choices=operations + (("discuss", "discussions", "sync", "reparse", "unclaim") if module == "tasks" else ()), nargs="?")
         parser.add_argument("id", nargs="?")
         if module == "tasks":
             parser.add_argument("message", nargs="?")
@@ -33,11 +41,11 @@ async def run_module(args, api, stdout, recipe=None):
             parser.add_argument("--verbose", "-v", action="store_true")
         parser.add_argument("--filter", "-f", choices=("all", "pending", "not-completed"), default=None)
         parser.add_argument("--search", default="")
-        parser.add_argument("--status", choices=("all", *MODULES[module].statuses), default="all")
+        parser.add_argument("--status", "-s", choices=("all", *MODULES[module].statuses), default="all")
         parser.add_argument("--limit", "-n", type=int, default=None)
         parser.add_argument("--offset", type=int, default=0)
     elif module == "brain":
-        parser.add_argument("operation", choices=("status", "start", "stop"), nargs="?", default="status")
+        parser.add_argument("operation", choices=("status", "start", "stop", "pause", "resume"), nargs="?", default="status")
     if "--help" in args or "-h" in args:
         print(parser.format_help(), file=stdout)
         return 0
@@ -45,6 +53,8 @@ async def run_module(args, api, stdout, recipe=None):
     if not 30 <= options.width <= 500:
         raise ValueError("Width must be 30–500")
     if module in ("tasks", "bugs"):
+        explicit_task_list = module == "tasks" and options.operation == "list"
+        options.operation = options.operation or "list"
         maintenance = options.operation in ("sync", "reparse", "unclaim")
         if getattr(options, "verbose", False) and not maintenance:
             raise ValueError("--verbose is only supported by sync, reparse, and unclaim")
@@ -52,7 +62,7 @@ async def run_module(args, api, stdout, recipe=None):
                             or options.search or options.status != "all" or options.filter is not None):
             raise ValueError("Maintenance commands do not accept IDs, filters, or pagination")
         if options.limit is None:
-            options.limit = 20 if options.operation == "discussions" else 100
+            options.limit = 20 if options.operation == "discussions" or explicit_task_list else 100
         if options.operation not in ("discuss", "discussions") and (
                 getattr(options, "message", None) is not None or getattr(options, "reply_to", None) is not None):
             raise ValueError("Message and --reply-to are only supported by discuss")
@@ -83,7 +93,8 @@ async def run_module(args, api, stdout, recipe=None):
             if options.id:
                 raise ValueError("Use show <ID> to inspect a record")
             result = await collection(api, module, search=options.search, status=options.status,
-                                      limit=options.limit, offset=options.offset)
+                                      limit=options.limit, offset=options.offset,
+                                      sort="created-desc" if explicit_task_list else None)
     elif module == "brain" and options.operation != "status":
         result = await brain_action(api, options.operation)
     else:

@@ -1,8 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || { echo "Required command not found: $1" >&2; exit 1; }
+}
+for command in coleo coleo-web bun curl qdrant; do require_cmd "$command"; done
+
 COLEO_DIR=${COLEO_DIR:-/home/coleo/.coleo}
 PORT=${PORT:-3000}
+API_PORT=${COLEO_API_INTERNAL_PORT:-8081}
+if [[ "$API_PORT" == "$PORT" ]]; then
+  echo "COLEO_API_INTERNAL_PORT must differ from PORT" >&2
+  exit 1
+fi
 R2_PREFIX=${COLEO_R2_PREFIX:-control}
 QDRANT_URL=${COLEO_QDRANT_URL:-http://127.0.0.1:6333}
 QDRANT_PORT=${COLEO_QDRANT_PORT:-6333}
@@ -105,24 +115,27 @@ export COLEO_QDRANT_URL="$QDRANT_URL"
 
 QDRANT_PID=""
 API_PID=""
+WEB_PID=""
 BRAIN_PID=""
 INDEXER_PID=""
-# shellcheck disable=SC2317 # Invoked indirectly by the signal/exit trap below.
+# shellcheck disable=SC2317,SC2329 # Invoked indirectly by the signal/exit trap below.
 cleanup() {
   trap - TERM INT EXIT
+  if [[ -n "$WEB_PID" ]]; then kill -TERM "$WEB_PID" 2>/dev/null || true; fi
   if [[ -n "$INDEXER_PID" ]]; then kill -TERM "$INDEXER_PID" 2>/dev/null || true; fi
   if [[ -n "$BRAIN_PID" ]]; then kill -TERM "$BRAIN_PID" 2>/dev/null || true; fi
   if [[ -n "$API_PID" ]]; then kill -TERM "$API_PID" 2>/dev/null || true; fi
   if [[ -n "$INDEXER_PID" ]]; then wait "$INDEXER_PID" 2>/dev/null || true; fi
   if [[ -n "$BRAIN_PID" ]]; then wait "$BRAIN_PID" 2>/dev/null || true; fi
   if [[ -n "$API_PID" ]]; then wait "$API_PID" 2>/dev/null || true; fi
+  if [[ -n "$WEB_PID" ]]; then wait "$WEB_PID" 2>/dev/null || true; fi
   snapshot_qdrant
   if [[ -n "$QDRANT_PID" ]]; then kill -TERM "$QDRANT_PID" 2>/dev/null || true; fi
   if [[ -n "$QDRANT_PID" ]]; then wait "$QDRANT_PID" 2>/dev/null || true; fi
   rm -f "$COLEO_DIR/run/indexer.pid"
   sync_state
 }
-# shellcheck disable=SC2317 # Invoked indirectly by the signal trap below.
+# shellcheck disable=SC2317,SC2329 # Invoked indirectly by the signal trap below.
 shutdown() {
   cleanup
   exit 0
@@ -156,8 +169,8 @@ if ! curl -fsS "${QDRANT_URL}/readyz" >/dev/null; then
   exit 1
 fi
 
-echo "Starting Coleo API, web UI, and brain on port ${PORT}..."
-coleo serve --host 0.0.0.0 --port "$PORT" &
+echo "Starting Coleo API on internal port ${API_PORT}..."
+coleo serve --host 127.0.0.1 --port "$API_PORT" &
 API_PID=$!
 
 for _ in $(seq 1 120); do
@@ -165,16 +178,20 @@ for _ in $(seq 1 120); do
     echo "Coleo API exited before becoming ready" >&2
     exit 1
   fi
-  if curl -fsS "http://127.0.0.1:${PORT}/api/health" >/dev/null; then
+  if curl -fsS "http://127.0.0.1:${API_PORT}/api/health" >/dev/null; then
     break
   fi
   sleep 1
 done
 
-if ! curl -fsS "http://127.0.0.1:${PORT}/api/health" >/dev/null; then
+if ! curl -fsS "http://127.0.0.1:${API_PORT}/api/health" >/dev/null; then
   echo "Timed out waiting for Coleo API readiness" >&2
   exit 1
 fi
+
+echo "Starting Coleo web/proxy on port ${PORT}..."
+COLEO_API_URL="http://127.0.0.1:${API_PORT}" coleo-web --host 0.0.0.0 --port "$PORT" &
+WEB_PID=$!
 
 echo "Starting transcript indexer..."
 bun /home/coleo/coleo/src/scripts/jetstream-transcript-indexer.ts &
@@ -198,6 +215,7 @@ BRAIN_PID=$!
 last_qdrant_snapshot=$SECONDS
 while kill -0 "$QDRANT_PID" 2>/dev/null \
   && kill -0 "$API_PID" 2>/dev/null \
+  && kill -0 "$WEB_PID" 2>/dev/null \
   && kill -0 "$INDEXER_PID" 2>/dev/null \
   && kill -0 "$BRAIN_PID" 2>/dev/null; do
   sleep 60

@@ -42,9 +42,11 @@ The TUI turns that same control plane into a keyboard-driven terminal workspace 
 
 ## Quick Start
 
-Requires the [Bun](https://bun.sh/) runtime (v1.1+).
+The operator tools require the [Bun](https://bun.sh/) runtime (v1.3.6+).
 
-For installation details and configuration guidance, see the [Coleo getting started guide](https://coleo.dev/guides/getting-started).
+For component installation and configuration, see the [installation guide](docs/guides/installation.md).
+The server/Arm Host tools and Python client are installed separately. From a checkout,
+`mise run setup:cli` installs `coleo-client`; `mise run setup:tui` adds the terminal workspace.
 
 ```bash
 # Install Bun + coleo globally (Linux/macOS, no mise required)
@@ -56,19 +58,19 @@ coleo init --dir ./.coleo
 
 # Terminal 1: start the API server
 # If COLEO_NATS_URL is unset, this will auto-start local NATS for you
-coleo serve
+coleo-server run
 
 # Terminal 2: start the Brain (foreground polling loop)
-coleo brain run
+coleo-server brain run
 
 # Terminal 3: spawn an Arm (headless by default via opencode-api)
-coleo arm spawn --name explorer --harness opencode-api --workdir ./your-repo
+coleo-client arms spawn --name explorer --harness opencode-api --workdir /path/on/arm-host/your-repo
 
 # Send a task via mail
-coleo mail send "Explore the codebase and identify refactoring opportunities"
+coleo-client mail send "Explore the codebase and identify refactoring opportunities"
 
 # Check status
-coleo status
+coleo-client status
 ```
 
 ## Docker Quick Start
@@ -87,10 +89,12 @@ docker compose up -d
 ssh -p 2222 coleo@localhost  # password: coleo
 
 # Inside the container:
-coleo serve                         # Start the API server
-coleo brain run                     # Start the Brain
-coleo arm spawn -n coder --terminal tmux     # Spawn in tmux (uses opencode-tui)
-coleo status                        # Check status
+coleo-server run                    # Start the API server
+coleo-server brain run              # Start the Brain
+
+# From a separately installed client connected to that API:
+coleo-client arms list
+coleo-client status
 
 # View Arm logs (headless mode)
 tail -f ~/.coleo/logs/coleo_coder.log
@@ -134,18 +138,19 @@ Arm       Arm       Arm
 ```bash
 coleo init                      # Initialize ./.coleo in the current project
 coleo init --dir ~/.coleo       # Optional: use a global directory instead
-coleo serve                     # Start API server in foreground
-coleo serve start               # Start API server in background
-coleo brain run                 # Start Brain (foreground)
-coleo brain run --once          # Single poll cycle
-coleo arm spawn -n NAME         # Spawn an Arm (via API server)
-coleo arm spawn -n NAME --terminal tmux  # Spawn in a visible terminal (opencode-tui)
-coleo arm list                  # List active Arms
-coleo mail inbox                # View inbox
-coleo mail send "task"          # Send task to Brain
+coleo-server run                # Start API server in foreground
+coleo-server start              # Start API server in background
+coleo-server brain run          # Start Brain (foreground)
+coleo-server brain run --once   # Single poll cycle
+coleo-agent run                 # Run an Arm Host in foreground
+coleo-client arms spawn -n NAME # Spawn an Arm through the selected API
+coleo-client arms list          # List active Arms
+coleo-client mail inbox         # View inbox
+coleo-client mail send "task"   # Send task to Brain
 coleo imap serve                # Start IMAP gateway for mail clients
 coleo imap password             # Show/reset IMAP password
-coleo status                    # Overall status
+coleo-client status             # Selected server status
+coleo-client web                # Serve the separately installed web client
 coleo mcp serve                 # Run MCP server (for Arms)
 ```
 
@@ -155,10 +160,10 @@ Coleo separates “coordination” from “agent UI” via harnesses:
 
 ```bash
 # Headless (API-driven) harness
-coleo arm spawn -n worker --harness opencode-api --workdir /path/to/repo
+coleo-client arms spawn -n worker --harness opencode-api --workdir /path/on/arm-host/repo
 
-# Visible terminal harness (recommended when you want to watch/debug)
-coleo arm spawn -n worker --terminal tmux --workdir /path/to/repo
+# Watch the remote arm's conversation
+coleo-client arms watch worker
 ```
 
 ## Local Development
@@ -170,13 +175,14 @@ coleo arm spawn -n worker --terminal tmux --workdir /path/to/repo
 - [NATS Server](https://nats.io/) with JetStream enabled (optional, for distributed arms and stream-backed events)
 - [OpenCode](https://opencode.ai/) CLI (for spawning AI Arms)
 
-This section is for contributors running Coleo from source. For regular usage, install the global CLI and run `coleo` commands.
+This section is for contributors running Coleo from source. For regular usage,
+install the operator or client components described in the installation guide.
 
 ### Setup
 
 The monorepo keeps the Python client project at the root (`pyproject.toml` and
 `uv.lock`), the TypeScript backend under `server/src/`, and the React app under
-`server/web-app/`. `mise.toml` is the contributor task/toolchain entry point.
+`clients/web/`. `mise.toml` is the contributor task/toolchain entry point.
 The root `bun.lock` covers the server, docs toolchain, and web workspace; do not
 create nested lockfiles.
 

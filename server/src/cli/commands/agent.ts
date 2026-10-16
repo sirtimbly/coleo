@@ -1,13 +1,14 @@
 import { Command } from "commander";
 import { resolveNatsUrl } from "../../network-config";
 import { getApiConfig, getColeoDir, isApiRunning } from "../context";
+import { registerServiceProcess, unregisterServiceProcess } from "../../daemon";
 
 export function registerAgentCommands(program: Command): void {
   const agentCmd = program.command("agent").description("Manage arm agents (distributed arm management)");
 
   agentCmd
     .command("start")
-    .description("Start an arm agent daemon on this host")
+    .description("Run an Arm Host in foreground (compatibility); new background command: coleo-agent start")
     .option("-n, --nats-url <url>", "NATS server URL (defaults to COLEO_NATS_URL or host/port)")
     .option("-m, --max-arms <n>", "Maximum number of arms to manage", "10")
     .option("-i, --heartbeat-interval <ms>", "Heartbeat interval in milliseconds", "30000")
@@ -39,16 +40,19 @@ export function registerAgentCommands(program: Command): void {
       process.on("SIGINT", async () => {
         console.log("\nStopping agent...");
         await agent.stop();
+        await unregisterServiceProcess("agent");
         process.exit(0);
       });
 
       process.on("SIGTERM", async () => {
         await agent.stop();
+        await unregisterServiceProcess("agent");
         process.exit(0);
       });
 
       try {
         await agent.start();
+        await registerServiceProcess("agent");
         const info = agent.getInfo();
         console.log("");
         console.log("=".repeat(60));

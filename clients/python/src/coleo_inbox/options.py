@@ -1,10 +1,12 @@
 from dataclasses import dataclass, field
 
 from .contracts import normalize
+from .connections import CONNECTION_COMMANDS, REMOTE_COMMANDS
 
 HOST = {"--catalog": True, "--view": True, "--json": False, "--cursor": True, "--pages": True, "--profile": True,
         "--tree": False, "--expand": True, "--branch": False, "--metadata": True,
-        "--help": False, "-h": False, "--width": True, "--color": True}
+        "--help": False, "-h": False, "--width": True, "--color": True,
+        "--connection": True, "--server": True, "--version": False}
 
 
 @dataclass
@@ -43,11 +45,11 @@ def parse(args, view, recipe=None):
         cli = b["cli"]
         if "flag" in cli:
             for name in [cli["flag"]] + ([cli["alias"]] if cli.get("alias") else []):
-                if name in flags or name in HOST and b["operation"] != "collection.help":
+                if name in flags or name in HOST and not (b["operation"] == "collection.help" and name in ("--help", "-h")):
                     raise ValueError(f"Conflicting flag {name}")
                 flags[name] = b
         else:
-            if cli["subcommand"] in ("tui", "views", "validate", "modules", "tasks", "bugs", "brain", "dashboard") or cli["subcommand"] in commands:
+            if cli["subcommand"] in {"tui", "views", "validate", "modules", "tasks", "bugs", "brain", "dashboard"} | CONNECTION_COMMANDS | REMOTE_COMMANDS or cli["subcommand"] in commands:
                 raise ValueError("Conflicting command")
             commands[cli["subcommand"]] = b
     supplied, bound, positions = {}, {}, []

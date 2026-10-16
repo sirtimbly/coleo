@@ -1,421 +1,218 @@
-/**
- * Daemon/Service Management for Octopai
- * 
- * Provides PID file tracking and process management for:
- * - API Server (coleo serve)
- * - Brain (coleo brain run)
- * - Transcript Indexer (JetStream -> Qdrant)
- * 
- * PID files stored in ~/.coleo/run/
- * 
- * Security: Some operations require COLEO_SELF_MODIFY=1 env var,
- * which should only be set for arms working on Coleo itself.
- */
-
-import { spawn } from "bun";
-import { mkdir, readFile, writeFile, unlink } from "fs/promises";
-import { join } from "path";
+import { spawn } from "node:child_process";
+import { appendFile, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { join } from "node:path";
 import { getColeoDir } from "../config";
 import { getCliEntrypoint } from "../cli/entrypoint";
-import { isProcessRunning, isSelfModifyAllowed, requireSelfModify, formatUptime } from "./utils";
+import { isProcessRunning, requireSelfModify } from "./utils";
 
-// Re-export utility functions for backward compatibility
 export { isProcessRunning, isSelfModifyAllowed, requireSelfModify, formatUptime } from "./utils";
-
-export type ServiceType = "server" | "brain" | "web" | "indexer";
-
+export type ServiceType = "server" | "brain" | "agent" | "web" | "indexer";
 export interface ServiceInfo {
   type: ServiceType;
   pid: number;
   startedAt: string;
   command: string[];
   cwd: string;
+  identity?: string;
+  token?: string;
 }
-
 export interface ServiceStatus {
   type: ServiceType;
   running: boolean;
   pid?: number;
   startedAt?: string;
-  uptime?: number; // seconds
+  uptime?: number;
+  identity?: string;
 }
-
-/**
- * Get the run directory for PID files
- */
-export function getRunDir(): string {
-  return join(getColeoDir(), "run");
+export interface LifecycleOptions {
+  requireSelfModify?: boolean;
+  force?: boolean;
+  timeout?: number;
+  startupTimeout?: number;
+  args?: string[];
+  env?: NodeJS.ProcessEnv;
 }
+export function getRunDir(): string { return join(getColeoDir(), "run"); }
+export function getPidFilePath(service: ServiceType): string { return join(getRunDir(), `${service}.pid`); }
+export function getLogFilePath(service: ServiceType): string { return join(getRunDir(), `${service}.log`); }
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-/**
- * Get the PID file path for a service
- */
-export function getPidFilePath(service: ServiceType): string {
-  return join(getRunDir(), `${service}.pid`);
+/** Kernel start time and command, rather than PID existence, establish ownership. */
+async function processIdentity(pid: number): Promise<string | null> {
+  if (!Number.isSafeInteger(pid) || pid < 1 || !isProcessRunning(pid)) return null;
+  const proc = Bun.spawn(["ps", "-p", String(pid), "-o", "lstart=", "-o", "command="], { stdout: "pipe", stderr: "ignore" });
+  const text = (await new Response(proc.stdout).text()).trim();
+  return await proc.exited === 0 && text ? text : null;
 }
-
-/**
- * Get the log file path for a service
- */
-export function getLogFilePath(service: ServiceType): string {
-  return join(getRunDir(), `${service}.log`);
+async function ownsProcess(info: ServiceInfo): Promise<boolean> {
+  return Boolean(info.identity && info.identity === await processIdentity(info.pid));
 }
-
-/**
- * Ensure the run directory exists
- */
-async function ensureRunDir(): Promise<void> {
-  await mkdir(getRunDir(), { recursive: true });
-}
-
-/**
- * Read service info from PID file
- */
 export async function readServiceInfo(service: ServiceType): Promise<ServiceInfo | null> {
-  const pidFile = getPidFilePath(service);
-  try {
-    const content = await readFile(pidFile, "utf-8");
-    return JSON.parse(content) as ServiceInfo;
-  } catch {
-    return null;
+  try { return JSON.parse(await readFile(getPidFilePath(service), "utf8")); }
+  catch { return null; }
+}
+/** Separate from lifecycle locks: a background parent awaits child registration. */
+async function withRegistrationLock<T>(service: ServiceType, action: () => Promise<T>): Promise<T> {
+  await mkdir(getRunDir(), { recursive: true });
+  const path = join(getRunDir(), `${service}.registration.lock`);
+  const deadline = Date.now() + 5000;
+  let handle;
+  while (!handle) {
+    try { handle = await open(path, "wx", 0o600); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (Date.now() >= deadline) throw new Error(`${service} registration locked; if its operator exited, remove ${path}`);
+      await sleep(10);
+    }
   }
+  try { return await action(); } finally { await handle.close(); await unlink(path); }
 }
-
-/**
- * Write service info to PID file
- */
-async function writeServiceInfo(info: ServiceInfo): Promise<void> {
-  await ensureRunDir();
-  const pidFile = getPidFilePath(info.type);
-  await writeFile(pidFile, JSON.stringify(info, null, 2));
+async function removeServiceInfo(service: ServiceType, expected: ServiceInfo): Promise<void> {
+  await withRegistrationLock(service, async () => {
+    const current = await readServiceInfo(service);
+    if (JSON.stringify(current) === JSON.stringify(expected)) await unlink(getPidFilePath(service));
+  });
 }
-
-/** Foreground services participate in the same lifecycle tracking as daemons. */
+export async function unregisterServiceProcess(service: ServiceType): Promise<void> {
+  const info = await readServiceInfo(service);
+  if (info?.pid === process.pid && await ownsProcess(info)) await removeServiceInfo(service, info);
+}
 export async function registerServiceProcess(service: ServiceType, pid = process.pid): Promise<void> {
-  if (!isProcessRunning(pid)) throw new Error(`Cannot register stopped ${service} process ${pid}`);
-  const existing = await readServiceInfo(service);
-  if (existing?.pid === pid) return;
-  const { command, cwd } = getServiceCommand(service);
-  await writeServiceInfo({ type: service, pid, startedAt: new Date().toISOString(), command, cwd });
+  await withRegistrationLock(service, async () => {
+    const existing = await readServiceInfo(service);
+    if (existing && await ownsProcess(existing)) {
+      if (existing.pid === pid) return;
+      throw new Error(`${service} is already registered (PID ${existing.pid})`);
+    }
+    const identity = await processIdentity(pid);
+    if (!identity) throw new Error(`Cannot register stopped ${service} process ${pid}`);
+    const info: ServiceInfo = {
+      type: service, pid, startedAt: new Date().toISOString(), identity,
+      command: pid === process.pid ? [process.execPath, ...process.argv.slice(1)] : getServiceCommand(service).command,
+      cwd: process.cwd(),
+      token: process.env.COLEO_DAEMON_TOKEN,
+    };
+    const temporary = `${getPidFilePath(service)}.${crypto.randomUUID()}.tmp`;
+    const handle = await open(temporary, "wx", 0o600);
+    try { await handle.writeFile(JSON.stringify(info)); } finally { await handle.close(); }
+    await rename(temporary, getPidFilePath(service));
+  });
 }
-
-/**
- * Remove PID file for a service
- */
-async function removeServiceInfo(service: ServiceType): Promise<void> {
-  const pidFile = getPidFilePath(service);
-  try {
-    await unlink(pidFile);
-  } catch {
-    // Ignore if file doesn't exist
-  }
-}
-
-/**
- * Get the status of a service
- */
 export async function getServiceStatus(service: ServiceType): Promise<ServiceStatus> {
   const info = await readServiceInfo(service);
-  
-  if (!info) {
-    return { type: service, running: false };
-  }
-  
-  const running = isProcessRunning(info.pid);
-  
-  if (!running) {
-    // Clean up stale PID file
-    await removeServiceInfo(service);
-    return { type: service, running: false };
-  }
-  
-  const startedAt = new Date(info.startedAt);
-  const uptime = Math.floor((Date.now() - startedAt.getTime()) / 1000);
-  
-  return {
-    type: service,
-    running: true,
-    pid: info.pid,
-    startedAt: info.startedAt,
-    uptime,
-  };
+  if (!info || !await ownsProcess(info)) return { type: service, running: false };
+  return { type: service, running: true, pid: info.pid, startedAt: info.startedAt,
+    identity: info.identity, uptime: Math.floor((Date.now() - Date.parse(info.startedAt)) / 1000) };
 }
-
-/**
- * Get the command to start a service
- */
 export function getServiceCommand(service: ServiceType): { command: string[]; cwd: string } {
-  // Use the coleo directory as cwd
   const cwd = process.env.COLEO_PROJECT_DIR || process.cwd();
-  const cliEntrypoint = getCliEntrypoint();
-  const bunBinary = process.execPath;
-  
-  switch (service) {
-    case "server":
-      return {
-        command: [bunBinary, cliEntrypoint, "serve"],
-        cwd,
-      };
-    case "brain":
-      return {
-        command: [bunBinary, cliEntrypoint, "brain", "run", "--verbose"],
-        cwd,
-      };
-    case "web":
-      return {
-        command: [
-          bunBinary,
-          cliEntrypoint,
-          "web",
-          "--port",
-          process.env.WEB_UI_PORT || "5173",
-          "--host",
-          process.env.WEB_UI_HOST || "0.0.0.0",
-        ],
-        cwd,
-      };
-    case "indexer":
-      return {
-        command: [bunBinary, "src/scripts/jetstream-transcript-indexer.ts"],
-        cwd,
-      };
-    default:
-      throw new Error(`Unknown service type: ${service}`);
-  }
+  const role = service === "agent" ? "agent" : "server";
+  if (service === "web") return { command: [process.execPath, getCliEntrypoint(), "web", "--port",
+    process.env.WEB_UI_PORT || "5173", "--host", process.env.WEB_UI_HOST || "0.0.0.0"], cwd };
+  if (service === "indexer") return { command: [process.execPath, "src/scripts/jetstream-transcript-indexer.ts"], cwd };
+  return { command: [process.execPath, getCliEntrypoint(role), ...(service === "brain" ? ["brain"] : []), "run"], cwd };
 }
-
-/**
- * Start a service in the background
- */
-export async function startService(
-  service: ServiceType,
-  options?: { requireSelfModify?: boolean }
-): Promise<ServiceStatus> {
-  // Check self-modify permission if required
-  if (options?.requireSelfModify) {
-    requireSelfModify(`start ${service}`);
-  }
-  
-  // Check if already running
-  const currentStatus = await getServiceStatus(service);
-  if (currentStatus.running) {
-    return currentStatus;
-  }
-  
-  await ensureRunDir();
-  
+export async function readLaunchArgs(service: ServiceType): Promise<string[]> {
+  try { return JSON.parse(await readFile(join(getRunDir(), `${service}.launch.json`), "utf8")).args; }
+  catch { return []; }
+}
+export async function saveLaunchArgs(service: ServiceType, args: string[]): Promise<void> {
+  await mkdir(getRunDir(), { recursive: true });
+  const launchPath = join(getRunDir(), `${service}.launch.json`);
+  const temporary = `${launchPath}.${crypto.randomUUID()}.tmp`;
+  const saved = await open(temporary, "wx", 0o600);
+  try { await saved.writeFile(JSON.stringify({ args })); } finally { await saved.close(); }
+  await rename(temporary, launchPath);
+}
+async function withLock<T>(service: ServiceType, action: () => Promise<T>): Promise<T> {
+  await mkdir(getRunDir(), { recursive: true });
+  const path = join(getRunDir(), `${service}.lock`);
+  let handle;
+  try { handle = await open(path, "wx", 0o600); }
+  catch { throw new Error(`${service} lifecycle operation locked; if its operator exited, remove ${path}`); }
+  try { return await action(); } finally { await handle.close(); await unlink(path); }
+}
+async function start(service: ServiceType, options: LifecycleOptions): Promise<ServiceStatus> {
+  const current = await getServiceStatus(service);
+  if (current.running) return current;
   const { command, cwd } = getServiceCommand(service);
-  const cliEntrypoint = getCliEntrypoint();
-  const logFile = getLogFilePath(service);
-  
-  // Write startup marker to log
-  const startMarker = `\n\n========== ${service.toUpperCase()} STARTED AT ${new Date().toISOString()} ==========\n\n`;
-  await Bun.write(logFile, startMarker, { createPath: true });
-  
-  // Use nohup + shell redirect to fully detach the process
-  // This ensures the parent can exit without waiting
-  const shellCommand = command
-    .map((arg) => `"${arg.replace(/"/g, "\\\"")}"`)
-    .join(" ");
-  const shellCmd = `nohup ${shellCommand} >> "${logFile}" 2>&1 &`;
-  
-  const proc = spawn({
-    cmd: ["sh", "-c", shellCmd],
-    cwd,
-    stdout: "ignore",
-    stderr: "ignore",
-    env: {
-      ...process.env,
-      // Ensure the spawned process doesn't inherit COLEO_SELF_MODIFY
-      COLEO_SELF_MODIFY: undefined,
-      COLEO_CLI_ENTRYPOINT: cliEntrypoint,
-    },
+  const args = options.args ?? await readLaunchArgs(service);
+  await saveLaunchArgs(service, args);
+  await appendFile(getLogFilePath(service), `\n=== ${service} ${new Date().toISOString()} ===\n`);
+  const log = await open(getLogFilePath(service), "a", 0o600);
+  const token = crypto.randomUUID();
+  const child = spawn(command[0]!, [...command.slice(1), ...args], {
+    cwd, detached: true, stdio: ["ignore", log.fd, log.fd],
+    env: { ...process.env, ...options.env, COLEO_DIR: getColeoDir(), COLEO_SELF_MODIFY: undefined, COLEO_DAEMON_TOKEN: token },
   });
-  
-  // Wait for shell to exit (happens immediately after backgrounding)
-  await proc.exited;
-  
-  // Wait a moment for the actual process to start
-  await new Promise(resolve => setTimeout(resolve, 2000));
-
-  // The foreground entry point registers itself after binding successfully.
-  // Prefer that PID over matching a command line (which may use relative paths).
-  const registeredStatus = await getServiceStatus(service);
-  if (registeredStatus.running) return registeredStatus;
-  
-  // Find the PID of the started process
-  // We need to find it by looking for the command pattern
-  const pidResult = await findProcessByCommand(command, cwd);
-  
-  if (!pidResult) {
-    const log = await readFile(logFile, "utf8").catch(() => "");
-    if (log.includes("EADDRINUSE")) {
-      throw new Error(`Failed to start ${service}: its listening port is already in use. Check ${logFile} for details.`);
+  let failed = false;
+  child.on("error", () => { failed = true; });
+  child.on("exit", () => { failed = true; });
+  child.unref();
+  await log.close();
+  const deadline = Date.now() + (options.startupTimeout ?? 30000);
+  // These compatibility-only services predate the readiness handshake.
+  // Canonical server, brain and agent services must explicitly register readiness.
+  if (service === "web" || service === "indexer") {
+    await sleep(500);
+    if (!failed && child.pid) {
+      await registerServiceProcess(service, child.pid);
+      return getServiceStatus(service);
     }
-    throw new Error(`Failed to start ${service}: could not find process. Check ${logFile} for details.`);
   }
-  
-  // Verify it's running
-  if (!isProcessRunning(pidResult)) {
-    throw new Error(`Failed to start ${service}: process exited immediately. Check ${logFile} for details.`);
+  while (!failed && Date.now() < deadline) {
+    const info = await readServiceInfo(service);
+    if (info && info.pid === child.pid && info.token === token && await ownsProcess(info)) return getServiceStatus(service);
+    await sleep(100);
   }
-  
-  // Write PID file
-  const info: ServiceInfo = {
-    type: service,
-    pid: pidResult,
-    startedAt: new Date().toISOString(),
-    command,
-    cwd,
-  };
-  await writeServiceInfo(info);
-  
-  console.log(`Started ${service} (PID: ${pidResult}), logs at ${logFile}`);
-  
-  return {
-    type: service,
-    running: true,
-    pid: pidResult,
-    startedAt: info.startedAt,
-    uptime: 0,
-  };
-}
-
-/**
- * Find a process by its command pattern
- */
-async function findProcessByCommand(command: string[], cwd: string): Promise<number | null> {
-  // Look for bun processes matching our command
-  const { execSync } = await import("node:child_process");
-  
-  try {
-    // Find bun processes running our script
-    const pattern = command.slice(1).join(".*");
-    const psOutput = execSync(
-      `ps aux | grep -E 'bun.*${pattern}' | grep -v grep | awk '{print $2}' | head -1`,
-      { encoding: "utf-8", cwd }
-    ).trim();
-    
-    if (psOutput) {
-      const pid = parseInt(psOutput, 10);
-      if (!isNaN(pid)) {
-        return pid;
-      }
+  // Only the child spawned by this invocation can be terminated on startup failure.
+  if (!failed) {
+    child.kill("SIGTERM");
+    for (let i = 0; i < 10 && !failed; i++) await sleep(100);
+    if (!failed) {
+      child.kill("SIGKILL");
+      for (let i = 0; i < 10 && !failed; i++) await sleep(100);
     }
-  } catch {
-    // Ignore errors
   }
-  
-  return null;
+  throw new Error(`Failed to start ${service}: exited or readiness timed out. See ${getLogFilePath(service)}`);
 }
-
-/**
- * Stop a running service
- */
-export async function stopService(
-  service: ServiceType,
-  options?: { requireSelfModify?: boolean; force?: boolean; timeout?: number }
-): Promise<ServiceStatus> {
-  // Check self-modify permission if required
-  if (options?.requireSelfModify) {
-    requireSelfModify(`stop ${service}`);
-  }
-  
+export async function startService(service: ServiceType, options: LifecycleOptions = {}): Promise<ServiceStatus> {
+  if (options.requireSelfModify) requireSelfModify(`start ${service}`);
+  return withLock(service, () => start(service, options));
+}
+async function stop(service: ServiceType, options: LifecycleOptions): Promise<ServiceStatus> {
   const info = await readServiceInfo(service);
-  
-  if (!info) {
-    return { type: service, running: false };
+  if (!info || !await ownsProcess(info)) {
+    if (info) await removeServiceInfo(service, info);
+    return getServiceStatus(service);
   }
-  
-  if (!isProcessRunning(info.pid)) {
-    await removeServiceInfo(service);
-    return { type: service, running: false };
+  process.kill(info.pid, "SIGTERM");
+  const deadline = Date.now() + (options.timeout ?? 10000);
+  while (await ownsProcess(info) && Date.now() < deadline) await sleep(100);
+  if (await ownsProcess(info) && options.force) {
+    process.kill(info.pid, "SIGKILL");
+    for (let i = 0; i < 50 && await ownsProcess(info); i++) await sleep(100);
   }
-  
-  const timeout = options?.timeout ?? 5000;
-  const force = options?.force ?? false;
-  
-  // Try graceful shutdown first
-  try {
-    process.kill(info.pid, "SIGTERM");
-    console.log(`Sent SIGTERM to ${service} (PID: ${info.pid})`);
-  } catch (err) {
-    console.error(`Failed to send SIGTERM to ${service}: ${err}`);
-  }
-  
-  // Wait for process to exit
-  const startWait = Date.now();
-  while (isProcessRunning(info.pid) && Date.now() - startWait < timeout) {
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
-  
-  // If still running and force is enabled, send SIGKILL
-  if (isProcessRunning(info.pid)) {
-    if (force) {
-      try {
-        process.kill(info.pid, "SIGKILL");
-        console.log(`Sent SIGKILL to ${service} (PID: ${info.pid})`);
-        await new Promise(resolve => setTimeout(resolve, 500));
-      } catch (err) {
-        console.error(`Failed to send SIGKILL to ${service}: ${err}`);
-      }
-    } else {
-      console.warn(`${service} (PID: ${info.pid}) did not stop gracefully within ${timeout}ms. Use --force to kill.`);
-      return { type: service, running: true, pid: info.pid };
-    }
-  }
-  
-  // Clean up PID file
-  await removeServiceInfo(service);
-  console.log(`Stopped ${service}`);
-  
-  return { type: service, running: false };
+  if (await ownsProcess(info)) throw new Error(`${service} did not stop; use --force or increase --timeout`);
+  await removeServiceInfo(service, info);
+  return getServiceStatus(service);
 }
-
-/**
- * Restart a service (stop + start)
- */
-export async function restartService(
-  service: ServiceType,
-  options?: { requireSelfModify?: boolean; force?: boolean; timeout?: number }
-): Promise<ServiceStatus> {
-  // Check self-modify permission if required
-  if (options?.requireSelfModify) {
-    requireSelfModify(`restart ${service}`);
-  }
-  
-  // Stop first
-  await stopService(service, { force: options?.force, timeout: options?.timeout });
-  
-  // Wait a moment for ports to be released
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  
-  // Start
-  return startService(service);
+export async function stopService(service: ServiceType, options: LifecycleOptions = {}): Promise<ServiceStatus> {
+  if (options.requireSelfModify) requireSelfModify(`stop ${service}`);
+  return withLock(service, () => stop(service, options));
 }
-
-/**
- * Get status of all services
- */
+export async function restartService(service: ServiceType, options: LifecycleOptions = {}): Promise<ServiceStatus> {
+  if (options.requireSelfModify) requireSelfModify(`restart ${service}`);
+  return withLock(service, async () => {
+    if ((await stop(service, options)).running) throw new Error(`${service} was replaced by another foreground process during stop`);
+    return start(service, options);
+  });
+}
 export async function getAllServiceStatus(): Promise<ServiceStatus[]> {
-  const services: ServiceType[] = ["server", "brain", "web", "indexer"];
-  return Promise.all(services.map(getServiceStatus));
+  return Promise.all((["server", "brain", "agent", "web", "indexer"] as ServiceType[]).map(getServiceStatus));
 }
-
-/**
- * Get the last N lines from a service log
- */
-export async function getServiceLogs(
-  service: ServiceType,
-  lines: number = 50
-): Promise<string[]> {
-  const logFile = getLogFilePath(service);
-  
-  try {
-    const content = await readFile(logFile, "utf-8");
-    const allLines = content.split("\n");
-    return allLines.slice(-lines);
-  } catch {
-    return [];
-  }
+export async function getServiceLogs(service: ServiceType, lines = 50): Promise<string[]> {
+  if (!Number.isInteger(lines) || lines < 1) throw new Error("lines must be a positive integer");
+  try { return (await readFile(getLogFilePath(service), "utf8")).split("\n").slice(-lines); }
+  catch { return []; }
 }

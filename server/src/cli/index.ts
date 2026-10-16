@@ -12,23 +12,15 @@ import { registerInitCommand } from "./commands/init";
 import { registerServeCommand } from "./commands/serve";
 import { registerBrainCommands } from "./commands/brain";
 import { registerArmCommands } from "./commands/arm";
-import { registerArmsCommand } from "./commands/arms";
-import { registerActivityCommands } from "./commands/activity";
-import { registerMailCommands } from "./commands/mail";
-import { registerInboxCommands } from "./commands/inbox";
 import { registerImapCommands } from "./commands/imap";
 import { registerMcpCommands } from "./commands/mcp";
 import { registerAgentCommands } from "./commands/agent";
-import { registerTasksCommands } from "./commands/tasks";
-import { registerBugsCommands } from "./commands/bugs";
-import { registerStatusCommand } from "./commands/status";
 import { registerStatusReportsCommands } from "./commands/status-reports";
-import { registerConfigCommands } from "./commands/config";
 import { registerDiscoveriesCommands } from "./commands/discoveries";
 import { registerDebugCommands } from "./commands/debug";
-import { registerWebCommand } from "./commands/web";
 
 import { registerBranchCommands } from "./commands/branch";
+import { registerClientMigration } from "./client-migration";
 
 await loadEnvFile();
 
@@ -42,22 +34,43 @@ program
 registerInitCommand(program);
 registerServeCommand(program);
 registerBrainCommands(program);
-registerArmCommands(program);
-registerArmsCommand(program);
-registerActivityCommands(program);
-registerMailCommands(program);
-registerInboxCommands(program);
 registerImapCommands(program);
 registerMcpCommands(program);
-registerAgentCommands(program);
-registerTasksCommands(program);
-registerBugsCommands(program);
-registerStatusCommand(program);
 registerStatusReportsCommands(program);
-registerConfigCommands(program);
-registerDiscoveriesCommands(program);
 registerDebugCommands(program);
-registerWebCommand(program);
 registerBranchCommands(program);
+
+// Local diagnostics retain their operator implementation. Domain operations now
+// name the API-only client explicitly rather than falling back to local state.
+const legacy = new Command();
+registerArmCommands(legacy);
+registerDiscoveriesCommands(legacy);
+registerAgentCommands(legacy);
+const arm = legacy.commands.find(command => command.name() === "arm");
+if (arm) {
+  const target = program.command("arm").description("Local arm logs and API-client migration commands");
+  const moved = arm.commands.filter(command => command.name() !== "logs").map(command => command.name());
+  for (const command of arm.commands.filter(command => command.name() === "logs")) target.addCommand(command);
+  for (const name of moved) registerClientMigration(target, name, `arms ${name}`);
+}
+const discoveries = legacy.commands.find(command => command.name() === "discoveries");
+if (discoveries) {
+  const target = program.command("discoveries").description("Local summarizer diagnostic and API-client migration commands");
+  for (const command of discoveries.commands.filter(command => command.name() === "summarize")) target.addCommand(command);
+  for (const name of ["list", "resolve", "history"]) registerClientMigration(target, name, `discoveries ${name}`);
+}
+const agent = legacy.commands.find(command => command.name() === "agent");
+if (agent) {
+  const target = program.command("agent").description("Legacy foreground Arm Host; use coleo-agent for lifecycle");
+  for (const command of agent.commands.filter(command => command.name() !== "status")) target.addCommand(command);
+  registerClientMigration(target, "status", "agents");
+}
+for (const name of ["tasks", "bugs", "mail", "config", "activity", "status"]) {
+  registerClientMigration(program, name, name);
+}
+registerClientMigration(program, "inbox", "inbox", { views: "views", validate: "validate" });
+registerClientMigration(program, "arms", "arms list --watch");
+registerClientMigration(program, "tui", "tui");
+registerClientMigration(program, "web", "web");
 
 await program.parseAsync();

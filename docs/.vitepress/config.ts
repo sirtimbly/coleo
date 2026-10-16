@@ -26,9 +26,11 @@ export default defineConfig({
 					text: "Guides",
 					items: [
 						{ text: "Getting Started", link: "/guides/getting-started" },
+						{ text: "Component Installation", link: "/guides/installation" },
 						{ text: "Task Workflow", link: "/guides/task-workflow" },
 						{ text: "Planning Gate", link: "/guides/planning-gate" },
 						{ text: "CLI", link: "/guides/cli" },
+						{ text: "Workspace CLI and TUI", link: "/guides/workspace-client" },
 						{ text: "macOS Client", link: "/guides/macos-client" },
 						{ text: "Docker", link: "/guides/docker" },
 						{ text: "Versions and Upgrades", link: "/guides/versioning" },
@@ -40,6 +42,7 @@ export default defineConfig({
 					items: [
 						{ text: "Overview", link: "/architecture/overview" },
 						{ text: "Components", link: "/architecture/components" },
+						{ text: "Clients and Operator CLI", link: "/architecture/client-server-separation" },
 						{
 							text: "Brain/API Boundary",
 							link: "/architecture/brain-api-boundary",

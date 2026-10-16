@@ -39,7 +39,9 @@ def decode_catalog(data):
     if not isinstance(entries, list) or not entries:
         raise ValueError("Catalog must contain at least one module")
     result = {}
-    reserved = {"tui", "modules", "views", "validate", "show", "mark-read"}
+    reserved = {"web", "tui", "modules", "views", "validate", "show", "mark-read",
+                "connect", "connections", "use", "doctor", "arm", "arms", "agents", "activity", "status",
+                "mail", "discoveries", "config", "status-reports"}
     for entry in entries:
         if not isinstance(entry, dict):
             raise ValueError("Module must be an object")

@@ -28,6 +28,7 @@ export interface Discovery {
   phase?: string | null;
   createdAt: string;
   updatedAt: string;
+  metadata: Record<string, unknown>;
 }
 
 interface DiscoveryRow {
@@ -45,6 +46,18 @@ interface DiscoveryRow {
   phase: string | null;
   created_at: string;
   updated_at: string;
+  metadata: string | null;
+}
+
+function parseMetadata(raw: string | null): Record<string, unknown> {
+  try {
+    const value: unknown = JSON.parse(raw ?? "{}");
+    return value !== null && typeof value === "object" && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
 }
 
 export function createDiscoveriesRoutes() {
@@ -116,6 +129,7 @@ export function createDiscoveriesRoutes() {
           phase: body.phase || null,
           createdAt: now,
           updatedAt: now,
+          metadata: {},
         },
       }, 201);
     } catch {
@@ -135,7 +149,7 @@ export function createDiscoveriesRoutes() {
     const offset = Math.max(0, parseInt(c.req.query("offset") || "0", 10));
     
     let query = `
-      SELECT id, arm_id, arm_name, kind, title, details, file_path, line_number, severity, status, task_id, phase, created_at, updated_at
+      SELECT id, arm_id, arm_name, kind, title, details, file_path, line_number, severity, status, task_id, phase, created_at, updated_at, metadata
       FROM discoveries
       WHERE 1 = 1
     `;
@@ -190,6 +204,7 @@ export function createDiscoveriesRoutes() {
         phase: row.phase,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
+        metadata: parseMetadata(row.metadata),
       }));
       
       let countQuery = "SELECT COUNT(*) as count FROM discoveries WHERE 1 = 1";
@@ -225,70 +240,57 @@ export function createDiscoveriesRoutes() {
     }
   });
   
-  // Get a single discovery
-  app.get("/:id", async (c) => {
-    const db = c.var.db;
-    const id = c.req.param("id");
-    
-    const row = db.query(
-      "SELECT id, arm_id, arm_name, kind, title, details, file_path, line_number, severity, status, task_id, phase, created_at, updated_at FROM discoveries WHERE id = ?"
-    ).get(id) as DiscoveryRow | null;
-    
-    if (!row) {
-      throw HttpError.notFound("Discovery not found");
-    }
-    
-    const discovery: Discovery = {
-      id: row.id,
-      armId: row.arm_id,
-      armName: row.arm_name,
-      kind: row.kind,
-      title: row.title,
-      details: row.details,
-      filePath: row.file_path,
-      lineNumber: row.line_number,
-      severity: row.severity,
-      status: row.status,
-      taskId: row.task_id,
-      phase: row.phase,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    };
-    
-    return c.json({ discovery });
-  });
-  
   // Update discovery status
   app.patch("/:id", async (c) => {
     const db = c.var.db;
     const id = c.req.param("id");
-    const body = await c.req.json();
-    
+    let value: unknown;
+    try {
+      value = await c.req.json<unknown>();
+    } catch {
+      throw HttpError.badRequest("Request body must be valid JSON");
+    }
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw HttpError.badRequest("Request body must be an object");
+    }
+    const body = value as Record<string, unknown>;
     const validStatuses = ["open", "acknowledged", "resolved", "dismissed"];
-    if (body.status && !validStatuses.includes(body.status)) {
+    if (typeof body.status !== "string" || !validStatuses.includes(body.status)) {
       throw HttpError.badRequest("Invalid status");
     }
-    
-    const updates: string[] = [];
-    const params: (string | number | null)[] = [];
-    
-    if (body.status) {
-      updates.push("status = ?");
-      params.push(body.status);
+    for (const field of ["reason", "resolvedBy"] as const) {
+      if (field in body && (typeof body[field] !== "string" || !body[field].trim())) {
+        throw HttpError.badRequest(`${field} must be a non-empty string`);
+      }
     }
-    
-    if (updates.length === 0) {
-      throw HttpError.badRequest("No updates provided");
+    const hasResolutionMetadata = "reason" in body || "resolvedBy" in body;
+    if (hasResolutionMetadata && body.status !== "resolved" && body.status !== "dismissed") {
+      throw HttpError.badRequest("reason and resolvedBy require resolved or dismissed status");
     }
-    
-    updates.push("updated_at = ?");
-    params.push(new Date().toISOString());
+    const now = new Date().toISOString();
+    const updates = ["status = ?", "updated_at = ?"];
+    const params: string[] = [body.status, now];
+    if (hasResolutionMetadata) {
+      // One SQL update preserves unrelated metadata and commits resolution + status atomically.
+      // Malformed stored JSON fails the entire statement rather than discarding metadata.
+      const fields = ["'$.resolved_by', ?", "'$.resolved_at', ?"];
+      params.push(typeof body.resolvedBy === "string" ? body.resolvedBy : "api", now);
+      if (typeof body.reason === "string") {
+        fields.push("'$.resolution_reason', ?");
+        params.push(body.reason);
+      }
+      // Legacy null/scalar/array values have no object fields to preserve.
+      const metadataObject = "CASE WHEN json_type(COALESCE(metadata, '{}')) = 'object' " +
+        "THEN COALESCE(metadata, '{}') ELSE '{}' END";
+      updates.push(`metadata = json_set(${metadataObject}, ${fields.join(", ")})`);
+    }
     params.push(id);
-    
     try {
-      db.run(`UPDATE discoveries SET ${updates.join(", ")} WHERE id = ?`, params);
+      const result = db.run(`UPDATE discoveries SET ${updates.join(", ")} WHERE id = ?`, params);
+      if (result.changes === 0) throw HttpError.notFound("Discovery not found");
       return c.json({ success: true });
     } catch (err) {
+      if (err instanceof HttpError) throw err;
       throw HttpError.internal("Failed to update discovery");
     }
   });
@@ -307,7 +309,7 @@ export function createDiscoveriesRoutes() {
     try {
       // Try FTS5 first
       let query = `
-        SELECT d.id, d.arm_id, d.arm_name, d.kind, d.title, d.details, d.file_path, d.line_number, d.severity, d.status, d.created_at, d.updated_at
+         SELECT d.id, d.arm_id, d.arm_name, d.kind, d.title, d.details, d.file_path, d.line_number, d.severity, d.status, d.created_at, d.updated_at, d.metadata
         FROM discoveries d
         JOIN discoveries_fts fts ON d.rowid = fts.rowid
         WHERE discoveries_fts MATCH ?
@@ -337,13 +339,14 @@ export function createDiscoveriesRoutes() {
         status: row.status,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
+        metadata: parseMetadata(row.metadata),
       }));
       
       return c.json({ discoveries });
     } catch {
       // Fall back to LIKE search if FTS fails
       let query = `
-        SELECT id, arm_id, arm_name, kind, title, details, file_path, line_number, severity, status, created_at, updated_at
+         SELECT id, arm_id, arm_name, kind, title, details, file_path, line_number, severity, status, created_at, updated_at, metadata
         FROM discoveries
         WHERE (title LIKE ? OR details LIKE ?)
         ${severity ? "AND severity = ?" : ""}
@@ -372,7 +375,8 @@ export function createDiscoveriesRoutes() {
         severity: row.severity,
         status: row.status,
         createdAt: row.created_at,
-        updatedAt: row.updated_at,
+         updatedAt: row.updated_at,
+         metadata: parseMetadata(row.metadata),
       }));
       
       return c.json({ discoveries });
@@ -419,5 +423,33 @@ export function createDiscoveriesRoutes() {
     }
   });
   
+  // Register parameterized detail after /search and /stats so static routes win.
+  app.get("/:id", async (c) => {
+    const db = c.var.db;
+    const id = c.req.param("id");
+    const row = db.query(
+      "SELECT id, arm_id, arm_name, kind, title, details, file_path, line_number, severity, status, task_id, phase, created_at, updated_at, metadata FROM discoveries WHERE id = ?"
+    ).get(id) as DiscoveryRow | null;
+    if (!row) throw HttpError.notFound("Discovery not found");
+    const discovery: Discovery = {
+      id: row.id,
+      armId: row.arm_id,
+      armName: row.arm_name,
+      kind: row.kind,
+      title: row.title,
+      details: row.details,
+      filePath: row.file_path,
+      lineNumber: row.line_number,
+      severity: row.severity,
+      status: row.status,
+      taskId: row.task_id,
+      phase: row.phase,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      metadata: parseMetadata(row.metadata),
+    };
+    return c.json({ discovery });
+  });
+
   return app;
 }

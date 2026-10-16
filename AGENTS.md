@@ -12,11 +12,11 @@ This document orients agentic contributors working on Coleo, an AI agent orchest
 - `bun run dev:all` - Run API + brain + web dev server together
 - `bun run dev:core:restart` - Restart API + brain quickly
 
-### Web Workspace (`server/web-app/`; legacy `src/web` compatibility path)
+### Web Workspace (`clients/web/`; legacy `src/web` compatibility path)
 - `mise run web:dev` - Start Vite dev server
 - `bun run web:build` - Production build with type checking
 - `bun run web:preview` - Preview production build locally
-- `bun run --cwd server/web-app lint` - Run ESLint on web code
+- `bun run --cwd clients/web lint` - Run ESLint on web code
 
 ### Python terminal client
 - `mise run client:sync` - Install the root Python project from `uv.lock`
@@ -118,7 +118,7 @@ See `.github/copilot-instructions.md` for semantic code search and documentation
 - `server/src/harness/` - LLM provider integrations (OpenAI, etc.)
 - `server/src/mcp/` - Model Context Protocol server implementation
 - `server/src/nats/` - NATS messaging for distributed arms
-- `server/web-app/` - React + Vite dashboard frontend
+- `clients/web/` - Optional React + Vite dashboard frontend
 - `server/src/mail/` - Maildir and IMAP integration
 - `clients/python/` - Python Rich CLI + Textual TUI implementation
 - `src/` - Transitional compatibility symlink to `server/src/`

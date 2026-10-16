@@ -1,6 +1,12 @@
 # Python Workbench — Rich CLI + Textual TUI
 
 HTTP/WebSocket client for Coleo's Inbox, Tasks, Bugs, Brain, and Dashboard modules.
+API command families also cover arms, agents, activity, mail, discoveries, configuration,
+and status reports.
+
+`coleo-client` is the workspace command; `coleo-inbox` remains a compatible alias.
+The Bun server/operator CLI continues to own `coleo`. See the
+[installation and transition guide](../../docs/guides/workspace-client.md).
 Inbox resolves the `inbox-triage` named view. Python never reads
 Coleo databases/Maildir or invokes TypeScript at runtime. The Python project and
 lockfile live at the repository root; client implementation and tests live here.
@@ -62,14 +68,48 @@ write is followed by a fresh HTTP snapshot.
 ### Installation without a checkout command
 
 ```sh
-uv tool install .
-coleo-inbox --help
+uv tool install --python 3.12 .          # CLI only
+uv tool install --python 3.12 '.[tui]'  # CLI + TUI (choose one)
+coleo-client tasks --help
 ```
 
-The executable is `coleo-inbox`, **not** a replacement for an installed `coleo`.
+The executables are `coleo-client` and `coleo-inbox`, **not** replacements for an installed `coleo`.
+The base install includes HTTPX and Rich. The optional `tui` extra adds Textual
+and websockets; use `uv run --extra tui coleo-client tui` from a checkout.
 Use `uv run …` when evaluating edits from this checkout.
 
 ## Domain modules
+
+### Connections and API commands
+
+```sh
+coleo-client connect https://coleo.example.com --name production --prompt-key
+coleo-client connections --json
+coleo-client use production
+coleo-client doctor --json
+coleo-client --connection production arms list
+coleo-client agents
+coleo-client activity transcript --help
+coleo-client mail inbox
+coleo-client discoveries list
+coleo-client config arms
+coleo-client status-reports list
+coleo-client web  # Requires the separately installed web component
+```
+
+Connection values resolve as flags → exported environment → saved connection →
+defaults. `--server URL` overrides the URL; `COLEO_CONNECTION` selects a saved
+connection and `COLEO_API_URL`/`COLEO_API_KEY` override its fields. `--profile`
+continues to mean an Inbox query profile. Saved keys are stored in owner-only
+`connections.json` beside the catalog configuration and are redacted in diagnostics.
+`connect --save-only` and `use` work offline. Root and command help/version do not
+require a server or valid catalog.
+
+The new API command families are host commands, independent of the module catalog.
+One-shot `--json` prints a versioned object; watch/tail `--json` emits JSONL.
+Reads do not fall back to a local database. Writes are not automatically retried.
+`mail read` marks previously unseen mail read; Inbox `show` remains a read-only view.
+`coleo-server` and `coleo-agent` manage host processes separately from these commands.
 
 ### Runtime module catalog
 

@@ -6,10 +6,10 @@
  */
 
 import { homedir, hostname } from 'os';
-import { exec, execFile } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { chmod, mkdir, readFile, rename, writeFile } from 'fs/promises';
-import { dirname, join } from 'path';
+import { dirname, join, resolve } from 'path';
 import { VERSION, NATS_SCHEMA_VERSION } from '../version';
 import { 
   NatsClient, 
@@ -42,8 +42,8 @@ import { LocalRepositoryOnboarding } from '../onboarding/local';
 import { parseRepositoryOnboardingOperation } from '../onboarding/types';
 import { executeWorkspaceOperation, LocalWorkspaceAccess } from '../workspace';
 import { getOpenRouterPricingCatalog, resolveOpenRouterPricing } from '../lib/openrouter-pricing';
+import { forgetOwnedArm, loadOwnedArms, recordOwnedArm } from './arm-recovery';
 
-const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 const MAX_DISTRIBUTED_MESSAGES = 200;
 const MAX_DISTRIBUTED_TODOS = 200;
@@ -200,6 +200,7 @@ export class ArmAgent {
   private agentId: string;
   private natsClient: NatsClient;
   private coleoDir: string;
+  private workspaceRoot: string;
   private workspace: LocalWorkspaceAccess;
   private repositoryOnboarding: LocalRepositoryOnboarding;
   private maxArms: number;
@@ -215,7 +216,8 @@ export class ArmAgent {
   constructor(options: ArmAgentOptions) {
     this.agentId = options.agentId || `agent-${hostname()}-${process.pid}`;
     this.coleoDir = options.coleoDir;
-    const workspaceRoot = options.workspaceRoot || process.env.COLEO_AGENT_WORKDIR || process.cwd();
+    const workspaceRoot = resolve(options.workspaceRoot || process.env.COLEO_AGENT_WORKDIR || process.cwd());
+    this.workspaceRoot = workspaceRoot;
     this.workspace = new LocalWorkspaceAccess(workspaceRoot);
     this.repositoryOnboarding = new LocalRepositoryOnboarding({
       projectDir: workspaceRoot,
@@ -434,10 +436,11 @@ export class ArmAgent {
     const spawnConfig: SpawnConfig = {
       // A remote agent owns its filesystem namespace. Hosted agents pin arms to
       // their mounted checkout instead of trusting a path from the control host.
-      workdir: process.env.COLEO_AGENT_WORKDIR || workDir || process.cwd(),
+      workdir: process.env.COLEO_AGENT_WORKDIR || workDir || this.workspaceRoot,
       env: {
         COLEO_ARM_ID: armId,
         COLEO_DIR: this.coleoDir,
+        COLEO_AGENT_ID: this.agentId,
       },
       headless: true,
       provider,
@@ -469,6 +472,14 @@ export class ArmAgent {
     };
 
     this.managedArms.set(armId, managedArm);
+
+    if (harness === 'opencode-api' && port !== null && harnessInstance.getPid) {
+      try {
+        await recordOwnedArm(this.recoveryOwner(), armId, harnessInstance.getPid(session), port);
+      } catch (error) {
+        this.log(`Arm ${armId} started but restart recovery could not be recorded: ${error}`, 'warn');
+      }
+    }
 
     if (initialPrompt) {
       try {
@@ -531,6 +542,7 @@ export class ArmAgent {
 
     // Kill the arm
     await managedArm.harness.kill(managedArm.session);
+    await forgetOwnedArm(this.recoveryOwner(), armId);
 
     // Remove from managed arms
     this.managedArms.delete(armId);
@@ -894,54 +906,11 @@ export class ArmAgent {
     this.log('Checking for existing arms to recover...', 'debug');
 
     try {
-      // Find running opencode processes
-      // We look for processes with COLEO_ARM_ID environment variable
-      // Using ps eww -A on macOS/Linux to get environment variables
-      const command = process.platform === 'darwin' || process.platform === 'linux' 
-        ? 'ps eww -A' 
-        : ''; // Windows not supported for recovery yet
-
-      if (!command) {
-        this.log('Skipping arm recovery: platform not supported', 'debug');
-        return;
-      }
-
-      const { stdout } = await execAsync(command, { maxBuffer: 10 * 1024 * 1024 }); // 10MB buffer
-      const lines = stdout.split('\n');
-
-      const recoveredArms: Map<string, { pid: number; port: number | null }> = new Map();
-
-      for (const line of lines) {
-        // Look for opencode processes
-        if (!line.includes('opencode')) continue;
-        
-        // Extract PID
-        const pidMatch = line.trim().match(/^(\d+)/);
-        if (!pidMatch || !pidMatch[1]) continue;
-        const pidStr = pidMatch[1];
-        const pid = parseInt(pidStr, 10);
-
-        // Skip our own PID
-        if (pid === process.pid) continue;
-
-        // Extract COLEO_ARM_ID
-        const armIdMatch = line.match(/COLEO_ARM_ID=([a-zA-Z0-9_-]+)/);
-        if (!armIdMatch || !armIdMatch[1]) continue;
-        const armId: string = armIdMatch[1];
-
-        // Check if we already found this arm (might be multiple threads/processes)
-        if (recoveredArms.has(armId)) continue;
-
-        // Extract port if available (for API harness)
-        // Look for --port argument
-        const portMatch = line.match(/--port\s+(\d+)/);
-        const port = (portMatch && portMatch[1]) ? parseInt(portMatch[1], 10) : null;
-
-        recoveredArms.set(armId, { pid, port });
-      }
+      const records = await loadOwnedArms(this.recoveryOwner());
+      const recoveredArms = new Map(records.map(record => [record.armId, record]));
 
       if (recoveredArms.size === 0) {
-        this.log('No existing arms found to recover.', 'debug');
+        this.log('No verified owned arms to recover; unrecorded legacy processes are not adopted.', 'debug');
         return;
       }
 
@@ -1008,6 +977,10 @@ export class ArmAgent {
     } catch (err) {
       this.log(`Error scanning for existing arms: ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
+  }
+
+  private recoveryOwner(): { coleoDir: string; agentId: string; workspaceRoot: string } {
+    return { coleoDir: this.coleoDir, agentId: this.agentId, workspaceRoot: this.workspaceRoot };
   }
 
   private armToState(arm: ManagedArm): ArmState {

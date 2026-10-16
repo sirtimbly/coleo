@@ -1,9 +1,6 @@
 import { Command } from "commander";
-import { startServer } from "../../api";
-import { ensureLocalNatsForServe } from "../local-nats";
 import {
 	startService,
-	registerServiceProcess,
 	stopService,
 	restartService,
 	getServiceStatus,
@@ -23,12 +20,11 @@ export function registerServeCommand(program: Command): void {
 		.option("-p, --port <port>", "Port to listen on (defaults to COLEO_API_PORT)")
 		.option("-h, --host <host>", "Host to bind to (defaults to COLEO_API_HOST)")
 		.action(async (options) => {
-			await ensureLocalNatsForServe();
-			await startServer({
-				port: options.port ? parseInt(options.port, 10) : undefined,
-				host: options.host,
-			});
-			await registerServiceProcess("server");
+			const { resolveOperatorConfig, applyOperatorEnvironment } = await import("../operator-config");
+			const { runOperatorService } = await import("../operator-runtime");
+			const config = await resolveOperatorConfig(options);
+			applyOperatorEnvironment(config);
+			await runOperatorService("server", config.values);
 		});
 
 	// Start in background
@@ -43,6 +39,8 @@ export function registerServeCommand(program: Command): void {
 			try {
 				const status = await startService("server", {
 					requireSelfModify: options.selfModify,
+					args: Object.entries(serveCmd.opts()).filter(([key]) => key === "host" || key === "port")
+						.flatMap(([key, value]) => ["--" + key, String(value)]),
 				});
 				if (status.running) {
 					console.log(`Server started (PID: ${status.pid})`);
@@ -98,6 +96,9 @@ export function registerServeCommand(program: Command): void {
 					requireSelfModify: options.selfModify,
 					force: options.force,
 					timeout: parseInt(options.timeout, 10),
+					args: Object.keys(serveCmd.opts()).length ? Object.entries(serveCmd.opts())
+						.filter(([key]) => key === "host" || key === "port")
+						.flatMap(([key, value]) => ["--" + key, String(value)]) : undefined,
 				});
 				if (status.running) {
 					console.log(`Server restarted (PID: ${status.pid})`);
@@ -132,8 +133,9 @@ export function registerServeCommand(program: Command): void {
 		.command("logs")
 		.description("Show API server logs")
 		.option("-n, --lines <n>", "Number of lines to show", "50")
-		.option("-f, --follow", "Follow log output (not implemented yet)")
+		.option("-f, --follow", "Use coleo-server logs --follow for log streaming")
 		.action(async (options) => {
+			if (options.follow) throw new Error("Use coleo-server logs --follow for log streaming");
 			const lines = await getServiceLogs("server", parseInt(options.lines, 10));
 			if (lines.length === 0) {
 				console.log("No logs found");

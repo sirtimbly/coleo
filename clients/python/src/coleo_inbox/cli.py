@@ -3,6 +3,8 @@ import json
 import os
 import sys
 from importlib.resources import files
+from importlib.metadata import version, PackageNotFoundError
+from types import SimpleNamespace
 
 from rich.console import Console
 from rich.text import Text
@@ -13,17 +15,70 @@ from .presentation import clean, render, render_detail
 from .selection import execute, targets
 from .snapshot import load
 from .modules import DOMAIN_MODULES, MODULES
-from .module_catalog import ModuleCatalog, catalog_arguments
+from .module_catalog import ModuleCatalog, catalog_arguments, decode_catalog
+from .connections import CONNECTION_COMMANDS, Connections, connection_arguments
+from .connection_cli import HELP, run_connection
+
+
+def load_workbench():
+    try:
+        from .module_app import run_workbench
+    except ModuleNotFoundError as exc:
+        if exc.name and exc.name.split(".")[0] in ("textual", "websockets"):
+            raise ValueError(
+                "The TUI is optional and is not installed. From a Coleo checkout, run: "
+                "uv tool install --force --python 3.12 '.[tui]' "
+                "(or for development: uv run --extra tui coleo-client tui). "
+                "CLI commands remain available."
+            ) from exc
+        raise
+    return run_workbench
 
 
 async def run(args, api=None, stdout=None, stderr=None):
-    api = api or Api()
     stdout, stderr = stdout or sys.stdout, stderr or sys.stderr
     def emit(value):
         print(json.dumps(value, ensure_ascii=False, indent=2), file=stdout)
     domain_command = False
     try:
+        args, connection_flags = connection_arguments(args)
+        if args and args[0] == "web" and any(a in ("--help", "-h") for a in args):
+            from .web_cli import HELP as WEB_HELP
+            print(WEB_HELP, file=stdout)
+            return 0
+        if "--version" in args:
+            try:
+                client_version = version("coleo-inbox")
+            except PackageNotFoundError:
+                client_version = "unknown (source checkout)"
+            emit(dict(schemaVersion=1, kind="client.version", version=client_version)) if "--json" in args else print(client_version, file=stdout)
+            return 0
+        # Host help does not load saved configuration, catalog, optional UI, or API.
+        if any(a in ("--help", "-h") for a in args) and (args[0].startswith("-") or args[0] in CONNECTION_COMMANDS | {"tui", "modules", "views", "validate"}):
+            print(HELP, file=stdout)
+            return 0
+        if args and args[0] in CONNECTION_COMMANDS:
+            return await run_connection(args, connection_flags, stdout, api)
+        help_requested = any(a in ("--help", "-h") for a in args)
+        if help_requested:
+            api = api or Api("http://127.0.0.1:8080", "")
+        else:
+            connection = Connections().resolve(**connection_flags)
+            api = api or Api(connection.url, connection.key)
+        if args and args[0] == "web":
+            from .web_cli import run_web
+            return await run_web(args[1:], api, stdout)
         args, catalog_path = catalog_arguments(args)
+        if args and args[0] in {"arm", "arms", "agents", "activity", "status"}:
+            domain_command = True
+            from .remote_cli import run_remote
+            return await run_remote(args, api, stdout)
+        if args and args[0] in {"mail", "discoveries", "config", "status-reports"}:
+            domain_command = True
+            from .communication_cli import run_communication
+            return await run_communication(args, api, stdout)
+        workbench = load_workbench() if args and args[0] == "tui" and not any(
+            flag in args for flag in ("--help", "-h")) else None
         if args and args[0] == "modules":
             command = [a for a in args[1:] if a != "--json"]
             if command[:1] == ["choose"] and len(command) == 2:
@@ -40,7 +95,8 @@ async def run(args, api=None, stdout=None, stderr=None):
             emit(dict(schemaVersion=1, catalogPath=str(catalog.path), modules=modules)) if "--json" in args else print(
                 "\n".join(f"{m['id']:12} {m['description']}" for m in modules), file=stdout)
             return 0
-        catalog = ModuleCatalog(catalog_path)
+        catalog = SimpleNamespace(path="bundled catalog", modules=decode_catalog(
+            files("coleo_inbox").joinpath("resources/modules.json").read_text())) if help_requested else ModuleCatalog(catalog_path)
         recipe = catalog.modules.get(args[0]) if args else None
         if args and args[0] in DOMAIN_MODULES and recipe is None:
             raise ValueError(f"Module {args[0]} is not in {catalog.path}")
@@ -53,8 +109,7 @@ async def run(args, api=None, stdout=None, stderr=None):
                 raise ValueError(f"Module {args[1]} is not in {catalog.path}")
             if args[2:]:
                 raise ValueError("Usage: coleo-inbox tui <module-id> [--catalog <path>]")
-            from .module_app import run_workbench
-            await run_workbench(api, args[1], catalog=catalog)
+            await workbench(api, args[1], catalog=catalog)
             return 0
         if args and args[0] == "views":
             if any(a != "--json" for a in args[1:]):
@@ -75,8 +130,7 @@ async def run(args, api=None, stdout=None, stderr=None):
         if recipe:
             args = args[1:]
         if tui and not args:
-            from .module_app import run_workbench
-            await run_workbench(api, "inbox" if "inbox" in catalog.modules else next(iter(catalog.modules)), catalog=catalog)
+            await workbench(api, "inbox" if "inbox" in catalog.modules else next(iter(catalog.modules)), catalog=catalog)
             return 0
         if recipe is None:
             recipe = catalog.modules.get("inbox")
@@ -84,7 +138,7 @@ async def run(args, api=None, stdout=None, stderr=None):
             recipe = None
         view_id = recipe.namedView if recipe and recipe.renderer == "messaging" and not any(a.split("=", 1)[0] == "--view" for a in args) else requested_view(args)
         try:
-            view = await api.view(view_id)
+            view = json.loads(files("coleo_inbox").joinpath("fixtures/cli-view.json").read_text()) if help_requested else await api.view(view_id)
         except Exception:
             if view_id != "inbox-triage" or not any(a in ("--help", "-h") for a in args):
                 raise
@@ -101,8 +155,7 @@ async def run(args, api=None, stdout=None, stderr=None):
         if tui:
             if options.json or options.command:
                 raise ValueError("tui does not accept --json or a snapshot command")
-            from .module_app import run_workbench
-            await run_workbench(api, inbox_view=view, inbox_options=options, catalog=catalog)
+            await workbench(api, inbox_view=view, inbox_options=options, catalog=catalog)
             return 0
         console = Console(file=stdout, width=options.width, force_terminal=True if options.color == "always" else False if options.color == "never" else None,
                           no_color=options.color == "never" or options.color == "auto" and "NO_COLOR" in os.environ, highlight=False)
@@ -141,14 +194,21 @@ async def run(args, api=None, stdout=None, stderr=None):
                 console.print(render(output["refreshed"], console.width))
         return 1 if result.get("error") else 2 if output.get("refreshError") or not output["refreshed"]["complete"] else 0
     except Exception as exc:
+        if args and args[0] == "doctor":
+            diagnostic = dict(schemaVersion=1, kind="client.doctor", component="client", ok=False,
+                              checks=[dict(name="configuration", ok=False, category="invalid-configuration", detail=str(exc))])
+            emit(diagnostic) if "--json" in args else print(f"Coleo: {clean(exc)}", file=stderr)
+            return 2
         if "--json" in args:
-            emit(dict(schemaVersion=1, kind="module.error" if domain_command or args and args[0] in (*DOMAIN_MODULES, "modules") else "inbox.error", error=str(exc)))
+            emit(dict(schemaVersion=1, kind="client.error" if args and args[0] in CONNECTION_COMMANDS else "module.error" if domain_command or args and args[0] in (*DOMAIN_MODULES, "modules") else "inbox.error", error=str(exc),
+                      **({"category": exc.category} if hasattr(exc, "category") else {})))
         else:
             label = "Coleo" if args and args[0] in (*DOMAIN_MODULES, "modules") else "Inbox"
             print(f"{label}: {clean(exc)}", file=stderr)
         return 1
     finally:
-        await api.close()
+        if api is not None:
+            await api.close()
 
 
 def main():

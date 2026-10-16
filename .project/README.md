@@ -20,6 +20,7 @@ See [requirements.md](./requirements.md) for the full philosophy:
 - [Current Status](./status.md) - What's happening right now
 - [Project Plan](./plan.md) - Phases and milestones
 - [Architecture Decisions](./decisions/) - ADR records
+- [Component CLI and Installation Plan](./plans/component-cli-installation-plan.md) - Operator tools, API client connections, installers, and parallel implementation assignments
 
 ## Project Health
 

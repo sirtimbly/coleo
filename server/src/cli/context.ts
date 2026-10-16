@@ -36,6 +36,7 @@ export function resolveTemplatesDir(): string {
   for (const baseDir of getBaseDirs()) {
     candidates.push(join(baseDir, "..", "templates"));
     candidates.push(join(baseDir, "..", "..", "templates"));
+    candidates.push(join(baseDir, "..", "..", "..", "templates"));
   }
   return resolveExistingDir(candidates, join("arms", "default.toml"));
 }
@@ -49,6 +50,7 @@ export const TEMPLATES_DIR = resolveTemplatesDir();
 export function getBrainTemplatesDir(): string {
   const candidates: string[] = [];
   for (const baseDir of getBaseDirs()) {
+    candidates.push(join(baseDir, "brain", "templates"));
     candidates.push(join(baseDir, "..", "brain", "templates"));
     candidates.push(join(baseDir, "..", "src", "brain", "templates"));
   }

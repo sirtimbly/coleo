@@ -239,7 +239,7 @@ describe("Inbox CLI through the actual API routes", () => {
 		expect(JSON.parse(result.output).definition.id).toBe("inbox-triage");
 		expect(requests).toHaveLength(0);
 	});
-	it("the actual CLI entrypoint exits after HTTP reads and never initializes a local database", async () => {
+	it("the retired CLI entrypoint names the client without HTTP reads or local database initialization", async () => {
 		const paths: string[] = [];
 		const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (request) => {
 			paths.push(new URL(request.url).pathname); return app.fetch(request);
@@ -252,10 +252,12 @@ describe("Inbox CLI through the actual API routes", () => {
 			const output = new Response(process.stdout).text();
 			const errors = new Response(process.stderr).text();
 			const exit = await Promise.race([process.exited, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Snapshot CLI did not exit")), 10_000); })]);
-			expect(exit).toBe(0);
-			expect(JSON.parse(await output).kind).toBe("inbox.snapshot");
-			expect(await errors).not.toContain("test-key");
-			expect(paths).toEqual(["/api/workbench/named-views/inbox-triage", "/api/workbench/inbox"]);
+			expect(exit).toBe(1);
+			expect(await output).toBe("");
+			const diagnostic = await errors;
+			expect(diagnostic).not.toContain("test-key");
+			expect(diagnostic).toContain("coleo-client inbox");
+			expect(paths).toEqual([]);
 			expect(await Bun.file(join(directory, "coleo.db")).exists()).toBe(false);
 		} finally { clearTimeout(timer); process.kill(); server.stop(true); }
 	});

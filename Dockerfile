@@ -9,7 +9,7 @@ WORKDIR /app
 
 # Copy workspace manifests required for dependency resolution
 COPY package.json bun.lock ./
-COPY server/web-app/package.json ./server/web-app/package.json
+COPY clients/web/package.json ./clients/web/package.json
 
 # Install dependencies
 RUN bun install --frozen-lockfile
@@ -18,12 +18,14 @@ RUN bun install --frozen-lockfile
 COPY . .
 
 # Build the production CLI and web UI bundle used by the hosted image.
-RUN bun run build
+RUN bun run build:with-web
 
 # ============================================
 # Runtime image
 # ============================================
 FROM oven/bun:1.3-debian
+
+# This all-in-one image installs the optional web client as a separate process.
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
@@ -77,7 +79,8 @@ RUN chown -R coleo:coleo /home/coleo/coleo
 
 # Runtime bootstrap for hosted API + web UI + brain + OpenCode arm agent.
 COPY docker/hosting-entrypoint.sh /usr/local/bin/coleo-hosting-entrypoint
-RUN chmod 0755 /usr/local/bin/coleo-hosting-entrypoint
+COPY docker/coleo-web /usr/local/bin/coleo-web
+RUN chmod 0755 /usr/local/bin/coleo-hosting-entrypoint /usr/local/bin/coleo-web
 
 # Create convenience symlink for CLI (if present)
 RUN ln -s /home/coleo/coleo/bin/coleo.ts /usr/local/bin/coleo-cli || true
@@ -85,6 +88,10 @@ RUN ln -s /home/coleo/coleo/bin/coleo.ts /usr/local/bin/coleo-cli || true
 # Create wrapper script that uses bun
 RUN echo '#!/bin/bash\nbun /home/coleo/coleo/server/src/cli/index.ts "$@"' > /usr/local/bin/coleo \
     && chmod +x /usr/local/bin/coleo
+
+RUN printf '#!/bin/sh\nexec bun /home/coleo/coleo/server/src/cli/server.ts "$@"\n' > /usr/local/bin/coleo-server \
+    && printf '#!/bin/sh\nexec bun /home/coleo/coleo/server/src/cli/agent.ts "$@"\n' > /usr/local/bin/coleo-agent \
+    && chmod +x /usr/local/bin/coleo-server /usr/local/bin/coleo-agent
 
 # Create projects directory
 RUN mkdir -p /home/coleo/projects \
@@ -118,7 +125,7 @@ echo ""\n\
 # Switch back to root for sshd
 USER root
 
-# Expose API, web UI, and SSH ports
+# Expose web/proxy listeners and SSH; the API listens on loopback internally.
 EXPOSE 8080 5173 22
 
 ENTRYPOINT ["/usr/local/bin/coleo-hosting-entrypoint"]

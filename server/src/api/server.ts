@@ -7,8 +7,7 @@
  */
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { existsSync, statSync } from "fs";
-import { dirname, join, relative, resolve } from "path";
+import { dirname } from "path";
 import { subjectToken } from "../nats/subject-token";
 import { initDatabase, Database, seedDatabase } from "../db";
 import { apiKeyMatches, logger, createAuthMiddleware, REEF_PROXY_API_KEY_HEADER } from "./middleware";
@@ -39,7 +38,6 @@ export { getArmClient, setArmClient } from "./arm-client-registry";
 const INDEXER_AUTOSTART_ENV = "COLEO_TRANSCRIPT_INDEXER_AUTOSTART";
 
 export interface CreateAppOptions {
-  webDist?: string | null;
   coleoDir?: string;
 }
 
@@ -74,49 +72,6 @@ export function createProxyAwareWebSocketHandlers(
       handlers.message(ws, message);
     },
   };
-}
-
-function findWebDist(): string | null {
-  const candidates = [
-    resolve(process.cwd(), "dist/web"),
-    resolve(process.cwd(), "src/web/dist"),
-  ];
-
-  for (const candidate of candidates) {
-    if (existsSync(join(candidate, "index.html")) && existsSync(join(candidate, "assets"))) {
-      return candidate;
-    }
-  }
-
-  return null;
-}
-
-function resolveWebAsset(webDist: string, pathname: string): string | null {
-  let decodedPath: string;
-  try {
-    decodedPath = decodeURIComponent(pathname);
-  } catch {
-    return null;
-  }
-
-  const requested = resolve(webDist, `.${decodedPath}`);
-  const relativePath = relative(webDist, requested);
-  if (relativePath.startsWith("..") || relativePath === "") {
-    return null;
-  }
-
-  return requested;
-}
-
-function webFileResponse(path: string, cacheControl: string): Response {
-  const file = Bun.file(path);
-  return new Response(file, {
-    headers: {
-      "Cache-Control": cacheControl,
-      "Content-Type": file.type,
-      "X-Content-Type-Options": "nosniff",
-    },
-  });
 }
 
 function shouldAutostartTranscriptIndexer(): boolean {
@@ -248,8 +203,7 @@ export function createApp(db: Database, config: ApiConfig, options: CreateAppOpt
   // Global error handler (Hono-native path for route exceptions)
   app.onError((err, c) => formatErrorResponse(c, err));
 
-  // Global request logging. CORS is intentionally limited to the API and
-  // signed-upload routes so it does not reconstruct Bun's static file responses.
+  // Global request logging, with CORS for API and signed-upload routes.
   app.use("*", logger);
   const corsMiddleware = cors({
     origin: config.corsOrigins,
@@ -294,27 +248,6 @@ export function createApp(db: Database, config: ApiConfig, options: CreateAppOpt
   app.route("/api/project-setup", createProjectSetupRoutes({ coleoDir: options.coleoDir }));
   app.route("/api/workbench", createWorkbenchRoutes({ coleoDir: options.coleoDir }));
   app.route("/api/runs", createRunsRoutes());
-
-  // Serve the production SPA on the same origin as the API and WebSocket.
-  const webDist = options.webDist === undefined ? findWebDist() : options.webDist;
-  if (webDist) {
-    app.get("*", (c) => {
-      const pathname = new URL(c.req.url).pathname;
-      if (pathname.startsWith("/api/") || pathname === "/api" || pathname.startsWith("/uploads/")) {
-        return c.notFound();
-      }
-
-      const assetPath = resolveWebAsset(webDist, pathname);
-      if (assetPath && existsSync(assetPath) && statSync(assetPath).isFile()) {
-        const cacheControl = pathname.startsWith("/assets/")
-          ? "public, max-age=31536000, immutable"
-          : "no-cache";
-        return webFileResponse(assetPath, cacheControl);
-      }
-
-      return webFileResponse(join(webDist, "index.html"), "no-cache");
-    });
-  }
 
   return app;
 }
@@ -704,11 +637,11 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   console.log("  Coleo API Server");
   console.log("=".repeat(60));
   console.log(`  URL:      ${serverUrl}`);
-  console.log(`  Web UI:   cd src/web && bun run dev`);
+  console.log(`  Web UI:   coleo-client web (optional client)`);
   if (nats) {
-    console.log(`  NATS:     ${nats.getServerUrl()}`);
+    console.log(`  NATS:     connected`);
   }
-  console.log(`  API Key:  ${config.apiKey}`);
+  console.log(`  API Auth: ${config.apiKey.startsWith("dev-") ? "development access" : "key configured"}`);
   console.log("=".repeat(60));
   console.log("");
 

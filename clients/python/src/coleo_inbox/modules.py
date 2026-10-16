@@ -45,12 +45,16 @@ def validate_record(record):
     return record
 
 
-async def collection(api, module, *, search="", status="all", limit=100, offset=0):
+async def collection(api, module, *, search="", status="all", limit=100, offset=0, sort=None):
     if module not in ("tasks", "bugs") or status != "all" and status not in MODULES[module].statuses:
         raise ValueError("Invalid collection or status")
     if not 1 <= limit <= 100 or offset < 0:
         raise ValueError("Limit must be 1–100 and offset must be nonnegative")
+    if sort is not None and (module != "tasks" or sort != "created-desc"):
+        raise ValueError("Only Tasks supports created-desc sorting")
     params = {"limit": limit, "offset": offset}
+    if sort is not None:
+        params["sort"] = sort
     if search:
         params["search"] = search
     if status != "all":
@@ -69,7 +73,8 @@ async def collection(api, module, *, search="", status="all", limit=100, offset=
         raise ValueError("Repeated resource IDs")
     next_offset = offset + len(records)
     return dict(schemaVersion=1, kind="module.collection", module=module, items=records,
-                query=dict(search=search, status=status, limit=limit, offset=offset),
+                query=dict(search=search, status=status, limit=limit, offset=offset,
+                           **({"sort": sort} if sort is not None else {})),
                 total=total, nextOffset=next_offset if records and next_offset < total else None)
 
 
@@ -108,7 +113,7 @@ async def overview(api, module):
 
 
 async def brain_action(api, action):
-    if action not in ("start", "stop"):
+    if action not in ("start", "stop", "pause", "resume"):
         raise ValueError("Unknown Brain action")
     result = await api.request(f"/api/brain/{action}", body={})
     return dict(schemaVersion=1, kind="module.action", module="brain", action=action, result=result)
@@ -132,7 +137,7 @@ def overview_text(snapshot):
             brain = data["brain"]
             for key, label in (("status", "Status"), ("activeArmsCount", "Active arms"),
                                ("pendingTasksCount", "Pending tasks"), ("completedToday", "Completed today"),
-                               ("lastPollAt", "Last poll")):
+                                ("lastPollAt", "Last poll"), ("pollIntervalMs", "Poll interval (ms)")):
                 lines.append(f"  {label}: {brain.get(key, 'Unknown')}")
             for key in ("plan", "modelAccess"):
                 if isinstance(brain.get(key), dict):

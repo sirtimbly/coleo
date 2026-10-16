@@ -10,14 +10,46 @@ banner:
 
 # CLI Reference
 
-Complete reference for the `coleo` command-line interface.
+Coleo has separate operator and API-client executables.
+
+| Operation | Command |
+| --- | --- |
+| API host lifecycle | `coleo-server run`, `start`, `stop`, `restart`, `status`, `logs` |
+| Brain host lifecycle | `coleo-server brain run`, `start`, `stop`, `restart`, `status`, `logs` |
+| Arm Host lifecycle | `coleo-agent run`, `start`, `stop`, `restart`, `status`, `logs` |
+| Host configuration and checks | `coleo-server configure`, `coleo-agent configure`, each tool's `doctor` |
+| Server selection | `coleo-client connect URL --name NAME`, `connections`, `use NAME`, `doctor` |
+| Tasks, bugs, Inbox | `coleo-client tasks`, `bugs`, `inbox` |
+| Fleet and activity | `coleo-client arms`, `agents`, `activity`, `status` |
+| Mail and settings | `coleo-client mail`, `discoveries`, `config`, `status-reports` |
+| Terminal workspace | `coleo-client tui` |
+| Installed browser workspace | `coleo-client web` |
+
+`run` stays foreground; `start` launches a background service. Operator commands
+target the host running them. Client commands target the selected API server.
+See [Component Installation](./installation), [Server and clients](../architecture/client-server-separation),
+and [Workspace CLI and TUI](./workspace-client).
+
+The sections below retain the **legacy `coleo` syntax** as a migration reference.
+Its migrated domain commands now print a `coleo-client` replacement and exit without
+performing the operation. Use the client's `--help` for current flags and JSON shapes.
+`inbox views` and `inbox validate` become root client `views` and `validate`.
+Local initialization, IMAP, MCP, Git helpers, arm log files, discovery summarization,
+report backfill, and prompt/harness diagnostics remain available under `coleo`.
+The legacy `coleo agent start` remains foreground; use `coleo-agent run` for that behavior.
+
+Client arm spawning is noninteractive and uses the `opencode-api` harness on the
+selected host. Legacy `--terminal tmux` spawning is retired; use `arms watch ID`
+to observe the remote conversation. `arms list` is a one-shot command;
+`arms list --watch` enables repeated snapshots. Watch/tail JSON output is JSONL,
+while one-shot commands return versioned JSON objects.
 
 ## Installation
 
 The CLI is published to npm as `coleo` and runs using the Bun runtime.
 
 ```bash
-# Requires Bun v1.1+
+# Requires Bun v1.3.6+
 bun install -g coleo
 ```
 

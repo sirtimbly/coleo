@@ -1,6 +1,6 @@
 # Component versions and upgrades
 
-Coleo releases the web app, API/CLI, and Arm host agent together. The root
+Coleo releases the web app, API/operator tools, Arm Host, and Python client together. The root
 `package.json` is the release source of truth. The web workspace declares that
 same version; both browser and server bundles embed the root version at build
 time. A running process reports its loaded version, so replacing files alone
@@ -9,16 +9,30 @@ does not update a running API or agent.
 ## Release workflow
 
 - Use Conventional Commits and Conventional Commit PR titles. Release Please
-  updates the root package, web package, changelog, and release manifest together.
+  updates the root package, web package, Python project/lock version, changelog,
+  and Release Please manifest together. The macOS app embeds the root version
+  when built.
 - Run `bun run versions:check` before building. CI and web/package builds reject
-  workspace version drift. Add future component packages to the root workspaces
-  and Release Please `extra-files` list.
+  component version drift. Add future release metadata to the version check and
+  Release Please `extra-files` list.
 - Build all artifacts from the same release tag (`coleo-vX.Y.Z`). Deploy pinned
   release artifacts or immutable image digests rather than mutable `latest` tags.
 - Upgrade and restart the API and each Arm host, serve the matching web bundle,
   and refresh open browser tabs. Use the dashboard to confirm the rollout.
 - For rollback, restore the same prior release across components. Check database
   migration compatibility before rolling back persisted state.
+
+The component installer uses `coleo-release.json` to select immutable artifacts
+and verify checksums. Its component receipt tracks shared ownership: server and
+agent roles share the Bun distribution; the TUI includes the Python CLI.
+The separate `reef-release.json` container manifest retains its own deployment role.
+See [Component Installation](./installation) for artifact installation and removal.
+
+Python `doctor` reports the selected server's version and workspace. General API
+capabilities remain unknown on servers that do not advertise them. Matching release
+versions identify a tested component set; they do not replace per-command response
+validation. CLI-only and TUI installations use the same Python wheel with different
+dependency selections.
 
 ## Dashboard compatibility
 
