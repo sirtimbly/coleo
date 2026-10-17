@@ -13,6 +13,7 @@ import type { FixtureMail } from "./messaging";
 import { getNamedResourceView } from "../../src/workbench/named-resource-views";
 
 interface MockApiOptions {
+	profileId?: string;
 	layoutMode?: "classic" | "golden";
 	arms?: unknown[];
 	tasks?: Array<Record<string, unknown>>;
@@ -46,10 +47,10 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 	const inboxRecords = [...options.inbox ?? []] as FixtureMail[];
 	const archiveRecords = [...options.archive ?? []] as FixtureMail[];
 
-	await page.addInitScript((layoutMode) => {
+	await page.addInitScript(({ layoutMode, profileId }) => {
 		window.localStorage.setItem("coleo-layout-mode", layoutMode);
-		window.localStorage.setItem("coleo:workbench-profile", "local");
-	}, options.layoutMode ?? "classic");
+		window.localStorage.setItem("coleo:workbench-profile", profileId);
+	}, { layoutMode: options.layoutMode ?? "classic", profileId: options.profileId ?? "local" });
 
 	await page.route("**/api/**", async (route) => {
 		const request = route.request();
@@ -106,7 +107,7 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 			return json(route, {
 				schemaVersion: 1,
 				profile: {
-					id: "local",
+					id: url.searchParams.get("profileId") ?? "local",
 					name: "Local",
 					isDefault: true,
 					preferences: {},

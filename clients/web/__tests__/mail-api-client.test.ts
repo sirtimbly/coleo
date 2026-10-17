@@ -79,6 +79,20 @@ describe("web mail API client", () => {
     expect(requestedUrl).toBe("/api/mail/inbox?limit=50&offset=10");
   });
 
+  it("keeps attention and record detail reads in the requested profile", async () => {
+    const urls: string[] = [];
+    globalThis.fetch = createFetchMock(async (input) => {
+      urls.push(String(input));
+      return createResponse({ attention: null, item: {} });
+    });
+    await api.getWorkbenchItemAttention("task:one", "reviewer / two");
+    await api.getWorkbenchInboxRecord("task:one", "reviewer / two");
+    expect(urls).toEqual([
+      "/api/workbench/attention/task%3Aone?profileId=reviewer+%2F+two",
+      "/api/workbench/inbox/records/task%3Aone?profileId=reviewer+%2F+two",
+    ]);
+  });
+
   it("sends mark-read to the dedicated read endpoint with POST", async () => {
     let requestUrl = "";
     let requestMethod = "";

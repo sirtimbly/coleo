@@ -3,11 +3,11 @@ import { projectRecentEvent } from "@/workbench/recent-event-inbox";
 import { activityToItem, brainActivityToItem, reportToItem, workbenchInboxToItem } from "./inbox-item-projection";
 import type { InboxItemData } from "./inbox-item-projection";
 
-export function inboxItemQueryKey(itemId: string): readonly ["inbox-item", string] {
-	return ["inbox-item", itemId];
+export function inboxItemQueryKey(itemId: string, profileId = "local"): readonly ["inbox-item", string, string] {
+	return ["inbox-item", itemId, profileId];
 }
 
-async function loadRecord(itemId: string, sequence?: string): Promise<InboxItemData> {
+async function loadRecord(itemId: string, sequence: string | undefined, profileId: string): Promise<InboxItemData> {
 	if (itemId.startsWith("status:")) {
 		return reportToItem((await api.getStatusReport(itemId.slice(7))).report);
 	}
@@ -23,12 +23,12 @@ async function loadRecord(itemId: string, sequence?: string): Promise<InboxItemD
 			details: event.data };
 		return actor === "brain" ? brainActivityToItem(entry) : activityToItem(entry);
 	}
-	return workbenchInboxToItem((await api.getWorkbenchInboxRecord(itemId)).item);
+	return workbenchInboxToItem((await api.getWorkbenchInboxRecord(itemId, profileId)).item);
 }
 
-export async function loadInboxItem(itemId: string, sequence?: string): Promise<InboxItemData> {
+export async function loadInboxItem(itemId: string, sequence?: string, profileId = "local"): Promise<InboxItemData> {
 	const [entry, { attention }] = await Promise.all([
-		loadRecord(itemId, sequence), api.getWorkbenchItemAttention(itemId),
+		loadRecord(itemId, sequence, profileId), api.getWorkbenchItemAttention(itemId, profileId),
 	]);
 	if (!attention) return entry;
 	return { ...entry, item: { ...entry.item,

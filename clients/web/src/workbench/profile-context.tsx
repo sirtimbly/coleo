@@ -30,6 +30,7 @@ import type { JsonObject } from "@/lib/api";
 const PROFILE_STORAGE_KEY = "coleo:workbench-profile";
 
 interface WorkbenchProfileContextValue {
+	profileId: string;
 	profile: WorkbenchProfile | null;
 	views: ViewDefinition[];
 	layouts: WorkspaceLayoutRecord[];
@@ -130,6 +131,7 @@ export function WorkbenchProfileProvider({ children }: { children: ReactNode }) 
 	}, [bootstrapQuery, queryClient]);
 
 	const value = useMemo<WorkbenchProfileContextValue>(() => ({
+		profileId,
 		profile: bootstrapQuery.data?.profile ?? null,
 		views: bootstrapQuery.data?.views ?? [],
 		layouts: bootstrapQuery.data?.layouts ?? [],
@@ -142,6 +144,7 @@ export function WorkbenchProfileProvider({ children }: { children: ReactNode }) 
 		},
 		refresh,
 	}), [
+		profileId,
 		bootstrapQuery.data,
 		bootstrapQuery.isLoading,
 		deleteMutation,

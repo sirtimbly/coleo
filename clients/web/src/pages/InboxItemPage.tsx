@@ -7,6 +7,7 @@ import { presentInboxItem } from "@/adaptive-cards/presenters";
 import { WorkbenchEmptyState } from "@/design-system/WorkbenchSurface";
 import { api, isJsonObject } from "@/lib/api";
 import { useProjectionSignal } from "@/workbench/live-projections";
+import { useWorkbenchProfile } from "@/workbench/profile-context";
 import { useWorkspaceOpenRoute } from "@/workspace/route-context";
 import { creatorForInboxItem } from "./inbox-item-projection";
 import { inboxItemQueryKey, loadInboxItem } from "./load-inbox-item";
@@ -14,11 +15,12 @@ import type { CardActionRequest } from "../../../../server/src/types/adaptive-ca
 
 // A detail screen owns one record. It never mounts the inbox collection or its subscriptions.
 export function InboxItemPage({ itemId, sequence }: { itemId: string; sequence: string | null }) {
+	const { profileId } = useWorkbenchProfile();
 	const openWorkspaceRoute = useWorkspaceOpenRoute();
 	const [actionError, setActionError] = useState<string | null>(null);
 	const { data: item, error: loadError, refetch } = useQuery({
-		queryKey: inboxItemQueryKey(itemId),
-		queryFn: () => loadInboxItem(itemId, sequence ?? undefined),
+		queryKey: inboxItemQueryKey(itemId, profileId),
+		queryFn: () => loadInboxItem(itemId, sequence ?? undefined, profileId),
 		staleTime: 0,
 		retry: false,
 	});

@@ -1581,8 +1581,8 @@ class ApiClient {
     );
   }
 
-  async getWorkbenchInboxRecord(itemKey: string) {
-    return this.request<{ item: WorkbenchInboxRecord }>(`/workbench/inbox/records/${encodeURIComponent(itemKey)}`);
+  async getWorkbenchInboxRecord(itemKey: string, profileId = 'local') {
+    return this.request<{ item: WorkbenchInboxRecord }>(`/workbench/inbox/records/${encodeURIComponent(itemKey)}?${new URLSearchParams({ profileId })}`);
   }
 
   async getWorkbenchInboxEvent(itemKey: string, sequence?: string) {
@@ -1592,9 +1592,9 @@ class ApiClient {
     );
   }
 
-  async getWorkbenchItemAttention(itemKey: string) {
+  async getWorkbenchItemAttention(itemKey: string, profileId = 'local') {
     return this.request<{ attention: WorkbenchAttention | null }>(
-      `/workbench/attention/${encodeURIComponent(itemKey)}`,
+      `/workbench/attention/${encodeURIComponent(itemKey)}?${new URLSearchParams({ profileId })}`,
     );
   }
 

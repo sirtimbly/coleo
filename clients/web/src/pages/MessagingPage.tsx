@@ -16,6 +16,7 @@ import { useLiveProjections } from "@/workbench/live-projections";
 import { MessagingThreadTree } from "@/workbench/MessagingThreadTree";
 import { ProjectionInbox } from "@/workbench/ProjectionInbox";
 import { useMessagingCollection } from "@/workbench/use-messaging-collection";
+import { useWorkbenchProfile } from "@/workbench/profile-context";
 import { useWorkspaceOpenRoute, useWorkspaceSearchParams } from "@/workspace/route-context";
 import { BRAIN_ACTIVITY_CATEGORY_LABELS } from "../../../../server/src/workbench/brain-activity";
 import { MESSAGING_FACETS, MESSAGING_MAILBOXES, normalizeMessagingQuery } from "../../../../server/src/workbench/messaging-query";
@@ -53,6 +54,12 @@ function targetRoute(item: MessagingItem): { pathname: string; search: string } 
 }
 
 export function MessagingPage({ projection = "inbox" }: { projection?: "inbox" | "mail" } = {}) {
+	const { profileId } = useWorkbenchProfile();
+	// Do not retain another profile's rows, selection, or pending mutation state.
+	return <ProfileMessagingPage key={profileId} projection={projection} />;
+}
+
+function ProfileMessagingPage({ projection }: { projection: "inbox" | "mail" }) {
 	const [params] = useWorkspaceSearchParams();
 	const itemId = params.get("item");
 	const threadId = params.get("thread");
@@ -82,6 +89,7 @@ function NamedMessagingCollection({ id, projection }: { id: string; projection: 
 }
 
 function MessagingCollection({ projection, resolvedView }: { projection: "inbox" | "mail"; resolvedView?: ResolvedNamedResourceView }) {
+	const { profileId } = useWorkbenchProfile();
 	const defaults = useMemo(() => normalizeMessagingQuery(resolvedView?.definition.query ?? { scope: projection }), [resolvedView, projection]);
 	const mailOnly = projection === "mail";
 	const routePath = mailOnly ? "/mail" : "/messaging";
@@ -106,12 +114,12 @@ function MessagingCollection({ projection, resolvedView }: { projection: "inbox"
 	}, [search, acting]);
 	const facetParam = params.get("facet");
 	const category = params.get("brainCategory");
-	const query = useMemo(() => normalizeMessagingQuery({ ...defaults, scope: projection,
+	const query = useMemo(() => normalizeMessagingQuery({ ...defaults, scope: projection, profileId,
 		facet: mailOnly ? "messages" : MESSAGING_FACETS.includes(facetParam as typeof MESSAGING_FACETS[number]) ? facetParam : defaults.facet,
 		mailbox: MESSAGING_MAILBOXES.includes(params.get("mailbox") as typeof MESSAGING_MAILBOXES[number]) ? params.get("mailbox") : defaults.mailbox,
 		brainCategory: category && category in BRAIN_ACTIVITY_CATEGORY_LABELS ? category : defaults.brainCategory, search: settledSearch,
 		sort: { field: "timestamp", direction: sortDirection },
-	}), [defaults, projection, mailOnly, facetParam, category, params, settledSearch, sortDirection]);
+	}), [defaults, projection, profileId, mailOnly, facetParam, category, params, settledSearch, sortDirection]);
 	const state = useMessagingCollection(query);
 	const items = useMemo(() => state.pendingQuery ? projectMessagingItems(state.value?.items ?? [], query)
 		: state.value?.items ?? [], [state.pendingQuery, state.value, query]);
@@ -156,15 +164,15 @@ function MessagingCollection({ projection, resolvedView }: { projection: "inbox"
 				title: item.title }, "split"); return;
 		}
 		const creator = item.actor ?? BRAIN_CARD_CREATOR;
-		queryClient.setQueryData(inboxItemQueryKey(item.id), { item: projectionItem(item), targetRoute: targetRoute(item), creator });
+		queryClient.setQueryData(inboxItemQueryKey(item.id, profileId), { item: projectionItem(item), targetRoute: targetRoute(item), creator });
 		const detailParams = new URLSearchParams({ item: item.id });
 		if (item.detail.kind === "event" || item.detail.kind === "activity") {
 			if (item.detail.sequence) detailParams.set("sequence", String(item.detail.sequence));
 		}
-		void api.updateWorkbenchAttention(item.id, { readAt: new Date().toISOString(), seenAt: new Date().toISOString(), requiresAction: item.requiresAction })
+		void api.updateWorkbenchAttention(item.id, { profileId, readAt: new Date().toISOString(), seenAt: new Date().toISOString(), requiresAction: item.requiresAction })
 			.catch((error: unknown) => setActionError(error instanceof Error ? error.message : "Could not mark this item read"));
 		openRoute({ pathname: routePath, search: `?${detailParams}`, title: item.title }, "split");
-	}, [byId, openRoute, routePath, mailOnly, queryClient]);
+	}, [byId, openRoute, routePath, mailOnly, queryClient, profileId]);
 
 	const mutate = useCallback(async (action: "read" | "archive", targets: readonly MessagingItem[], members?: ReadonlySet<string>) => {
 		if (acting) return;
@@ -177,10 +185,10 @@ function MessagingCollection({ projection, resolvedView }: { projection: "inbox"
 				if (ids.length) await api.executeMailThreadAction(item.thread.id, item.thread.mailbox, item.thread.revision, ids, action);
 			}
 			const records = targets.filter((item) => !item.thread && (!members || members.has(item.id))).map((item) => item.id);
-			if (records.length) await api.bulkUpdateWorkbenchAttention(records, action);
+			if (records.length) await api.bulkUpdateWorkbenchAttention(records, action, profileId);
 		} catch (error) { setActionError(error instanceof Error ? error.message : "The action failed; reload before retrying"); }
 		finally { await finishMutation(); setActing(false); }
-	}, [state, acting]);
+	}, [state, acting, profileId]);
 
 	const renderCard = useCallback((projection: InboxProjectionItem, presentationMode: CardPresentationMode) => {
 		const item = byId.get(projection.id);
