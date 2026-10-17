@@ -345,14 +345,17 @@ final class InboxSession: ObservableObject {
         let task = URLSession.shared.webSocketTask(with: url)
         task.resume()
         defer { task.cancel(with: .goingAway, reason: nil) }
-        try await task.send(.string("{\"type\":\"auth\",\"apiKey\":\(JSONValue.escape(apiKey))}"))
-        // Wait for auth success before subscribing, as the server requires.
-        while true {
-            let message = try await task.receive()
-            guard case .string(let text) = message, let value = try? JSONValue.decode(Data(text.utf8)) else { continue }
-            if value["type"]?.string == "auth" {
-                guard value["success"]?.bool == true else { throw ContractError.invalid("WebSocket authentication rejected") }
-                break
+        let authMessage = "{\"type\":\"auth\",\"apiKey\":\(JSONValue.escape(apiKey))}"
+        try await withAuthenticationDeadline(cancel: { task.cancel(with: .goingAway, reason: nil) }) {
+            try await task.send(.string(authMessage))
+            // One deadline covers the entire exchange, including unrelated messages.
+            while true {
+                let message = try await task.receive()
+                guard case .string(let text) = message, let value = try? JSONValue.decode(Data(text.utf8)) else { continue }
+                if value["type"]?.string == "auth" {
+                    guard value["success"]?.bool == true else { throw ContractError.invalid("WebSocket authentication rejected") }
+                    break
+                }
             }
         }
         for channel in ["workbench", "mail", "activity", "brain", "tasks", "bugs", "arms", "proposals"] {
