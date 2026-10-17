@@ -42,7 +42,7 @@ The TUI turns that same control plane into a keyboard-driven terminal workspace 
 
 ## Quick Start
 
-The operator tools require the [Bun](https://bun.sh/) runtime (v1.3.6+).
+The operator tools require the [Bun](https://bun.sh/) runtime (v1.3.14+).
 
 For component installation and configuration, see the [installation guide](docs/guides/installation.md).
 The server/Arm Host tools and Python client are installed separately. From a checkout,

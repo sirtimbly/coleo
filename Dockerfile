@@ -3,7 +3,7 @@
 # Provides a complete environment for running Coleo brain and arms
 # with SSH access for interactive sessions.
 
-FROM oven/bun:1.3-debian AS builder
+FROM oven/bun:1.3.14-debian AS builder
 
 WORKDIR /app
 
@@ -23,7 +23,7 @@ RUN bun run build:with-web
 # ============================================
 # Runtime image
 # ============================================
-FROM oven/bun:1.3-debian
+FROM oven/bun:1.3.14-debian
 
 # This all-in-one image installs the optional web client as a separate process.
 

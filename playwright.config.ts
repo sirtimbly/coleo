@@ -8,11 +8,12 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const webServerCommand = process.env.CI
-	? "bun run --cwd src/web preview --host 127.0.0.1 --port 4174"
-	: "bun run --cwd src/web dev --host 127.0.0.1 --port 4174";
+	? "bun run --cwd clients/web preview --host 127.0.0.1 --port 4174"
+	: "bun run --cwd clients/web dev --host 127.0.0.1 --port 4174";
 
 export default defineConfig({
 	testDir: "./e2e",
+	testMatch: "**/*.spec.ts",
 	fullyParallel: true,
 	workers: 2,
 	retries: process.env.CI ? 2 : 0,

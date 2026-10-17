@@ -1,5 +1,5 @@
 [tools]
-bun = "1.3.6"
+bun = "1.3.14"
 
 [env]
 # Isolate this project's JetStream events from other local Coleo instances.

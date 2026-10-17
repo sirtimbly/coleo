@@ -101,7 +101,10 @@ API-static-hosting design:
 
 ## Release evidence boundaries (current)
 
-Local runtime: macOS, Bun 1.3.14, Python 3.12.14. CI/mise runtime pin is Bun 1.3.6.
+Local runtime: macOS, Bun 1.3.14, Python 3.12.14. CI/mise and installer runtime pins
+now use Bun 1.3.14: the 1.3.6 WebSocket client rejects valid negotiated
+subprotocols with `Mismatch client protocol`. The proxy regression test reproduces
+the failure on 1.3.6 and passes on 1.3.14.
 Platform release jobs must validate their declared matrix before publishing assets.
 No Apple signing/notarization credentials were provided in this session; a local
 syntax check is not a signed application release. No production server mutations

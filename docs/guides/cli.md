@@ -49,7 +49,7 @@ while one-shot commands return versioned JSON objects.
 The CLI is published to npm as `coleo` and runs using the Bun runtime.
 
 ```bash
-# Requires Bun v1.3.6+
+# Requires Bun v1.3.14+
 bun install -g coleo
 ```
 

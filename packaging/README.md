@@ -61,7 +61,7 @@ Version/runtime integration inputs:
   and `coleo-inbox` entry points and the optional `tui` extra. Its numeric version
   and lock must match the release train before building.
 - Keep `packaging/runtimes.json` and workflow setup versions aligned with root
-  packageManager/mise/CI. Current pins: Bun 1.3.6, uv 0.11.8, Python 3.12.12,
+  packageManager/mise/CI. Current pins: Bun 1.3.14, uv 0.11.8, Python 3.12.12,
   Go 1.25.9 (Go is a build dependency only).
 - Suggested root tasks (integrator-owned):
   `release:manifest` → `bun run server/src/scripts/build-release-manifest.ts`,

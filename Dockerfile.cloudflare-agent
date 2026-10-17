@@ -1,5 +1,5 @@
 # Long-lived Coleo arm-agent runtime for Cloudflare Containers.
-FROM oven/bun:1.3.6-debian AS builder
+FROM oven/bun:1.3.14-debian AS builder
 
 WORKDIR /app
 COPY package.json bun.lock ./
@@ -20,7 +20,7 @@ RUN apt-get update && apt-get install -y ca-certificates curl unzip \
     && /tmp/aws/install \
     && rm -rf /var/lib/apt/lists/* /tmp/aws /tmp/awscliv2.zip
 
-FROM oven/bun:1.3.6-debian
+FROM oven/bun:1.3.14-debian
 
 ARG NATS_VERSION=2.12.3
 RUN apt-get update && apt-get install -y \
