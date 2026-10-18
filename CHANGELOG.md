@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.0 (2026-10-18)
+
+## What's Changed
+* docs(workbench): plan portable resources and independent panels by @sirtimbly in https://github.com/sirtimbly/coleo/pull/115
+* feat(brain): add swarm evaluation and prepared task handoff by @sirtimbly in https://github.com/sirtimbly/coleo/pull/116
+* fix(release): generate notes from merged pull requests by @sirtimbly in https://github.com/sirtimbly/coleo/pull/119
+* fix: enforce draft handoffs and retry failed editor links by @sirtimbly in https://github.com/sirtimbly/coleo/pull/118
+* feat(workbench)!: ship multi-client workspaces and separate operator tools by @sirtimbly in https://github.com/sirtimbly/coleo/pull/123
+
+
+**Full Changelog**: https://github.com/sirtimbly/coleo/compare/coleo-v0.14.4...coleo-v1.0.0
+
 ## [0.14.4](https://github.com/sirtimbly/coleo/compare/coleo-v0.14.3...coleo-v0.14.4) (2026-09-18)
 
 
