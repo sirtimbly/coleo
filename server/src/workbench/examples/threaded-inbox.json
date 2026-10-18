@@ -1,0 +1,34 @@
+{
+	"schemaVersion": 1,
+	"id": "inbox-thread-review",
+	"panelKind": "collection",
+	"resource": "messaging",
+	"query": { "scope": "inbox", "facet": "messages", "sort": { "field": "timestamp", "direction": "desc" } },
+	"commands": ["inbox.open", "inbox.mark-read", "inbox.refresh"],
+	"hierarchy": { "initialExpansion": "all", "selectionScope": "loaded-descendants" },
+	"slots": {
+		"toolbar.primary.identity": [{ "id": "heading", "widget": "resource.identity", "label": "Threaded messages" }],
+		"toolbar.primary.context": [{ "id": "facet", "widget": "inbox.facet", "label": "View", "binding": "query.facet" }],
+		"toolbar.primary.search": [{ "id": "search", "widget": "collection.search", "label": "Search", "binding": "query.search" }],
+		"toolbar.primary.actions": [
+			{ "id": "mark-read", "widget": "inbox.mark-read", "label": "Mark read", "command": "inbox.mark-read" },
+			{ "id": "refresh", "widget": "collection.refresh", "label": "Refresh", "command": "inbox.refresh" }
+		],
+		"toolbar.primary.state": [{ "id": "freshness", "widget": "collection.freshness", "label": "Source freshness" }],
+		"toolbar.secondary.sort": [{ "id": "sort", "widget": "collection.sort", "label": "Sort", "binding": "query.sort" }],
+		"toolbar.secondary.presentation": [
+			{ "id": "display", "widget": "collection.presentation", "label": "Presentation", "binding": "presentation.active" },
+			{ "id": "threads", "widget": "collection.hierarchy", "label": "Threads", "binding": "hierarchy.expandedIds" }
+		],
+		"toolbar.secondary.selection": [{ "id": "selection", "widget": "collection.selection", "label": "Selected resources" }],
+		"toolbar.secondary.insights": [{ "id": "insights", "widget": "collection.insights", "label": "Metadata", "binding": "insights.active" }]
+	},
+	"insights": { "active": null, "panels": [
+		{ "id": "overview", "renderer": "messaging.overview", "label": "Inbox metadata", "fields": ["unread", "requiresAction", "timestamp"] }
+	] },
+	"presentation": { "active": "grid", "renderers": [
+		{ "id": "grid", "kind": "grid", "renderer": "collection.grid", "label": "Thread grid", "fields": ["title", "source", "timestamp", "unread"] },
+		{ "id": "cards", "kind": "cards", "renderer": "collection.cards", "label": "Nested cards", "fields": ["title", "summary", "source", "timestamp"] },
+		{ "id": "timeline", "kind": "custom", "renderer": "messaging.timeline", "label": "Reply tree", "fields": ["title", "summary", "timestamp"] }
+	] }
+}

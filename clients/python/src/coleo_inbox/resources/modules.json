@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "modules": [
+    { "id": "inbox", "title": "Inbox", "description": "Items needing your attention", "symbol": "tray.full", "renderer": "messaging", "namedView": "inbox-triage", "facet": "attention" },
+    {
+      "id": "tasks", "title": "Tasks", "description": "Project work, status, and assignments", "symbol": "checklist", "renderer": "tasks",
+      "sorting": {
+        "fields": [
+          { "field": "title" },
+          { "field": "status", "values": ["draft", "pending", "claimed", "in_progress", "completing", "completed", "failed", "blocked", "cancelled"] },
+          { "field": "priority", "values": ["critical", "high", "normal", "low"] },
+          { "field": "owner" }
+        ],
+        "defaultOrder": [{ "field": "priority", "direction": "asc" }, { "field": "title", "direction": "asc" }]
+      }
+    },
+    {
+      "id": "bugs", "title": "Bugs", "description": "Reports, priorities, and resolutions", "symbol": "ladybug", "renderer": "bugs",
+      "sorting": {
+        "fields": [
+          { "field": "title" },
+          { "field": "status", "values": ["open", "investigating", "fixing", "verifying", "resolved", "closed"] },
+          { "field": "priority", "values": ["critical", "high", "medium", "low"] },
+          { "field": "owner" }
+        ],
+        "defaultOrder": [{ "field": "priority", "direction": "asc" }, { "field": "title", "direction": "asc" }]
+      }
+    },
+    { "id": "brain", "title": "Brain", "description": "Orchestrator status and planning health", "symbol": "brain", "renderer": "brain" },
+    { "id": "dashboard", "title": "Dashboard", "description": "Project progress and system overview", "symbol": "chart.bar.xaxis", "renderer": "dashboard" }
+  ]
+}

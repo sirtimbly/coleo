@@ -38,10 +38,10 @@ test('Brain responsibility controls persist, explain scope, and open the live te
   });
   await page.goto('/brain');
   const nav = page.getByRole('navigation', { name: 'Brain responsibilities' });
-  await nav.getByRole('button', { name: 'Follow-up prompts from arm messages' }).click();
+  await nav.getByRole('button', { name: 'Arm follow-ups' }).click();
   const section = page.getByRole('region', { name: 'Follow-up prompts from arm messages', exact: true });
   await expect(section.getByText('Where JEV fits')).toBeVisible();
-  await expect(nav.getByRole('button', { name: 'Follow-up prompts from arm messages' })).toHaveAttribute('aria-current', 'location');
+  await expect(nav.getByRole('button', { name: 'Arm follow-ups' })).toHaveAttribute('aria-current', 'location');
   const builtin = section.getByRole('switch', { name: 'Assistant-output follow-up prompts' });
   await builtin.focus(); await builtin.press('Space');
   await expect(builtin).not.toBeChecked();
@@ -57,7 +57,7 @@ test('Brain responsibility controls persist, explain scope, and open the live te
   await page.reload();
   await expect(builtin).not.toBeChecked();
   await expect(section.getByLabel('JEV Prompt an arm')).toHaveValue('shadow');
-  await nav.getByRole('button', { name: 'Follow-up prompts from arm messages' }).click();
+  await nav.getByRole('button', { name: 'Arm follow-ups' }).click();
   await page.screenshot({ path: '/tmp/brain-settings-desktop.png' });
   const preview = section.getByRole('button', { name: `Preview ${templateName}`, exact: true });
   await preview.focus(); await preview.press('Enter');
@@ -77,6 +77,6 @@ test('Brain responsibility controls persist, explain scope, and open the live te
   await page.keyboard.press('Escape');
   await page.setViewportSize({ width: 640, height: 900 });
   await page.getByLabel('Find a responsibility').fill('human');
-  await expect(nav.getByRole('button', { name: 'Classify direct human messages' })).toHaveCount(1);
+  await expect(nav.getByRole('button', { name: 'Human messages' })).toHaveCount(1);
   await page.screenshot({ path: '/tmp/brain-settings-narrow.png' });
 });

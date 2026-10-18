@@ -1,0 +1,30 @@
+{
+  "fill-specializations": [
+    { "value": { "linear-gradient": ["srgb:0.96,0.95,1,1", "srgb:0.72,0.72,0.87,1"] } },
+    { "appearance": "dark", "value": { "linear-gradient": ["srgb:0.19,0.16,0.28,1", "srgb:0.07,0.06,0.12,1"] } }
+  ],
+  "groups": [
+    {
+      "name": "Face",
+      "layers": [{ "name": "Face", "image-name": "Face.svg", "glass": false }],
+      "shadow": { "kind": "neutral", "opacity": 0 },
+      "specular": false,
+      "translucency": { "enabled": false, "value": 0.5 }
+    },
+    {
+      "name": "Coral octopus",
+      "layers": [{ "name": "Body", "image-name": "Body.svg", "glass": true }],
+      "shadow": { "kind": "neutral", "opacity": 0.25 },
+      "specular": true,
+      "translucency": { "enabled": false, "value": 0.5 }
+    },
+    {
+      "name": "Violet arms",
+      "layers": [{ "name": "Arms", "image-name": "Arms.svg", "glass": true }],
+      "specular": true,
+      "shadow": { "kind": "neutral", "opacity": 0.3 },
+      "translucency": { "enabled": false, "value": 0.5 }
+    }
+  ],
+  "supported-platforms": { "squares": ["macOS"] }
+}

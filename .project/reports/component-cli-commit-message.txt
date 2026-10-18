@@ -1,0 +1,31 @@
+feat(cli)!: separate operator tools and add component installers
+
+Add coleo-server and coleo-agent with consistent foreground/background
+lifecycle commands, persisted configuration, diagnostics, and safe process
+ownership. Preserve launch settings across restarts and scope arm recovery
+to the owning host, workspace, and runtime directory.
+
+Move API-backed command families into coleo-client with named connections,
+configuration precedence, Rich/JSON output, and offline help. Add task list
+ordering, discovery resolution metadata, and sequence-cursor transcript
+paging to support the migrated workflows.
+
+Make the Python TUI and sibling web client optional installations. Separate
+server and web builds, keep the API server API-only, and launch the installed
+web component through coleo-client web with uploads and WebSocket forwarding.
+
+Ship a prebuilt component installer with private runtime provisioning,
+checksum-verified artifacts, atomic upgrades, ownership receipts, and
+configuration-preserving uninstall. Add release manifests, locked Python
+wheelhouses, conditional signed macOS packaging, and platform CI.
+
+Document command ownership, connection settings, installation, migration,
+and verification. Cover installed artifacts and isolated service lifecycle
+alongside API, client, installer, and recovery regressions.
+
+BREAKING CHANGE: Migrated API-backed coleo commands now exit with guidance
+to use the separately installed coleo-client. Update command invocations
+and JSON consumers using the migration guide. API static UI hosting is
+removed; install the web component and launch coleo-client web. Legacy arms
+without matching host ownership records are
+no longer automatically adopted after an Arm Host restart.

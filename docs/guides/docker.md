@@ -95,8 +95,14 @@ The Coleo Docker image is built for the hosted web UI/API path and includes:
 - Bun and Node/npm for Coleo, Vite, and JavaScript/TypeScript projects
 - Git, OpenSSH, curl/wget, jq, ripgrep, tmux, Python, and build tools for common repository work
 - the current `opencode-ai` CLI from npm, available as `opencode`
-- a production web UI build served by `coleo web` instead of the Vite dev server
+- a separately installed production web UI served by `coleo-web`, proxying to an internal API process
 - a hosting entrypoint that can initialize `.coleo`, clone a target repository, and start the API, web UI, brain, and OpenCode arm agent
+
+The API listens internally on `127.0.0.1:8081` (`COLEO_API_INTERNAL_PORT` overrides
+the port). The general image keeps its public web/proxy ports 8080 and 5173;
+Cloudflare images keep their public `PORT`, defaulting to 3000. Public `/api`,
+`/ws`, and `/uploads` requests pass through the separate web process to the API.
+The API process never serves browser assets.
 
 For OpenCode-only hosted arms, set these environment variables in `deploy/self-host/.env.hosting`:
 

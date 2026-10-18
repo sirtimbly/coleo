@@ -42,7 +42,8 @@ Coleo supports distributed deployment where the Brain, API server, and Gardens c
 
 The **Control Plane** consists of:
 - **Brain**: Central coordinator that assigns tasks, resolves conflicts, and interfaces with humans
-- **API Server**: REST/WebSocket server hosting the Observatory UI and persistence layer
+- **API Server**: REST/WebSocket service and persistence layer
+- **Web Client**: Independently installed Observatory UI and web host, launched with `coleo-client web`
 - **Database**: SQLite database storing arms, tasks, proposals, activity
 
 The Control Plane can run on any always-available machine: a home server, NAS, cloud VM, or even a Raspberry Pi. It doesn't need access to the project codebase - it only coordinates.

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { installMockApi } from "./support/fixtures";
+import { fixtureMessagingPage } from "./support/messaging";
 
 const activity = { id: "stable-event", sequence: 101, timestamp: "2026-09-21T12:00:00Z",
 	actor: "brain", action: "poll_completed", target: null,
@@ -8,9 +9,8 @@ const activity = { id: "stable-event", sequence: 101, timestamp: "2026-09-21T12:
 test("expanded cards retain their DOM through repeated refreshes and new rows", async ({ page }) => {
 	await installMockApi(page, { activity: [activity] });
 	let rows = [activity];
-	await page.route("**/api/activity?**", (route) => route.fulfill({ json: {
-		activity: rows, pagination: { limit: 200, offset: 0, total: rows.length, hasMore: false, nextCursor: null },
-	} }));
+	await page.route("**/api/workbench/inbox?**", (route) => route.fulfill({ json:
+		fixtureMessagingPage({ activity: rows }, JSON.parse(new URL(route.request().url()).searchParams.get("query")!)) }));
 	await page.goto("/messaging?facet=all");
 	const row = page.locator('[data-inbox-item-id="activity:stable-event"]');
 	await row.getByRole("button", { name: "Expand Poll completed card" }).click();
@@ -19,7 +19,7 @@ test("expanded cards retain their DOM through repeated refreshes and new rows", 
 	await card.locator('.ac-adaptiveCard').evaluate((element) => element.setAttribute('data-stability-probe', 'retained'));
 	for (let i = 0; i < 5; i++) {
 		if (i === 2) rows = [activity, { ...activity, id: "new-event", sequence: 102, timestamp: "2026-09-21T12:01:00Z" }];
-		const refreshed = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/activity");
+		const refreshed = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/workbench/inbox");
 		await page.getByRole("button", { name: "Refresh inbox", exact: true }).click();
 		await refreshed;
 		await expect(page.getByRole("button", { name: "Refresh inbox", exact: true }).locator("svg")).not.toHaveClass(/animate-spin/);
@@ -31,7 +31,7 @@ test("expanded cards retain their DOM through repeated refreshes and new rows", 
 	await page.getByRole("button", { name: "Refresh inbox", exact: true }).click();
 	await expect(card.getByText("9 pending tasks, 3 active arms in 1.2s", { exact: true })).toBeVisible();
 	await expect(row.locator(".coleo-inbox-subject-summary")).toHaveText("9 pending tasks, 3 active arms in 1.2s");
-	// Brain history is accumulated across refreshes; filtering removes a row from the table.
+	// The current snapshot replaces membership; server-side search retains the matching row's mounted card.
 	await page.getByPlaceholder("Search this inbox…").fill("9 pending tasks");
 	await expect(page.locator('[data-inbox-item-id="activity:new-event"]')).toHaveCount(0);
 	await card.getByText("9 pending tasks, 3 active arms in 1.2s", { exact: true }).click();
@@ -57,7 +57,7 @@ test("opening a Golden Layout side panel keeps the original inbox mounted and fi
 	await expect(card.locator('.ac-adaptiveCard')).toBeVisible();
 	await card.locator('.ac-adaptiveCard').evaluate((element) => element.setAttribute('data-stability-probe', 'retained'));
 	let collectionRequests = 0;
-	page.on("request", (request) => { if (new URL(request.url()).pathname === "/api/activity") collectionRequests++; });
+	page.on("request", (request) => { if (new URL(request.url()).pathname === "/api/workbench/inbox") collectionRequests++; });
 	await card.getByRole("button", { name: "Open Poll completed in panel" }).click();
 	await expect(page.locator(".lm_tab")).toHaveCount(2);
 	await expect(page.locator('[data-card-template="workbench.event@1"][data-card-presentation="detail"]')).toBeVisible();

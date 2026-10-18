@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { installMockApi } from "./support/fixtures";
+import { fixtureMessagingPage } from "./support/messaging";
 
 const event = { type: "poll_completed", timestamp: "2026-09-18T12:00:00Z", sequence: 101,
 	data: { actor: "brain", activityId: "test-poll", pendingTasks: 2, activeArms: 3, durationMs: 1200 } };
@@ -78,10 +79,10 @@ test("swarm recommendations remain visible beside their task and open with evide
 		timestamp: new Date().toISOString(), resource: { kind: "task", id: "task-1" },
 		severity: "info", requiresAction: false,
 	};
-	await page.route("**/api/workbench/inbox?*", (route) => route.fulfill({ json: { items: [
+	await page.route("**/api/workbench/inbox?*", (route) => route.fulfill({ json: fixtureMessagingPage({ workbenchInbox: [
 		recommendation,
 		{ ...recommendation, itemKey: "task:task-1", source: "task", kind: "task", title: "Blocked task", requiresAction: true },
-	] } }));
+	] }, JSON.parse(new URL(route.request().url()).searchParams.get("query")!)) }));
 	await page.route("**/api/workbench/inbox/records/swarm*", (route) => route.fulfill({ json: { item: recommendation } }));
 	await page.route("**/api/workbench/attention/swarm*", (route) => route.fulfill({ json: { attention: null } }));
 	await page.goto("/messaging?facet=brain&brainCategory=decisions");

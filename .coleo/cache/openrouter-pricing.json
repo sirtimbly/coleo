@@ -1,11 +1,197 @@
 {
-  "fetchedAt": "2026-09-21T17:49:04.982Z",
+  "fetchedAt": "2026-10-06T18:09:02.916Z",
   "models": [
+    {
+      "id": "google/gemini-nano-banana-2.1",
+      "canonicalSlug": "google/gemini-nano-banana-2.1-20261006",
+      "input": 1.5,
+      "output": 7.5
+    },
+    {
+      "id": "mistralai/mistral-large-4-0",
+      "canonicalSlug": "mistralai/mistral-large-4-0-20261006",
+      "input": 0.6799999999999999,
+      "output": 2.09
+    },
+    {
+      "id": "inclusionai/ling-3.1-flash",
+      "canonicalSlug": "inclusionai/ling-3.1-flash-20261002",
+      "input": 0,
+      "output": 0
+    },
+    {
+      "id": "apodex/apodex-1.1-mini:free",
+      "canonicalSlug": "apodex/apodex-1.1-mini-20261001",
+      "input": 0,
+      "output": 0
+    },
+    {
+      "id": "unbiased/pareto-26.10-preview",
+      "canonicalSlug": "unbiased/pareto-26.10-preview-20260929",
+      "input": 0.7999999999999999,
+      "output": 3.1999999999999997
+    },
+    {
+      "id": "openai/gpt-6.1-sol-pro",
+      "canonicalSlug": "openai/gpt-6.1-sol-pro-20260929",
+      "input": 2,
+      "output": 10
+    },
+    {
+      "id": "openai/gpt-6.1-sol",
+      "canonicalSlug": "openai/gpt-6.1-sol-20260929",
+      "input": 2,
+      "output": 10
+    },
+    {
+      "id": "anthropic/claude-sonnet-5.5",
+      "canonicalSlug": "anthropic/claude-sonnet-5.5-20260928",
+      "input": 2,
+      "output": 10
+    },
+    {
+      "id": "anthropic/claude-sonnet-5.5:batch",
+      "canonicalSlug": "anthropic/claude-sonnet-5.5-20260928",
+      "input": 1,
+      "output": 5
+    },
+    {
+      "id": "perceptron/perceptron-mk1.5",
+      "canonicalSlug": "perceptron/perceptron-mk1.5-20260925",
+      "input": 0.15,
+      "output": 1.5
+    },
+    {
+      "id": "fireworks/ember-1",
+      "canonicalSlug": "fireworks/ember-1-20260923",
+      "input": 3,
+      "output": 15
+    },
+    {
+      "id": "z-ai/glm-5.3-prime",
+      "canonicalSlug": "z-ai/glm-5.3-prime-20260921",
+      "input": 2.8,
+      "output": 8.8
+    },
+    {
+      "id": "qwen/qwen3.8-max-prime",
+      "canonicalSlug": "qwen/qwen3.8-max-prime-20260923",
+      "input": 4,
+      "output": 12
+    },
+    {
+      "id": "aion-labs/aion-3.5-mini",
+      "canonicalSlug": "aion-labs/aion-3.5-mini-20260923",
+      "input": 0.7,
+      "output": 1.4
+    },
+    {
+      "id": "aion-labs/aion-3.5",
+      "canonicalSlug": "aion-labs/aion-3.5-20260923",
+      "input": 3,
+      "output": 6
+    },
+    {
+      "id": "upstage/solar-mini4",
+      "canonicalSlug": "upstage/solar-mini4-20260922",
+      "input": 0.049999999999999996,
+      "output": 0.19999999999999998
+    },
+    {
+      "id": "cohere/command-a-plus",
+      "canonicalSlug": "cohere/command-a-plus-05-2026",
+      "input": 0.3,
+      "output": 1.5
+    },
+    {
+      "id": "openai/gpt-6-luna-pro",
+      "canonicalSlug": "openai/gpt-6-luna-pro-20260922",
+      "input": 0.09999999999999999,
+      "output": 0.5
+    },
+    {
+      "id": "openai/gpt-6-luna-pro:batch",
+      "canonicalSlug": "openai/gpt-6-luna-pro-20260922",
+      "input": 0.049999999999999996,
+      "output": 0.25
+    },
+    {
+      "id": "openai/gpt-6-luna",
+      "canonicalSlug": "openai/gpt-6-luna-20260922",
+      "input": 0.09999999999999999,
+      "output": 0.5
+    },
+    {
+      "id": "openai/gpt-6-luna:batch",
+      "canonicalSlug": "openai/gpt-6-luna-20260922",
+      "input": 0.049999999999999996,
+      "output": 0.25
+    },
+    {
+      "id": "openai/gpt-6-sol-pro",
+      "canonicalSlug": "openai/gpt-6-sol-pro-20260922",
+      "input": 2,
+      "output": 10
+    },
+    {
+      "id": "openai/gpt-6-sol-pro:batch",
+      "canonicalSlug": "openai/gpt-6-sol-pro-20260922",
+      "input": 1,
+      "output": 5
+    },
+    {
+      "id": "openai/gpt-6-sol",
+      "canonicalSlug": "openai/gpt-6-sol-20260922",
+      "input": 2,
+      "output": 10
+    },
+    {
+      "id": "openai/gpt-6-sol:batch",
+      "canonicalSlug": "openai/gpt-6-sol-20260922",
+      "input": 1,
+      "output": 5
+    },
+    {
+      "id": "anthropic/claude-opus-5.5",
+      "canonicalSlug": "anthropic/claude-opus-5.5-20260921",
+      "input": 4,
+      "output": 20
+    },
+    {
+      "id": "anthropic/claude-opus-5.5:batch",
+      "canonicalSlug": "anthropic/claude-opus-5.5-20260921",
+      "input": 2,
+      "output": 10
+    },
+    {
+      "id": "xiaomi/mimo-v2.6-pro-ultraspeed",
+      "canonicalSlug": "xiaomi/mimo-v2.6-pro-ultraspeed-20260921",
+      "input": 4.35,
+      "output": 8.7
+    },
+    {
+      "id": "xiaomi/mimo-v2.6-flash",
+      "canonicalSlug": "xiaomi/mimo-v2.6-flash-20260921",
+      "input": 0.14,
+      "output": 0.28
+    },
+    {
+      "id": "xiaomi/mimo-v2.6-pro",
+      "canonicalSlug": "xiaomi/mimo-v2.6-pro-20260921",
+      "input": 0.435,
+      "output": 0.87
+    },
     {
       "id": "x-ai/grok-4.7",
       "canonicalSlug": "x-ai/grok-4.7-20260916",
-      "input": 1.5999999999999999,
-      "output": 4.8
+      "input": 2,
+      "output": 6
+    },
+    {
+      "id": "qwen/qwen3.8-omni-flash",
+      "canonicalSlug": "qwen/qwen3.8-omni-flash-20260918",
+      "input": 0.15,
+      "output": 0.47
     },
     {
       "id": "prism-ml/ternary-bonsai-2-27b",
@@ -28,14 +214,14 @@
     {
       "id": "~deepseek/deepseek-pro-latest",
       "canonicalSlug": "~deepseek/deepseek-pro-latest",
-      "input": 0.57024,
-      "output": 1.7107199999999998
+      "input": 0.2514,
+      "output": 4.199999999999999
     },
     {
       "id": "~deepseek/deepseek-flash-latest",
       "canonicalSlug": "~deepseek/deepseek-flash-latest",
-      "input": 0.12,
-      "output": 0.48
+      "input": 0.026795,
+      "output": 1.2
     },
     {
       "id": "inference-net/schematron-v2-turbo",
@@ -70,8 +256,8 @@
     {
       "id": "~openai/gpt-luna-latest",
       "canonicalSlug": "~openai/gpt-luna-latest",
-      "input": 0.19999999999999998,
-      "output": 1.2
+      "input": 0.09999999999999999,
+      "output": 0.5
     },
     {
       "id": "sakana/fugu-ultra-v2",
@@ -88,20 +274,20 @@
     {
       "id": "inclusionai/ling-3.0-flash-vl",
       "canonicalSlug": "inclusionai/ling-3.0-flash-vl-20260910",
-      "input": 0.06,
-      "output": 0.18
-    },
-    {
-      "id": "inclusionai/ling-3.0-flash-vl:free",
-      "canonicalSlug": "inclusionai/ling-3.0-flash-vl-20260910",
-      "input": 0,
-      "output": 0
+      "input": 0.020999999999999998,
+      "output": 0.061599999999999995
     },
     {
       "id": "deepseek/deepseek-v4.1-flash",
       "canonicalSlug": "deepseek/deepseek-v4.1-flash-20260910",
-      "input": 0.15,
-      "output": 0.6
+      "input": 0.026795,
+      "output": 1.2
+    },
+    {
+      "id": "deepseek/deepseek-v4.1-flash:batch",
+      "canonicalSlug": "deepseek/deepseek-v4.1-flash-20260910",
+      "input": 0.112,
+      "output": 0.33599999999999997
     },
     {
       "id": "inception/mercury-2.5",
@@ -110,16 +296,16 @@
       "output": 0.15
     },
     {
-      "id": "nex-agi/nex-n2.5-mini:free",
+      "id": "nex-agi/nex-n2.5-mini",
       "canonicalSlug": "nex-agi/nex-n2.5-mini-20260908",
-      "input": 0,
-      "output": 0
+      "input": 0.024999999999999998,
+      "output": 0.09999999999999999
     },
     {
-      "id": "nex-agi/nex-n2.5-pro:free",
+      "id": "nex-agi/nex-n2.5-pro",
       "canonicalSlug": "nex-agi/nex-n2.5-pro-20260907",
-      "input": 0,
-      "output": 0
+      "input": 0.075,
+      "output": 0.25
     },
     {
       "id": "openai/gpt-6-astra",
@@ -202,26 +388,20 @@
     {
       "id": "tencent/hy4-preview",
       "canonicalSlug": "tencent/hy4-preview-20260827",
-      "input": 0.834,
-      "output": 2.501
+      "input": 0.7505999999999999,
+      "output": 2.2509
     },
     {
       "id": "inclusionai/ling-3.0-flash-fin",
       "canonicalSlug": "inclusionai/ling-3.0-flash-fin-20260827",
-      "input": 0.06,
-      "output": 0.18
-    },
-    {
-      "id": "inclusionai/ling-3.0-flash-fin:free",
-      "canonicalSlug": "inclusionai/ling-3.0-flash-fin-20260827",
-      "input": 0,
-      "output": 0
+      "input": 0.041999999999999996,
+      "output": 0.12319999999999999
     },
     {
       "id": "~z-ai/glm-flash-latest",
       "canonicalSlug": "~z-ai/glm-flash-latest",
-      "input": 0.075,
-      "output": 0.25
+      "input": 0.0244,
+      "output": 0.5
     },
     {
       "id": "qwen/qwen3.8-flash",
@@ -232,14 +412,14 @@
     {
       "id": "z-ai/glm-5.3-flash",
       "canonicalSlug": "z-ai/glm-5.3-flash-20260826",
-      "input": 0.075,
-      "output": 0.25
+      "input": 0.15,
+      "output": 0.5
     },
     {
       "id": "z-ai/glm-5.3-flash:batch",
       "canonicalSlug": "z-ai/glm-5.3-flash-20260826",
-      "input": 0.075,
-      "output": 0.25
+      "input": 0.06,
+      "output": 0.19999999999999998
     },
     {
       "id": "meta/muse-spark-1.2-contributor",
@@ -250,14 +430,8 @@
     {
       "id": "deepseek/deepseek-v4-flash-vision-exp",
       "canonicalSlug": "deepseek/deepseek-v4-flash-vision-exp-20260821",
-      "input": 0.22,
-      "output": 0.66
-    },
-    {
-      "id": "deepseek/deepseek-v4-flash-vision-exp:batch",
-      "canonicalSlug": "deepseek/deepseek-v4-flash-vision-exp-20260821",
-      "input": 0.11,
-      "output": 0.33
+      "input": 0.21559999999999999,
+      "output": 0.6468
     },
     {
       "id": "tencent/hy-mt2-1.8b",
@@ -274,8 +448,8 @@
     {
       "id": "~z-ai/glm-latest",
       "canonicalSlug": "~z-ai/glm-latest",
-      "input": 0.7728,
-      "output": 2.4288
+      "input": 0.03,
+      "output": 12
     },
     {
       "id": "tencent/hy-mt2-7b",
@@ -286,26 +460,20 @@
     {
       "id": "z-ai/glm-5.3",
       "canonicalSlug": "z-ai/glm-5.3-20260816",
-      "input": 0.9099999999999999,
-      "output": 2.8600000000000003
+      "input": 0.07,
+      "output": 7
     },
     {
       "id": "z-ai/glm-5.3:batch",
       "canonicalSlug": "z-ai/glm-5.3-20260816",
-      "input": 0.7,
-      "output": 2.2
+      "input": 0.44999999999999996,
+      "output": 2
     },
     {
       "id": "qwen/qwen3.8-27b",
       "canonicalSlug": "qwen/qwen3.8-27b-20260814",
-      "input": 0.42,
-      "output": 3
-    },
-    {
-      "id": "qwen/qwen3.8-27b:free",
-      "canonicalSlug": "qwen/qwen3.8-27b-20260814",
-      "input": 0,
-      "output": 0
+      "input": 0.425,
+      "output": 2.5500000000000003
     },
     {
       "id": "dots-studio/dots-3-note-preview:free",
@@ -346,12 +514,6 @@
     {
       "id": "deepseek/deepseek-v4-pro-0813",
       "canonicalSlug": "deepseek/deepseek-v4-pro-20260813",
-      "input": 0.57024,
-      "output": 1.7107199999999998
-    },
-    {
-      "id": "deepseek/deepseek-v4-pro-0813:batch",
-      "canonicalSlug": "deepseek/deepseek-v4-pro-20260813",
       "input": 0.66,
       "output": 1.9800000000000002
     },
@@ -370,8 +532,8 @@
     {
       "id": "nvidia/nemotron-3.5-lightning",
       "canonicalSlug": "nvidia/nemotron-3.5-lightning-20260807",
-      "input": 0.07,
-      "output": 0.19999999999999998
+      "input": 0.06,
+      "output": 0.16
     },
     {
       "id": "nvidia/nemotron-3.5-lightning:free",
@@ -398,12 +560,6 @@
       "output": 1.2
     },
     {
-      "id": "meta/muse-glimmer-30b:batch",
-      "canonicalSlug": "meta/muse-glimmer-30b-20260810",
-      "input": 0.175,
-      "output": 0.75
-    },
-    {
       "id": "meta/muse-spark-1.2",
       "canonicalSlug": "meta/muse-spark-1.2-20260805",
       "input": 1.25,
@@ -412,20 +568,14 @@
     {
       "id": "~deepseek/deepseek-v4-flash-latest",
       "canonicalSlug": "~deepseek/deepseek-v4-flash-latest",
-      "input": 0.04,
-      "output": 0.16
+      "input": 0.009,
+      "output": 1.28
     },
     {
       "id": "deepseek/deepseek-v4-flash-0731",
       "canonicalSlug": "deepseek/deepseek-v4-flash-20260731",
-      "input": 0.04,
-      "output": 0.16
-    },
-    {
-      "id": "deepseek/deepseek-v4-flash-0731:batch",
-      "canonicalSlug": "deepseek/deepseek-v4-flash-20260731",
-      "input": 0.11,
-      "output": 0.33
+      "input": 0.009,
+      "output": 1.28
     },
     {
       "id": "thinkingmachines/inkling-small",
@@ -508,7 +658,7 @@
     {
       "id": "thinkingmachines/inkling",
       "canonicalSlug": "thinkingmachines/inkling-20260715",
-      "input": 1,
+      "input": 0.95,
       "output": 4.05
     },
     {
@@ -520,8 +670,14 @@
     {
       "id": "moonshotai/kimi-k3",
       "canonicalSlug": "moonshotai/kimi-k3-20260715",
-      "input": 3,
-      "output": 15
+      "input": 0.69,
+      "output": 14
+    },
+    {
+      "id": "moonshotai/kimi-k3:batch",
+      "canonicalSlug": "moonshotai/kimi-k3-20260715",
+      "input": 2.2800000000000002,
+      "output": 11.399999999999999
     },
     {
       "id": "meta/muse-spark-1.1",
@@ -616,8 +772,8 @@
     {
       "id": "~x-ai/grok-latest",
       "canonicalSlug": "~x-ai/grok-latest",
-      "input": 1.5999999999999999,
-      "output": 4.8
+      "input": 2,
+      "output": 6
     },
     {
       "id": "aion-labs/aion-3.0-mini",
@@ -694,26 +850,14 @@
     {
       "id": "z-ai/glm-5.2",
       "canonicalSlug": "z-ai/glm-5.2-20260616",
-      "input": 0.6496,
-      "output": 2.0416
-    },
-    {
-      "id": "z-ai/glm-5.2:batch",
-      "canonicalSlug": "z-ai/glm-5.2-20260616",
-      "input": 0.7,
-      "output": 2.2
-    },
-    {
-      "id": "z-ai/glm-5.2:free",
-      "canonicalSlug": "z-ai/glm-5.2-20260616",
-      "input": 0,
-      "output": 0
+      "input": 0.15200000000000002,
+      "output": 12
     },
     {
       "id": "moonshotai/kimi-k2.7-code",
       "canonicalSlug": "moonshotai/kimi-k2.7-code-20260612",
-      "input": 0.7062,
-      "output": 3.21
+      "input": 0.6712,
+      "output": 3.35
     },
     {
       "id": "~anthropic/claude-fable-latest",
@@ -748,8 +892,8 @@
     {
       "id": "nvidia/nemotron-3-ultra-550b-a55b",
       "canonicalSlug": "nvidia/nemotron-3-ultra-550b-a55b-20260604",
-      "input": 0.6,
-      "output": 2.4
+      "input": 0.5,
+      "output": 2.2
     },
     {
       "id": "nvidia/nemotron-3-ultra-550b-a55b:free",
@@ -886,8 +1030,8 @@
     {
       "id": "~moonshotai/kimi-latest",
       "canonicalSlug": "~moonshotai/kimi-latest",
-      "input": 1.7,
-      "output": 8.5
+      "input": 0.6799999999999999,
+      "output": 13
     },
     {
       "id": "~google/gemini-flash-latest",
@@ -928,8 +1072,8 @@
     {
       "id": "qwen/qwen3.6-27b",
       "canonicalSlug": "qwen/qwen3.6-27b-20260422",
-      "input": 0.3,
-      "output": 2
+      "input": 0.32,
+      "output": 3.25
     },
     {
       "id": "openai/gpt-5.5-pro",
@@ -958,14 +1102,14 @@
     {
       "id": "deepseek/deepseek-v4-pro",
       "canonicalSlug": "deepseek/deepseek-v4-pro-20260423",
-      "input": 0.927768,
-      "output": 1.855536
+      "input": 0.20879999999999999,
+      "output": 0.41759999999999997
     },
     {
       "id": "deepseek/deepseek-v4-flash",
       "canonicalSlug": "deepseek/deepseek-v4-flash-20260423",
-      "input": 0.055439999999999996,
-      "output": 0.11087999999999999
+      "input": 0.0009,
+      "output": 1.28
     },
     {
       "id": "tencent/hy3-preview",
@@ -994,8 +1138,8 @@
     {
       "id": "~anthropic/claude-opus-latest",
       "canonicalSlug": "~anthropic/claude-opus-latest",
-      "input": 5,
-      "output": 25
+      "input": 4,
+      "output": 20
     },
     {
       "id": "moonshotai/kimi-k2.6",
@@ -1018,8 +1162,8 @@
     {
       "id": "z-ai/glm-5.1",
       "canonicalSlug": "z-ai/glm-5.1-20260406",
-      "input": 0.966,
-      "output": 3.036
+      "input": 1.4,
+      "output": 4.4
     },
     {
       "id": "google/gemma-4-26b-a4b-it",
@@ -1088,12 +1232,6 @@
       "output": 0
     },
     {
-      "id": "kwaipilot/kat-coder-pro-v2",
-      "canonicalSlug": "kwaipilot/kat-coder-pro-v2-20260327",
-      "input": 0.3,
-      "output": 1.2
-    },
-    {
       "id": "rekaai/reka-edge",
       "canonicalSlug": "rekaai/reka-edge-2603",
       "input": 0.09999999999999999,
@@ -1102,8 +1240,8 @@
     {
       "id": "minimax/minimax-m2.7",
       "canonicalSlug": "minimax/minimax-m2.7-20260318",
-      "input": 0.3,
-      "output": 1.2
+      "input": 0.21,
+      "output": 0.84
     },
     {
       "id": "openai/gpt-5.4-nano",
@@ -1222,8 +1360,8 @@
     {
       "id": "qwen/qwen3.5-35b-a3b",
       "canonicalSlug": "qwen/qwen3.5-35b-a3b-20260224",
-      "input": 0.3125,
-      "output": 1.25
+      "input": 0.08,
+      "output": 0.75
     },
     {
       "id": "qwen/qwen3.5-27b",
@@ -1294,8 +1432,8 @@
     {
       "id": "qwen/qwen3.5-397b-a17b",
       "canonicalSlug": "qwen/qwen3.5-397b-a17b-20260216",
-      "input": 0.55,
-      "output": 3.5
+      "input": 0.44999999999999996,
+      "output": 3
     },
     {
       "id": "minimax/minimax-m2.5",
@@ -1414,8 +1552,8 @@
     {
       "id": "z-ai/glm-4.7",
       "canonicalSlug": "z-ai/glm-4.7-20251222",
-      "input": 0.39999999999999997,
-      "output": 1.75
+      "input": 0.6,
+      "output": 2.2
     },
     {
       "id": "google/gemini-3-flash-preview",
@@ -1432,8 +1570,8 @@
     {
       "id": "nvidia/nemotron-3-nano-30b-a3b",
       "canonicalSlug": "nvidia/nemotron-3-nano-30b-a3b",
-      "input": 0.06,
-      "output": 0.24
+      "input": 0.049999999999999996,
+      "output": 0.19999999999999998
     },
     {
       "id": "openai/gpt-5.2-chat",
@@ -1520,6 +1658,12 @@
       "output": 0.09999999999999999
     },
     {
+      "id": "mistralai/mistral-large-2512",
+      "canonicalSlug": "mistralai/mistral-large-2512",
+      "input": 0.5,
+      "output": 1.5
+    },
+    {
       "id": "mistralai/mistral-large-2512:batch",
       "canonicalSlug": "mistralai/mistral-large-2512",
       "input": 0.25,
@@ -1528,8 +1672,8 @@
     {
       "id": "deepseek/deepseek-v3.2",
       "canonicalSlug": "deepseek/deepseek-v3.2-20251201",
-      "input": 0.26899999999999996,
-      "output": 0.39999999999999997
+      "input": 0.28,
+      "output": 0.42
     },
     {
       "id": "anthropic/claude-opus-4.5",
@@ -1606,8 +1750,8 @@
     {
       "id": "minimax/minimax-m2",
       "canonicalSlug": "minimax/minimax-m2",
-      "input": 0.255,
-      "output": 1.02
+      "input": 0.3,
+      "output": 1.2
     },
     {
       "id": "qwen/qwen3-vl-32b-instruct",
@@ -1672,8 +1816,8 @@
     {
       "id": "qwen/qwen3-vl-30b-a3b-instruct",
       "canonicalSlug": "qwen/qwen3-vl-30b-a3b-instruct",
-      "input": 0.13,
-      "output": 0.52
+      "input": 0.15,
+      "output": 0.6
     },
     {
       "id": "openai/gpt-5-pro",
@@ -1768,7 +1912,7 @@
     {
       "id": "qwen/qwen3-next-80b-a3b-instruct",
       "canonicalSlug": "qwen/qwen3-next-80b-a3b-instruct-2509",
-      "input": 0.09,
+      "input": 0.09999999999999999,
       "output": 1.1
     },
     {
@@ -1858,14 +2002,26 @@
     {
       "id": "openai/gpt-oss-120b",
       "canonicalSlug": "openai/gpt-oss-120b",
-      "input": 0.15,
-      "output": 0.6
+      "input": 0.037,
+      "output": 0.16999999999999998
+    },
+    {
+      "id": "openai/gpt-oss-120b:batch",
+      "canonicalSlug": "openai/gpt-oss-120b",
+      "input": 0.0296,
+      "output": 0.136
     },
     {
       "id": "openai/gpt-oss-20b",
       "canonicalSlug": "openai/gpt-oss-20b",
-      "input": 0.03,
-      "output": 0.13
+      "input": 0.018,
+      "output": 0.09
+    },
+    {
+      "id": "openai/gpt-oss-20b:batch",
+      "canonicalSlug": "openai/gpt-oss-20b",
+      "input": 0.024,
+      "output": 0.112
     },
     {
       "id": "anthropic/claude-opus-4.1",
@@ -1900,8 +2056,8 @@
     {
       "id": "qwen/qwen3-30b-a3b-instruct-2507",
       "canonicalSlug": "qwen/qwen3-30b-a3b-instruct-2507",
-      "input": 0.04815,
-      "output": 0.19305
+      "input": 0.09999999999999999,
+      "output": 0.3
     },
     {
       "id": "z-ai/glm-4.5",
@@ -1948,8 +2104,8 @@
     {
       "id": "qwen/qwen3-235b-a22b-2507",
       "canonicalSlug": "qwen/qwen3-235b-a22b-07-25",
-      "input": 0.0875,
-      "output": 0.35
+      "input": 0.09,
+      "output": 0.55
     },
     {
       "id": "moonshotai/kimi-k2",
@@ -1996,7 +2152,7 @@
     {
       "id": "minimax/minimax-m1",
       "canonicalSlug": "minimax/minimax-m1",
-      "input": 0.39999999999999997,
+      "input": 0.55,
       "output": 2.2
     },
     {
@@ -2158,8 +2314,8 @@
     {
       "id": "meta-llama/llama-4-maverick",
       "canonicalSlug": "meta-llama/llama-4-maverick-17b-128e-instruct",
-      "input": 0.19999999999999998,
-      "output": 0.7999999999999999
+      "input": 0.1875,
+      "output": 0.6525
     },
     {
       "id": "meta-llama/llama-4-scout",
@@ -2170,8 +2326,8 @@
     {
       "id": "deepseek/deepseek-chat-v3-0324",
       "canonicalSlug": "deepseek/deepseek-chat-v3-0324",
-      "input": 0.25,
-      "output": 1
+      "input": 0.29,
+      "output": 1.1400000000000001
     },
     {
       "id": "openai/o1-pro",
@@ -2294,12 +2450,6 @@
       "output": 1
     },
     {
-      "id": "deepseek/deepseek-r1-distill-llama-70b",
-      "canonicalSlug": "deepseek/deepseek-r1-distill-llama-70b",
-      "input": 0.7999999999999999,
-      "output": 0.7999999999999999
-    },
-    {
       "id": "deepseek/deepseek-r1",
       "canonicalSlug": "deepseek/deepseek-r1",
       "input": 0.7,
@@ -2320,8 +2470,8 @@
     {
       "id": "deepseek/deepseek-chat",
       "canonicalSlug": "deepseek/deepseek-chat-v3",
-      "input": 0.32,
-      "output": 0.8899999999999999
+      "input": 0.2574,
+      "output": 1.0287
     },
     {
       "id": "sao10k/l3.3-euryale-70b",
@@ -2344,8 +2494,8 @@
     {
       "id": "meta-llama/llama-3.3-70b-instruct",
       "canonicalSlug": "meta-llama/llama-3.3-70b-instruct",
-      "input": 0.09999999999999999,
-      "output": 0.32
+      "input": 0.22,
+      "output": 0.5
     },
     {
       "id": "amazon/nova-lite-v1",
@@ -2544,12 +2694,6 @@
       "canonicalSlug": "openai/gpt-4-turbo",
       "input": 5,
       "output": 15
-    },
-    {
-      "id": "anthropic/claude-3-haiku",
-      "canonicalSlug": "anthropic/claude-3-haiku",
-      "input": 0.25,
-      "output": 1.25
     },
     {
       "id": "mistralai/mistral-large",

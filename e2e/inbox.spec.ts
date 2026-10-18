@@ -95,7 +95,8 @@ test("views indented message threads and carries reply context into the composer
 test("archives every inbox message represented by the open thread", async ({ page }) => {
 	const archivedRequests: string[] = [];
 	page.on("request", (request) => {
-		if (request.method() === "POST" && request.url().includes("/archive")) {
+		if (request.method() === "POST" && (request.url().includes("/archive") ||
+			request.url().includes("/actions") && request.postDataJSON()?.action === "archive")) {
 			archivedRequests.push(request.url());
 		}
 	});
@@ -130,7 +131,8 @@ test("keeps Project Mail on its own customizable collection projection", async (
 test("archives a conversation from its rendered card", async ({ page }) => {
 	const archivedRequests: string[] = [];
 	page.on("request", (request) => {
-		if (request.method() === "POST" && request.url().includes("/archive")) {
+		if (request.method() === "POST" && (request.url().includes("/archive") ||
+			request.url().includes("/actions") && request.postDataJSON()?.action === "archive")) {
 			archivedRequests.push(request.url());
 		}
 	});

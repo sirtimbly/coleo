@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "server": { "distribution": "operator", "commands": ["coleo-server", "coleo"], "runtime": "bun" },
+  "agent": { "distribution": "operator", "commands": ["coleo-agent"], "runtime": "bun" },
+  "client": { "distribution": "client", "commands": ["coleo-client", "coleo-inbox"], "runtime": "uv" },
+  "tui": { "distribution": "client", "commands": ["coleo-client", "coleo-inbox"], "extra": "tui", "runtime": "uv" },
+  "web": { "distribution": "web", "commands": ["coleo-web"], "launch": "coleo-client web", "runtime": "bun", "dependencies": ["client"] },
+  "macos": { "distribution": "macos", "minimumOS": "14.0" }
+}

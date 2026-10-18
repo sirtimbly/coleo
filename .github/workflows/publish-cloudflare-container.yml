@@ -81,7 +81,7 @@ jobs:
       - name: Resolve Arm Host image tag
         id: arm-image
         run: |
-          tag=$(bun run src/scripts/cloudflare-agent-image-tag.ts)
+          tag=$(bun run server/src/scripts/cloudflare-agent-image-tag.ts)
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           if bunx wrangler@4.110.0 containers images list --json \
             | jq -e --arg tag "$tag" '.[] | select(.name == "coleo-agent") | .tags | index($tag)' >/dev/null; then

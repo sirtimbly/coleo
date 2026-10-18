@@ -1,0 +1,2510 @@
+import { isSessionActive } from './session-heartbeat';
+import { ApiRequestError } from './workspace-startup';
+import type { FleetVersions } from "../../../../server/src/shared/version-compatibility";
+/**
+ * API Client for Coleo Observatory.
+ *
+ * Domain requests and workbench-persistence requests share this authenticated
+ * client so saved views and layouts work in direct and Reef-hosted deployments.
+ */
+
+import type {
+  ArmConfig as SharedArmConfig,
+  ArmConfigSummary as SharedArmConfigSummary,
+  ColeoConfig as SharedColeoConfig,
+  StatusReport as SharedStatusReport,
+  TaskAttachment as SharedTaskAttachment,
+  TaskComment as SharedTaskComment,
+  TaskSummary as SharedTaskSummary,
+  TaskDiff as SharedTaskDiff,
+  TaskWorkAuthorType as SharedTaskWorkAuthorType,
+} from '../../../../server/src/types';
+import type {
+  ViewDefinition,
+  ArmRun,
+  ProjectionFilter,
+  WorkbenchBundle,
+  WorkbenchProfile,
+  WorkspaceLayoutRecord,
+} from '@/workbench/types';
+import type {
+  CardActionRequest,
+  CardActionResult,
+  WorkbenchAttention,
+  WorkbenchInboxRecord,
+} from '../../../../server/src/types/adaptive-cards';
+import type { MessagingCollectionPage } from '../../../../server/src/workbench/messaging-collection';
+import type { MessagingQuery, MessagingMailbox } from '../../../../server/src/workbench/messaging-query';
+import type { MailThreadDetail } from '../../../../server/src/workbench/mail-thread-detail';
+import type { ResolvedNamedResourceView } from '../../../../server/src/workbench/named-resource-views';
+
+const API_BASE = '/api';
+
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
+
+export interface JsonObject {
+  [key: string]: JsonValue | undefined;
+}
+
+export interface ResourceSearchMatches {
+  total: number;
+  filtered: number;
+  hidden: number;
+}
+
+export function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export interface UiMetadata extends JsonObject {
+  tags?: string[];
+  color?: string;
+  bold?: boolean;
+}
+
+export interface TaskLlmMessage extends JsonObject {
+  role: 'user' | 'assistant';
+  content: string;
+  at: string;
+}
+
+export interface TaskLlmMetadata extends JsonObject {
+  originalPrompt?: string;
+  generatedDescription?: string;
+  history?: TaskLlmMessage[];
+}
+
+export interface TaskUiMetadata extends UiMetadata {
+  llm?: TaskLlmMetadata;
+}
+
+export interface TaskMetadata extends JsonObject {
+  ui?: TaskUiMetadata;
+}
+
+export type BugUiMetadata = UiMetadata;
+
+export interface BugMetadata extends JsonObject {
+  ui?: BugUiMetadata;
+}
+
+interface ApiError {
+  error: string;
+  message?: string;
+}
+
+export interface OnboardingStatus {
+  ready: boolean;
+  projectDir: string;
+  repository: {
+    checkedOut: boolean;
+    remoteUrl: string | null;
+    branch: string | null;
+    commit: {
+      hash: string;
+      shortHash: string;
+      author: string;
+      date: string;
+      subject: string;
+    } | null;
+    trackedFileCount: number | null;
+    dirtyFileCount: number | null;
+    topLevelEntries: string[];
+  };
+  ssh: {
+    configured: boolean;
+    publicKey: string | null;
+  };
+}
+
+export type BrainConfigResponse = Omit<ColeoConfig['brain'], 'apiKey'> & {
+  apiKeyConfigured: boolean;
+};
+
+export interface BrainModel {
+  id: string;
+  name: string;
+}
+
+export interface WorkspaceTextFile {
+  path: string;
+  content: string;
+  contentHash: string;
+  size: number;
+  modifiedAt: string;
+  readOnly?: boolean;
+}
+
+export interface ProjectPlanCandidate extends WorkspaceTextFile {
+  score: number;
+  reasons: string[];
+}
+
+export interface ProjectPlanDocument extends WorkspaceTextFile {
+  recentlyChanged: boolean;
+}
+
+export interface SetupTemplateFile extends WorkspaceTextFile {
+  format: 'yaml' | 'toml' | 'jinja';
+}
+
+export interface ProjectSetupStatus {
+  required: boolean;
+  completed: boolean;
+  taskCount: number;
+  canonicalPlan: WorkspaceTextFile | null;
+  canonicalTaskCount: number;
+  candidates: ProjectPlanCandidate[];
+  projectDocuments: ProjectPlanDocument[];
+  templateFiles: SetupTemplateFile[];
+  projectTree: string[];
+  recommendedPath: string;
+  defaultContent: string;
+  defaultTemplateContent: string;
+}
+
+export interface PreparedTaskDefinition {
+  subject: string;
+  description: string;
+  context: string;
+  requirements: string[];
+  acceptanceCriteria: string[];
+  dependencies: string[];
+  outputs: string[];
+  priority: Task['priority'];
+  classification: string;
+  phase: string;
+  estimatedEffort: string;
+  sourceRef?: string;
+}
+
+class ApiClient {
+  private apiKey: string | null = null;
+
+  setApiKey(key: string) {
+    this.apiKey = key;
+    localStorage.setItem('coleo_api_key', key);
+  }
+
+  getApiKey(): string | null {
+    if (!this.apiKey) {
+      this.apiKey = localStorage.getItem('coleo_api_key');
+    }
+    return this.apiKey;
+  }
+
+  clearApiKey() {
+    this.apiKey = null;
+    localStorage.removeItem('coleo_api_key');
+  }
+
+  private async request<T>(
+    path: string,
+    options: RequestInit = {}
+  ): Promise<T> {
+    const headers = new Headers(options.headers);
+    if (isSessionActive()) headers.set("X-Reef-User-Active", "1");
+    if (!(options.body instanceof FormData) && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+
+    const apiKey = this.getApiKey();
+    if (apiKey) {
+      headers.set('X-API-Key', apiKey);
+    }
+
+    const response = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers,
+    });
+
+    if (!response.ok) {
+      const error: ApiError = await response.json().catch(() => ({
+        error: 'Request failed',
+        message: response.statusText,
+      }));
+      throw new ApiRequestError(error.message || error.error, response.status,
+        (error as ApiError & { code?: string }).code);
+    }
+
+    return response.json();
+  }
+
+  // Health & Status
+  async health() {
+    return this.request<{ status: string; timestamp: string }>('/health');
+  }
+
+  async getOnboardingStatus(signal?: AbortSignal) {
+    return this.request<OnboardingStatus>('/onboarding', { signal });
+  }
+
+  async generateOnboardingSshKey() {
+    return this.request<OnboardingStatus>('/onboarding/ssh-key', {
+      method: 'POST',
+    });
+  }
+
+  async cloneOnboardingRepository(data: { repositoryUrl: string; branch?: string }) {
+    return this.request<OnboardingStatus>('/onboarding/clone', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getProjectSetupStatus() {
+    return this.request<ProjectSetupStatus>('/project-setup');
+  }
+
+  async getProjectSetupFile(path: string) {
+    return this.request<{ file: WorkspaceTextFile }>(`/project-setup/file?path=${encodeURIComponent(path)}`);
+  }
+
+  async saveProjectSetupFile(data: { path: string; content: string; expectedHash?: string | null; kind: 'plan' | 'template' | 'document' }) {
+    return this.request<{ file: WorkspaceTextFile }>('/project-setup/file', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async saveProjectPlanFile(data: { path: string; content: string; expectedHash?: string | null }) {
+    return this.saveProjectSetupFile({ ...data, kind: 'plan' });
+  }
+
+  async prepareProjectPlan(data: { sourcePath: string; content: string; expectedHash?: string | null }) {
+    return this.request<{
+      completed: boolean;
+      mode: 'ai' | 'structured';
+      formatterError?: string;
+      canonicalPlan: WorkspaceTextFile;
+      taskCount: number;
+    }>('/project-setup/prepare', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async regenerateAllTasks(explanation: string) {
+    return this.request<{
+      deletedCount: number;
+      createdCount: number;
+      preservedCompletedCount: number;
+      mode: 'ai' | 'structured';
+    }>('/project-setup/regenerate-tasks', {
+      method: 'POST',
+      body: JSON.stringify({ explanation }),
+    });
+  }
+
+  async search(params: {
+    query: string;
+    types?: string[];
+    limit?: number;
+    keywordWeight?: number;
+    semanticWeight?: number;
+  }) {
+    return this.request<SearchResponse>('/search', {
+      method: 'POST',
+      body: JSON.stringify({
+        query: params.query,
+        types: params.types,
+        limit: params.limit ?? 20,
+        // Prefer keyword for command-palette snappiness; semantic is optional/slow.
+        keywordWeight: params.keywordWeight ?? 0.85,
+        semanticWeight: params.semanticWeight ?? 0.15,
+      }),
+    });
+  }
+
+  async status() {
+    return this.request<{
+      status: string;
+      version: string;
+      versions?: FleetVersions;
+      cwd: string;
+      projectName: string;
+      uptime: number;
+      brain: {
+        running: boolean;
+        lastPoll?: string;
+        status?: string;
+      };
+      arms: {
+        total: number;
+        healthy: number;
+        idle: number;
+        stuck: number;
+        stale: number;
+        details: Array<{
+          id: string;
+          name: string;
+          status: string;
+          domain: string;
+          currentTask?: string;
+          lastActivity?: string;
+          lastHeartbeat?: string;
+          health: "healthy" | "idle" | "stuck" | "stale" | "unknown";
+        }>;
+      };
+      proposals: { open: number };
+      activity: { last24h: number };
+      infrastructure: {
+        database: { healthy: boolean; error?: string };
+        nats: { healthy: boolean; optional: boolean; error?: string };
+        maildir: { healthy: boolean; error?: string };
+        qdrant: { healthy: boolean; optional: boolean; error?: string };
+        indexer: { healthy: boolean; optional: boolean; running: boolean; error?: string };
+      };
+      timestamp: string;
+    }>('/status');
+  }
+
+  async config() {
+    return this.request<{
+      brain: { pollIntervalMs: number; maxArms: number };
+      version: string;
+    }>('/config');
+  }
+
+  // Full Config API
+  async getFullConfig() {
+    return this.request<{ config: ColeoConfig }>('/config');
+  }
+
+  async updateConfig(data: Partial<ColeoConfig>) {
+    return this.request<{ config: ColeoConfig }>('/config', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getDefaults() {
+    return this.request<{ defaults: ColeoConfig['defaults'] }>('/config/defaults');
+  }
+
+  async updateDefaults(data: Partial<ColeoConfig['defaults']>) {
+    return this.request<{ defaults: ColeoConfig['defaults'] }>('/config/defaults', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateBrainConfig(data: Partial<ColeoConfig['brain']>) {
+    return this.request<{ brain: BrainConfigResponse }>('/config/brain', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getBrainTemplate(name: string) {
+    return this.request<{ name: string; content: string; path: string }>(`/config/brain/templates/${encodeURIComponent(name)}`);
+  }
+
+  async getBrainModelConfig() {
+    return this.request<{ brain: BrainConfigResponse }>('/config/brain');
+  }
+
+  async getBrainModels() {
+    return this.request<{ models: BrainModel[] }>('/config/brain/models');
+  }
+
+  // Mail Config
+  async getMailConfig() {
+    return this.request<{ mail: ColeoConfig['mail'] }>('/config/mail');
+  }
+
+  async updateMailConfig(data: Partial<ColeoConfig['mail']>) {
+    return this.request<{ mail: ColeoConfig['mail'] }>('/config/mail', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Arm Config Files
+  async listArmConfigs() {
+    return this.request<{ arms: ArmConfigSummary[] }>('/config/arms');
+  }
+
+  async getArmConfig(name: string) {
+    return this.request<{ filename: string; config: ArmConfig; raw: string }>(`/config/arms/${name}`);
+  }
+
+  async updateArmConfig(name: string, data: { config?: ArmConfig; raw?: string }) {
+    return this.request<{ filename: string; config: ArmConfig; raw: string }>(`/config/arms/${name}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteArmConfig(name: string) {
+    return this.request<{ deleted: boolean; filename: string }>(`/config/arms/${name}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // OpenCode Providers (served from the API's cached local OpenCode catalog)
+  async getOpenCodeProviders() {
+    return this.request<{
+      providers: OpenCodeProvider[];
+      connected: string[];
+      default?: Record<string, string>;
+      error?: string;
+      message?: string;
+      fallback?: boolean;
+      cached?: boolean;
+      cachedAt?: string;
+      source?: 'live' | 'cache' | 'fallback';
+    }>('/opencode/providers');
+  }
+
+  async getAgentOpenCodeProviders(agentId: string) {
+    return this.request<{ providers: OpenCodeProvider[] }>(
+      `/opencode/agents/${encodeURIComponent(agentId)}/providers`,
+    );
+  }
+
+  async setAgentOpenCodeApiKey(agentId: string, providerId: string, apiKey: string) {
+    return this.request<{ providers: OpenCodeProvider[] }>(
+      `/opencode/agents/${encodeURIComponent(agentId)}/providers/${encodeURIComponent(providerId)}/api-key`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ apiKey }),
+      },
+    );
+  }
+
+  async listAgents() {
+    return this.request<{ agents: AgentInfo[] }>('/agents');
+  }
+
+  async getAgentProviderStatus() {
+    return this.request<{ hosts: AgentProviderStatus[] }>('/agents/providers');
+  }
+
+  async listArmTemplates() {
+    return this.request<{ templates: ArmTemplateSummary[] }>('/arms/templates');
+  }
+
+  // Arms
+  async listArms() {
+    return this.request<{ arms: Arm[] }>('/arms');
+  }
+
+  async getArm(id: string) {
+    return this.request<{ arm: Arm }>(`/arms/${id}`);
+  }
+
+  async createArm(data: Partial<Arm>) {
+    return this.request<{ arm: Arm }>('/arms', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async spawnArm(id: string, data: SpawnArmRequest = {}) {
+    return this.request<SpawnArmResponse>(`/arms/${id}/spawn`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async recoverArm(id: string, data: SpawnArmRequest = {}) {
+    return this.request<SpawnArmResponse>(`/arms/${id}/recover`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async markArmStuck(id: string) {
+    return this.request<{ arm: Arm }>(`/arms/${encodeURIComponent(id)}/mark-stuck`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async updateArm(id: string, data: Partial<Arm>) {
+    return this.request<{ arm: Arm }>(`/arms/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteArm(id: string) {
+    return this.request<{ deleted: boolean }>(`/arms/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getArmMessages(id: string, limit = 50) {
+    return this.request<{
+      messages: ArmMessage[];
+      sessionId?: string;
+      truncated?: boolean;
+      error?: string;
+    }>(`/arms/${encodeURIComponent(id)}/messages?limit=${limit}`);
+  }
+
+  async getArmState(id: string) {
+    return this.request<{
+      state: string;
+      hasSession: boolean;
+      distributed?: boolean;
+    }>(`/arms/${encodeURIComponent(id)}/state`);
+  }
+
+  async getArmTodos(id: string) {
+    return this.request<{
+      todos: ArmTodo[];
+      error?: string;
+    }>(`/arms/${id}/todos`);
+  }
+
+  async getArmStatus(id: string) {
+    return this.request<{
+      status: string;
+      opencodeStatus: { status: string; error?: string } | null;
+      sessionId?: string;
+      error?: string;
+    }>(`/arms/${id}/status`);
+  }
+
+  async sendArmPrompt(data: {
+    armId: string;
+    prompt: string;
+    interrupt?: boolean;
+    attachments?: TaskAttachment[];
+  }) {
+    const { armId, ...body } = data;
+    return this.request<{ success: boolean; message: string; distributed?: boolean }>(`/arms/${armId}/prompt`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async updateArmMetrics(id: string, data: {
+    tokens?: { input?: number; output?: number };
+    cost?: number;
+    currentTask?: { id: string; subject: string } | null;
+  }) {
+    return this.request<{ success: boolean }>(`/arms/${id}/metrics`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  // SSE Event stream URL for arm events (includes API key as query param since EventSource can't send headers)
+  getArmEventsUrl(id: string): string {
+    const apiKey = this.getApiKey();
+    const params = new URLSearchParams();
+    if (apiKey) {
+      params.set('api_key', apiKey);
+    }
+    return `${API_BASE}/arms/${id}/events?${params.toString()}`;
+  }
+
+  // Activity
+  async listActivity(params?: {
+    limit?: number;
+    offset?: number;
+    actor?: string;
+    producer?: string;
+    beforeSequence?: number;
+  }) {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
+    if (params?.actor) query.set('actor', params.actor);
+    if (params?.producer) query.set('producer', params.producer);
+    if (params?.beforeSequence) query.set('beforeSequence', params.beforeSequence.toString());
+
+    const queryStr = query.toString();
+    return this.request<{
+      activity: ActivityEntry[];
+      pagination: {
+        limit: number;
+        offset: number;
+        total: number;
+        hasMore: boolean;
+        nextCursor: number | null;
+      };
+    }>(`/activity${queryStr ? `?${queryStr}` : ''}`);
+  }
+
+  async getTranscriptIndexerHealth(params?: { stream?: string; durable?: string; staleMs?: number }) {
+    const query = new URLSearchParams();
+    if (params?.stream) query.set('stream', params.stream);
+    if (params?.durable) query.set('durable', params.durable);
+    if (params?.staleMs) query.set('staleMs', params.staleMs.toString());
+    const queryStr = query.toString();
+    return this.request<TranscriptIndexerHealth>(
+      `/activity/indexer-health${queryStr ? `?${queryStr}` : ''}`
+    );
+  }
+
+  async getCommandQueueHealth(params?: { stream?: string; durable?: string; staleMs?: number }) {
+    const query = new URLSearchParams();
+    if (params?.stream) query.set('stream', params.stream);
+    if (params?.durable) query.set('durable', params.durable);
+    if (params?.staleMs) query.set('staleMs', params.staleMs.toString());
+    const queryStr = query.toString();
+    return this.request<CommandQueueHealth>(
+      `/activity/command-queue-health${queryStr ? `?${queryStr}` : ''}`
+    );
+  }
+
+  // Brain
+  async getBrainStatus() {
+    return this.request<{
+      brain: {
+        status: string;
+        lastPollAt: string | null;
+        pollIntervalMs: number;
+        activeArmsCount: number;
+        pendingTasksCount: number;
+        completedToday: number;
+        uptime: number | null;
+        plan: {
+          status: 'blocked' | 'healthy' | 'pending';
+          detail: string;
+          blockedTaskCount: number;
+          blockedArmCount: number;
+          taskCount: number;
+			nextStep: string | null;
+        };
+        modelAccess: {
+          status: 'available' | 'blocked' | 'unknown';
+          issueCode: 'insufficient_credits' | null;
+          provider: string | null;
+          message: string | null;
+          actionLabel: string | null;
+          actionUrl: string | null;
+          checkedAt: string | null;
+        };
+      };
+    }>('/brain/status');
+  }
+
+  async startBrain() {
+    return this.request<{ started: boolean; status: string }>('/brain/start', {
+      method: 'POST',
+    });
+  }
+
+  async stopBrain() {
+    return this.request<{ stopped: boolean; status: string }>('/brain/stop', {
+      method: 'POST',
+    });
+  }
+
+  async getBrainConfig() {
+    return this.request<{
+      brain: {
+        pollIntervalMs: number;
+        maxArms: number;
+        heartbeatTimeoutSeconds: number;
+      };
+    }>('/brain/config');
+  }
+
+  async sendBrainMessage(data: {
+    message: string;
+    priority?: 'critical' | 'high' | 'normal' | 'low';
+    domain?: string;
+    inReplyTo?: string;
+    threadId?: string;
+    subject?: string;
+    attachments?: TaskAttachment[];
+  }) {
+    return this.request<{ sent: boolean; messageId: string; subject: string }>('/brain/message', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async uploadImage(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.request<{ attachment: TaskAttachment }>('/uploads/images', {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  // Mail
+  async listInbox(params?: { limit?: number; offset?: number }) {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
+    const queryStr = query.toString();
+    return this.request<{
+      messages: MailMessage[];
+      pagination: { limit: number; offset: number; total: number; unread: number };
+    }>(`/mail/inbox${queryStr ? `?${queryStr}` : ''}`);
+  }
+
+  async listSent(params?: { limit?: number; offset?: number }) {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
+    const queryStr = query.toString();
+    return this.request<{
+      messages: MailMessage[];
+      pagination: { limit: number; offset: number; total: number };
+    }>(`/mail/sent${queryStr ? `?${queryStr}` : ''}`);
+  }
+
+  async listArchive(params?: { limit?: number; offset?: number }) {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
+    const queryStr = query.toString();
+    return this.request<{
+      messages: MailMessage[];
+      pagination: { limit: number; offset: number; total: number };
+    }>(`/mail/archive${queryStr ? `?${queryStr}` : ''}`);
+  }
+
+  async sendMail(data: { from: string; to: string; subject: string; body: string; headers?: Record<string, string> }) {
+    return this.request<{ message: MailMessage }>('/mail/send', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async markMailRead(id: string) {
+    return this.request<{ success: boolean }>(`/mail/inbox/${id}/read`, {
+      method: 'POST',
+    });
+  }
+
+  async archiveMail(id: string) {
+    return this.request<{ success: boolean }>(`/mail/inbox/${id}/archive`, {
+      method: 'POST',
+    });
+  }
+
+  // Status Reports
+  async listStatusReports(params?: {
+    taskId?: string;
+    armId?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    const query = new URLSearchParams();
+    if (params?.taskId) query.set('taskId', params.taskId);
+    if (params?.armId) query.set('armId', params.armId);
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
+    const queryStr = query.toString();
+    return this.request<{
+      reports: StatusReport[];
+      pagination: { limit: number; offset: number; total: number };
+    }>(`/status-reports${queryStr ? `?${queryStr}` : ''}`);
+  }
+
+  async getStatusReport(id: string) {
+    return this.request<{ report: StatusReport }>(`/status-reports/${id}`);
+  }
+
+  async getStatusReportStats() {
+    return this.request<{
+      statusDistribution: Array<{ status: string; count: number }>;
+      recentReports: number;
+      reportsByArm: Array<{ armId: string; count: number }>;
+    }>('/status-reports/stats');
+  }
+
+  // Status history (Qdrant hybrid semantic search)
+  async searchStatusHistory(params: {
+    query: string;
+    armIds?: string[];
+    eventTypes?: string[];
+    taskId?: string;
+    bugId?: string;
+    classification?: string;
+    from?: string;
+    to?: string;
+    daysBack?: number;
+    limit?: number;
+    keywordWeight?: number;
+    semanticWeight?: number;
+  }) {
+    const filters: Record<string, unknown> = {};
+    if (params.armIds?.length) filters.arm_ids = params.armIds;
+    if (params.eventTypes?.length) filters.event_types = params.eventTypes;
+    if (params.taskId) filters.task_id = params.taskId;
+    if (params.bugId) filters.bug_id = params.bugId;
+    if (params.classification) filters.classification = params.classification;
+    if (params.from) {
+      filters.from = params.from;
+    } else if (params.daysBack !== undefined) {
+      filters.from = new Date(Date.now() - params.daysBack * 24 * 60 * 60 * 1000).toISOString();
+    }
+    if (params.to) filters.to = params.to;
+
+    return this.request<StatusHistorySearchResponse>('/status-history/search', {
+      method: 'POST',
+      body: JSON.stringify({
+        query: params.query,
+        filters,
+        limit: params.limit ?? 20,
+        keywordWeight: params.keywordWeight,
+        semanticWeight: params.semanticWeight,
+        include_context: true,
+      }),
+    });
+  }
+
+  async getStatusHistoryStats(period = 'all') {
+    return this.request<{
+      period: string;
+      healthy: boolean;
+      collectionExists: boolean;
+      pointsCount: number;
+    }>(`/status-history/stats?period=${encodeURIComponent(period)}`);
+  }
+
+  // Bugs
+  async listBugs(params?: {
+    source?: string;
+    status?: string;
+    priority?: string;
+    assignee?: string;
+    search?: string;
+    tags?: string[];
+    viewFilters?: ProjectionFilter[];
+    limit?: number;
+    offset?: number;
+  }, signal?: AbortSignal) {
+    const query = new URLSearchParams();
+    if (params?.source) query.set('source', params.source);
+    if (params?.status) query.set('status', params.status);
+    if (params?.priority) query.set('priority', params.priority);
+    if (params?.assignee) query.set('assignee', params.assignee);
+    if (params?.search) query.set('search', params.search);
+    if (params?.tags?.length) query.set('tags', params.tags.join(','));
+    if (params?.viewFilters?.length) query.set('viewFilters', JSON.stringify(params.viewFilters));
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
+    const queryStr = query.toString();
+    return this.request<{
+      bugs: Bug[];
+      pagination: { limit: number; offset: number; total: number };
+      searchMatches?: ResourceSearchMatches;
+    }>(`/bugs${queryStr ? `?${queryStr}` : ''}`, { signal });
+  }
+
+  async getBug(id: string) {
+    return this.request<{ bug: Bug }>(`/bugs/${id}`);
+  }
+
+  async createBug(bug: {
+    title: string;
+    description: string;
+    source: "arm_reported" | "human_reported" | "system_detected";
+    sourceTaskId?: string;
+    priority?: "low" | "medium" | "high" | "critical";
+    errorDetails?: string;
+    metadata?: BugMetadata;
+  }) {
+    return this.request<{ bug: Bug }>(`/bugs`, {
+      method: 'POST',
+      body: JSON.stringify(bug),
+    });
+  }
+
+  async updateBug(id: string, updates: {
+    title?: string;
+    description?: string;
+    status?: Bug['status'];
+    priority?: Bug['priority'];
+    assigneeArmId?: string;
+    blockers?: string[];
+    resolution?: string;
+    humanNotified?: boolean;
+    metadata?: BugMetadata;
+  }) {
+    return this.request<{ success: boolean }>(`/bugs/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async deleteBug(id: string) {
+    return this.request<{ success: boolean }>(`/bugs/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getBugStats() {
+    return this.request<{
+      bySource: Record<string, number>;
+      byStatus: Record<string, number>;
+      byPriority: Record<string, number>;
+      recent24h: number;
+      unresolved: number;
+    }>('/bugs/stats');
+  }
+
+  async reorderBug(bugId: string, toSortOrder: number) {
+    return this.request<{ success: boolean }>('/bugs/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ bugId, toSortOrder }),
+    });
+  }
+
+  // Discoveries
+  async listDiscoveries(params?: {
+    armId?: string;
+    kind?: string;
+    severity?: string;
+    status?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    const query = new URLSearchParams();
+    if (params?.armId) query.set('armId', params.armId);
+    if (params?.kind) query.set('kind', params.kind);
+    if (params?.severity) query.set('severity', params.severity);
+    if (params?.status) query.set('status', params.status);
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
+    const queryStr = query.toString();
+    return this.request<{
+      discoveries: Discovery[];
+      pagination: { limit: number; offset: number; total: number };
+    }>(`/discoveries${queryStr ? `?${queryStr}` : ''}`);
+  }
+
+  async getDiscovery(id: string) {
+    return this.request<{ discovery: Discovery }>(`/discoveries/${id}`);
+  }
+
+  async updateDiscovery(id: string, updates: {
+    status: string;
+  }) {
+    return this.request<{ success: boolean }>(`/discoveries/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async getDiscoveryStats() {
+    return this.request<{
+      bySeverity: Record<string, number>;
+      byKind: Record<string, number>;
+      byStatus: Record<string, number>;
+      recent24h: number;
+    }>('/discoveries/stats');
+  }
+
+  // Tasks
+  async listTasks(params?: {
+    status?: string;
+    priority?: string;
+    domain?: string;
+    assignedTo?: string;
+    phase?: string;
+    sourceType?: string;
+    search?: string;
+    viewFilters?: ProjectionFilter[];
+    limit?: number;
+    offset?: number;
+  }, signal?: AbortSignal) {
+    const query = new URLSearchParams();
+    if (params?.status) query.set('status', params.status);
+    if (params?.priority) query.set('priority', params.priority);
+    if (params?.domain) query.set('domain', params.domain);
+    if (params?.assignedTo) query.set('assignedTo', params.assignedTo);
+    if (params?.phase) query.set('phase', params.phase);
+    if (params?.sourceType) query.set('sourceType', params.sourceType);
+    if (params?.search) query.set('search', params.search);
+    if (params?.viewFilters?.length) query.set('viewFilters', JSON.stringify(params.viewFilters));
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
+    const queryStr = query.toString();
+    return this.request<{
+      tasks: Task[];
+      pagination: { limit: number; offset: number; total: number };
+      counts: { total: number; byStatus: Record<string, number> };
+      searchMatches?: ResourceSearchMatches;
+    }>(`/tasks${queryStr ? `?${queryStr}` : ''}`, { signal });
+  }
+
+  async getTask(id: string) {
+    return this.request<{ task: Task; dependencies: string[] }>(`/tasks/${id}`);
+  }
+
+  async createTask(data: {
+    subject: string;
+    description: string;
+    status?: Task['status'];
+    priority?: Task['priority'];
+    domain?: string;
+    classification?: string;
+    phase?: string;
+    sourceType?: Task['sourceType'];
+    sourceRef?: string;
+    dueDate?: string;
+    progress?: number;
+    metadata?: TaskMetadata;
+    sortOrder?: number;
+  }) {
+    return this.request<{ task: Task }>('/tasks', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async prepareTaskFromDiscussion(taskId: string, guidance?: string) {
+    return this.request<{ prepared: PreparedTaskDefinition }>(`/tasks/${taskId}/prepare`, {
+      method: 'POST',
+      body: JSON.stringify({ guidance }),
+    });
+  }
+
+  async updateTask(id: string, data: Partial<{
+    subject: string;
+    description: string;
+    status: Task['status'];
+    priority: Task['priority'];
+    domain: string;
+    phase: string;
+    assignedTo: string | null;
+    dueDate: string | null;
+    progress: number;
+    artifacts: string[];
+    metadata: TaskMetadata;
+    blockedReason: string;
+    blockedCategory: Task['blockedCategory'];
+    blockedRecheckAt: string | null;
+    blockedLastCheckedAt: string | null;
+    blockedReviewCount: number;
+    blockedNeedsHuman: boolean;
+    blockedHumanNotifiedAt: string | null;
+    blockedReviewArmId: string | null;
+    blockedReviewStartedAt: string | null;
+  }>) {
+    return this.request<{ task: Task }>(`/tasks/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteTask(id: string) {
+    return this.request<{ deleted: boolean }>(`/tasks/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getTaskStats() {
+    return this.request<{
+      total: number;
+      byStatus: Record<string, number>;
+      completionRate: number;
+      active: number;
+      blocked: number;
+    }>('/tasks/stats');
+  }
+
+  async getTaskBurndown(params: {
+    start: string;
+    end: string;
+    bin?: 'hour' | 'day' | 'week' | 'month';
+    timeZone: string;
+    status?: string;
+    priority?: string;
+    domain?: string;
+    assignedTo?: string;
+    phase?: string;
+  }) {
+    const search = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value) search.set(key, value);
+    }
+    return this.request<{
+      bin: 'hour' | 'day' | 'week' | 'month';
+      timeZone: string;
+      start: string;
+      end: string;
+      buckets: Array<{
+        bucket: string;
+        created: number;
+        completed: number;
+        cumulativeCreated: number;
+        cumulativeCompleted: number;
+      }>;
+    }>(`/tasks/burndown?${search}`);
+  }
+
+  async getStatusSeries(params: {
+    entity: StatusSeriesEntity;
+    start: string;
+    end: string;
+    resolution: StatusSeriesResolution;
+  }, signal?: AbortSignal) {
+    const search = new URLSearchParams(params);
+    return this.request<StatusSeriesResponse>(`/status-series?${search}`, { signal });
+  }
+
+  async getTaskBlockingBugs(taskId: string) {
+    return this.request<{
+      taskId: string;
+      blockingBugs: Array<{
+        id: string;
+        title: string;
+        description: string;
+        source: string;
+        status: string;
+        priority: string;
+        assigneeArmId?: string;
+        createdAt: string;
+        updatedAt: string;
+      }>;
+      count: number;
+    }>(`/tasks/${taskId}/blocking-bugs`);
+  }
+
+  // Task Discussions
+  async getTaskDiscussions(
+    taskId: string,
+    params?: {
+      limit?: number;
+      offset?: number;
+      threaded?: boolean;
+    }
+  ) {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
+    if (params?.threaded) query.set('threaded', 'true');
+    const queryStr = query.toString();
+    return this.request<{
+      discussions: TaskComment[];
+      totalCount: number;
+    }>(`/tasks/${taskId}/discussions${queryStr ? `?${queryStr}` : ''}`);
+  }
+
+  async createTaskDiscussion(
+    taskId: string,
+    data: {
+      content: string;
+      parentId?: string;
+      authorType: 'human' | 'arm' | 'brain';
+      authorId: string;
+      authorName?: string;
+      client: 'web' | 'mail' | 'mcp' | 'cli';
+    }
+  ) {
+    return this.request<{ comment: TaskComment }>(`/tasks/${taskId}/discussions`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateTaskDiscussion(
+    taskId: string,
+    commentId: string,
+    data: { content: string; authorId: string }
+  ) {
+    return this.request<{ comment: TaskComment }>(`/tasks/${taskId}/discussions/${commentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteTaskDiscussion(taskId: string, commentId: string, authorId: string) {
+    return this.request<{ deleted: boolean }>(`/tasks/${taskId}/discussions/${commentId}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ authorId }),
+    });
+  }
+
+  async markTaskDiscussionsRead(taskId: string, userId: string, lastReadCommentId: string) {
+    return this.request<{ marked: boolean }>(`/tasks/${taskId}/discussions/mark-read`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, lastReadCommentId }),
+    });
+  }
+
+  async getUnreadDiscussionCount(taskId: string, userId: string) {
+    return this.request<{ unreadCount: number }>(`/tasks/${taskId}/discussions/unread?userId=${encodeURIComponent(userId)}`);
+  }
+
+  // Task Summaries (work-in-progress log)
+  async getTaskSummaries(taskId: string, params?: { limit?: number; offset?: number }) {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
+    const queryStr = query.toString();
+    return this.request<{ summaries: TaskSummary[]; latest: TaskSummary | null }>(
+      `/tasks/${taskId}/summaries${queryStr ? `?${queryStr}` : ''}`
+    );
+  }
+
+  async getLatestTaskSummary(taskId: string) {
+    return this.request<{ summary: TaskSummary | null }>(`/tasks/${taskId}/summaries/latest`);
+  }
+
+  async createTaskSummary(
+    taskId: string,
+    data: { content: string; authorType: TaskWorkAuthorType; authorId: string; authorName?: string }
+  ) {
+    return this.request<{ summary: TaskSummary }>(`/tasks/${taskId}/summaries`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+  // Task Checklists
+  async getTaskChecklist(taskId: string) {
+    return this.request<{ items: ChecklistItem[] }>(`/tasks/${taskId}/checklist`);
+  }
+
+  async createChecklistItem(taskId: string, data: {
+    text: string;
+    completed?: boolean;
+    sortOrder?: number;
+  }) {
+    return this.request<{ item: ChecklistItem }>(`/tasks/${taskId}/checklist`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateTaskSummary(taskId: string, summaryId: string, content: string) {
+    return this.request<{ summary: TaskSummary }>(`/tasks/${taskId}/summaries/${summaryId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ content }),
+    });
+  }
+
+  // Task Diffs (work-in-progress diff log)
+  async getTaskDiffs(taskId: string, params?: { limit?: number; offset?: number }) {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
+    const queryStr = query.toString();
+    return this.request<{ diffs: TaskDiff[]; totalCount: number }>(
+      `/tasks/${taskId}/diffs${queryStr ? `?${queryStr}` : ''}`
+    );
+  }
+
+  async getTaskDiff(taskId: string, diffId: string) {
+    return this.request<{ diff: TaskDiff }>(`/tasks/${taskId}/diffs/${diffId}`);
+  }
+
+  async createTaskDiff(
+    taskId: string,
+    data: {
+      title?: string;
+      filePath?: string;
+      diff: string;
+      additions?: number;
+      deletions?: number;
+      authorType: TaskWorkAuthorType;
+      authorId: string;
+      authorName?: string;
+    }
+  ) {
+    return this.request<{ diff: TaskDiff }>(`/tasks/${taskId}/diffs`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+  async updateChecklistItem(taskId: string, itemId: number, data: {
+    text?: string;
+    completed?: boolean;
+    sortOrder?: number;
+  }) {
+    return this.request<{ item: ChecklistItem }>(`/tasks/${taskId}/checklist/${itemId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async markTaskDiffsViewed(taskId: string, userId: string, lastViewedDiffId: string) {
+    return this.request<{ marked: boolean }>(`/tasks/${taskId}/diffs/mark-viewed`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, lastViewedDiffId }),
+    });
+  }
+
+  async getUnviewedDiffCount(taskId: string, userId: string) {
+    return this.request<{ unviewedCount: number }>(`/tasks/${taskId}/diffs/unviewed?userId=${encodeURIComponent(userId)}`);
+  }
+  async deleteChecklistItem(taskId: string, itemId: number) {
+    return this.request<{ success: boolean }>(`/tasks/${taskId}/checklist/${itemId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async reorderChecklistItems(taskId: string, itemIds: number[]) {
+    return this.request<{ success: boolean }>(`/tasks/${taskId}/checklist/reorder`, {
+      method: 'POST',
+      body: JSON.stringify({ itemIds }),
+    });
+  }
+
+  async removeTaskFromPlan(id: string) {
+    return this.request<{ deleted: boolean; removedFromPlan: boolean }>(`/tasks/${id}/remove-from-plan`, {
+      method: 'POST',
+    });
+  }
+
+  async reorderTask(taskId: string, toSortOrder: number, prevTaskId?: string | null, nextTaskId?: string | null) {
+    return this.request<{ success: boolean }>('/tasks/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ taskId, toIndex: toSortOrder, prevTaskId, nextTaskId }),
+    });
+  }
+
+  // Events API - arm health monitoring
+  async getArmEventWindow(armId: string, options?: { windowMs?: number; limit?: number }) {
+    const query = new URLSearchParams();
+    if (options?.windowMs) query.set('windowMs', options.windowMs.toString());
+    if (options?.limit) query.set('limit', options.limit.toString());
+    const queryStr = query.toString();
+    return this.request<EventWindowResponse>(
+      `/events/arms/${encodeURIComponent(armId)}/window${queryStr ? `?${queryStr}` : ''}`
+    );
+  }
+
+  async getArmActivityMetrics(armId: string, windowMs = 30 * 60 * 1000) {
+    const query = new URLSearchParams({ windowMs: windowMs.toString() });
+    return this.request<ArmActivityMetricsResponse>(
+      `/events/arms/${encodeURIComponent(armId)}/metrics?${query.toString()}`,
+    );
+  }
+
+  async getAllArmsTelemetry(start: string, end: string) {
+    const query = new URLSearchParams({ start, end });
+    return this.request<AllArmsTelemetryResponse>(`/events/telemetry?${query.toString()}`);
+  }
+
+  async getArmAnalysis(armId: string, options?: { windowMs?: number }) {
+    const query = new URLSearchParams();
+    if (options?.windowMs) query.set('windowMs', options.windowMs.toString());
+    const queryStr = query.toString();
+    return this.request<ArmAnalysisFull>(
+      `/events/arms/${encodeURIComponent(armId)}/analysis${queryStr ? `?${queryStr}` : ''}`
+    );
+  }
+
+  async getAllArmsAnalysis(options?: { windowMs?: number }) {
+    const query = new URLSearchParams();
+    if (options?.windowMs) query.set('windowMs', options.windowMs.toString());
+    const queryStr = query.toString();
+    return this.request<AllArmsAnalysis>(
+      `/events/analysis${queryStr ? `?${queryStr}` : ''}`
+    );
+  }
+
+  async getArmContext(armId: string) {
+    return this.request<ArmContextResponse>(
+      `/arms/${encodeURIComponent(armId)}/context`,
+    );
+  }
+
+  async getArmContextHistory(armId: string, windowMs = 30 * 60 * 1000) {
+    const query = new URLSearchParams({ windowMs: windowMs.toString() });
+    return this.request<ArmContextHistoryResponse>(
+      `/arms/${encodeURIComponent(armId)}/context-history?${query.toString()}`,
+    );
+  }
+
+  async getArmCostHistory(armId: string, windowMs = 30 * 60 * 1000) {
+    const query = new URLSearchParams({ windowMs: windowMs.toString() });
+    return this.request<ArmCostHistoryResponse>(
+      `/arms/${encodeURIComponent(armId)}/cost-history?${query.toString()}`,
+    );
+  }
+
+  async getRecentEvents(options?: { limit?: number; sinceMs?: number }) {
+    const query = new URLSearchParams();
+    if (options?.limit) query.set('limit', options.limit.toString());
+    if (options?.sinceMs) query.set('sinceMs', options.sinceMs.toString());
+    const queryStr = query.toString();
+    return this.request<RecentEventsResponse>(
+      `/events/recent${queryStr ? `?${queryStr}` : ''}`
+    );
+  }
+
+  async getEventTypes() {
+    return this.request<{ knownTypes: string[]; count: number }>('/events/types');
+  }
+
+  // Workbench profiles, saved projections, and Golden Layout workspaces
+  async getWorkbenchBootstrap(profileId?: string) {
+    const query = profileId ? `?profileId=${encodeURIComponent(profileId)}` : '';
+    return this.request<{
+      schemaVersion: number;
+      profile: WorkbenchProfile;
+      views: ViewDefinition[];
+      layouts: WorkspaceLayoutRecord[];
+    }>(`/workbench/bootstrap${query}`);
+  }
+
+  async listWorkbenchProfiles() {
+    return this.request<{ profiles: WorkbenchProfile[] }>('/workbench/profiles');
+  }
+
+  async createWorkbenchProfile(data: {
+    id?: string;
+    name: string;
+    email?: string;
+    isDefault?: boolean;
+    preferences?: JsonObject;
+  }) {
+    return this.request<{ profile: WorkbenchProfile }>('/workbench/profiles', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateWorkbenchProfile(
+    id: string,
+    data: Partial<Pick<WorkbenchProfile, 'name' | 'email' | 'isDefault' | 'preferences'>>,
+  ) {
+    return this.request<{ profile: WorkbenchProfile }>(
+      `/workbench/profiles/${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      },
+    );
+  }
+
+  async exportWorkbenchProfile(id: string) {
+    return this.request<{ bundle: WorkbenchBundle }>(
+      `/workbench/profiles/${encodeURIComponent(id)}/export`,
+    );
+  }
+
+  async importWorkbenchProfile(bundle: WorkbenchBundle, mode: 'replace' | 'copy' = 'copy') {
+    return this.request<{
+      profile: WorkbenchProfile;
+      views: ViewDefinition[];
+      layouts: WorkspaceLayoutRecord[];
+    }>('/workbench/profiles/import', {
+      method: 'POST',
+      body: JSON.stringify({ bundle, mode }),
+    });
+  }
+
+  async listWorkbenchViews(profileId = 'local', includeShared = true) {
+    const query = new URLSearchParams({
+      profileId,
+      includeShared: String(includeShared),
+    });
+    return this.request<{ views: ViewDefinition[] }>(`/workbench/views?${query.toString()}`);
+  }
+
+  async createWorkbenchView(
+    data: Omit<ViewDefinition, 'id' | 'version' | 'createdAt' | 'updatedAt'> & { id?: string },
+  ) {
+    return this.request<{ view: ViewDefinition }>('/workbench/views', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async saveWorkbenchView(id: string, data: Partial<ViewDefinition>) {
+    return this.request<{ view: ViewDefinition }>(
+      `/workbench/views/${encodeURIComponent(id)}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      },
+    );
+  }
+
+  async deleteWorkbenchView(id: string) {
+    return this.request<{ success: true }>(`/workbench/views/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async listWorkbenchLayouts(profileId = 'local', includeShared = true) {
+    const query = new URLSearchParams({
+      profileId,
+      includeShared: String(includeShared),
+    });
+    return this.request<{ layouts: WorkspaceLayoutRecord[] }>(
+      `/workbench/layouts?${query.toString()}`,
+    );
+  }
+
+  async saveWorkbenchLayout(
+    id: string,
+    data: {
+      profileId: string;
+      name: string;
+      description?: string;
+      layout: JsonObject;
+      isDefault?: boolean;
+      shared?: boolean;
+    },
+  ) {
+    return this.request<{ layout: WorkspaceLayoutRecord }>(
+      `/workbench/layouts/${encodeURIComponent(id)}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      },
+    );
+  }
+
+  async deleteWorkbenchLayout(id: string) {
+    return this.request<{ success: true }>(`/workbench/layouts/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async listWorkbenchAttention(params: {
+    profileId?: string;
+    requiresAction?: boolean;
+    unread?: boolean;
+    includeArchived?: boolean;
+    limit?: number;
+  } = {}) {
+    const query = new URLSearchParams();
+    query.set('profileId', params.profileId ?? 'local');
+    if (params.requiresAction !== undefined) query.set('requiresAction', String(params.requiresAction));
+    if (params.unread !== undefined) query.set('unread', String(params.unread));
+    if (params.includeArchived !== undefined) {
+      query.set('includeArchived', String(params.includeArchived));
+    }
+    if (params.limit !== undefined) query.set('limit', String(params.limit));
+    return this.request<{ attention: WorkbenchAttention[] }>(
+      `/workbench/attention?${query.toString()}`,
+    );
+  }
+
+  async getWorkbenchInboxRecord(itemKey: string, profileId = 'local') {
+    return this.request<{ item: WorkbenchInboxRecord }>(`/workbench/inbox/records/${encodeURIComponent(itemKey)}?${new URLSearchParams({ profileId })}`);
+  }
+
+  async getWorkbenchInboxEvent(itemKey: string, sequence?: string) {
+    const query = sequence ? `?sequence=${encodeURIComponent(sequence)}` : '';
+    return this.request<{ event: RecentEventsResponse['events'][number] }>(
+      `/workbench/inbox/events/${encodeURIComponent(itemKey)}${query}`,
+    );
+  }
+
+  async getWorkbenchItemAttention(itemKey: string, profileId = 'local') {
+    return this.request<{ attention: WorkbenchAttention | null }>(
+      `/workbench/attention/${encodeURIComponent(itemKey)}?${new URLSearchParams({ profileId })}`,
+    );
+  }
+
+  async listWorkbenchInbox(params: {
+    profileId?: string;
+    cursor?: string;
+    limit?: number;
+  } = {}) {
+    const query = new URLSearchParams({
+      profileId: params.profileId ?? 'local',
+      limit: String(params.limit ?? 100),
+    });
+    if (params.cursor) query.set('cursor', params.cursor);
+    return this.request<{ items: WorkbenchInboxRecord[]; nextCursor?: string }>(
+      `/workbench/inbox?${query.toString()}`,
+    );
+  }
+
+  async getMessagingCollection(query: MessagingQuery, cursor?: string, signal?: AbortSignal): Promise<MessagingCollectionPage> {
+    const params = new URLSearchParams({ query: JSON.stringify(query) });
+    if (cursor) params.set('cursor', cursor);
+    return this.request<MessagingCollectionPage>(`/workbench/inbox?${params}`, { signal });
+  }
+
+  async getNamedResourceView(id: string, signal?: AbortSignal): Promise<ResolvedNamedResourceView> {
+    return this.request<ResolvedNamedResourceView>(`/workbench/named-views/${encodeURIComponent(id)}?client=web`, { signal });
+  }
+
+  async getMailThread(threadId: string, mailbox: MessagingMailbox, signal?: AbortSignal) {
+    return this.request<MailThreadDetail>(
+      `/mail/threads/${encodeURIComponent(threadId)}?mailbox=${mailbox}`, { signal });
+  }
+
+  async getThreadMessage(threadId: string, messageId: string, mailbox: MessagingMailbox, signal?: AbortSignal) {
+    return this.request<{ message: { id: string; from: string; subject: string; timestamp: string; body: string } }>(
+      `/mail/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}?mailbox=${mailbox}`, { signal });
+  }
+
+  async resolveMailThreadSelection(threadId: string, mailbox: MessagingMailbox, revision: string, branchIds: string[]) {
+    return this.request<{ memberIds: string[]; inboxMessageIds: string[]; revision: string }>(
+      `/mail/threads/${encodeURIComponent(threadId)}/selection`, {
+        method: 'POST', body: JSON.stringify({ mailbox, revision, branchIds }),
+      });
+  }
+
+  async executeMailThreadAction(threadId: string, mailbox: MessagingMailbox, revision: string, memberIds: string[], action: 'read' | 'archive') {
+    return this.request<{ ok: boolean; completedMessageIds: string[]; skippedMemberIds: string[] }>(
+      `/mail/threads/${encodeURIComponent(threadId)}/actions`, {
+        method: 'POST', body: JSON.stringify({ mailbox, revision, memberIds, action }),
+      });
+  }
+
+  async updateWorkbenchAttention(
+    itemKey: string,
+    patch: Partial<Omit<WorkbenchAttention, 'profileId' | 'itemKey' | 'updatedAt'>> & {
+      profileId?: string;
+    },
+  ) {
+    return this.request<{ attention: WorkbenchAttention }>(
+      `/workbench/attention/${encodeURIComponent(itemKey)}`,
+      { method: 'PUT', body: JSON.stringify(patch) },
+    );
+  }
+
+  async bulkUpdateWorkbenchAttention(
+    itemKeys: string[],
+    action: 'read' | 'archive' | 'resolve',
+    profileId = 'local',
+  ) {
+    return this.request<{ attention: WorkbenchAttention[] }>('/workbench/attention/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ profileId, itemKeys, action }),
+    });
+  }
+
+  async executeWorkbenchCardAction(request: CardActionRequest) {
+    return this.request<{ result: CardActionResult }>('/workbench/cards/actions', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }).then((response) => response.result);
+  }
+
+  async saveWorkbenchCardInstance(envelope: import('../../../../server/src/types/adaptive-cards').CardEnvelope) {
+    return this.request<{
+      instance: {
+        id: string;
+        envelope: import('../../../../server/src/types/adaptive-cards').CardEnvelope;
+        createdAt: string;
+        expiresAt?: string;
+      };
+    }>('/workbench/cards/instances', {
+      method: 'POST',
+      body: JSON.stringify({ profileId: 'local', envelope }),
+    });
+  }
+
+  async getWorkbenchCardInstance(id: string) {
+    return this.request<{
+      instance: {
+        id: string;
+        envelope: import('../../../../server/src/types/adaptive-cards').CardEnvelope;
+        createdAt: string;
+        expiresAt?: string;
+      };
+    }>(`/workbench/cards/instances/${encodeURIComponent(id)}`);
+  }
+
+  async listRuns(params?: {
+    status?: ArmRun['status'];
+    armId?: string;
+    active?: boolean;
+    limit?: number;
+  }) {
+    const query = new URLSearchParams();
+    if (params?.status) query.set('status', params.status);
+    if (params?.armId) query.set('armId', params.armId);
+    if (params?.active !== undefined) query.set('active', String(params.active));
+    if (params?.limit) query.set('limit', String(params.limit));
+    const suffix = query.toString();
+    return this.request<{ runs: ArmRun[] }>(`/runs${suffix ? `?${suffix}` : ''}`);
+  }
+
+  async getRun(id: string) {
+    return this.request<{ run: ArmRun }>(`/runs/${encodeURIComponent(id)}`);
+  }
+
+  // Garden
+  async getGardenScene() {
+    return this.request<{ scene: GardenScene }>('/garden/scene');
+  }
+
+  async getHealthConfig() {
+    return this.request<{
+      analyzer: {
+        silentThresholdMs: number;
+        productiveEventThreshold: number;
+        loopRepetitionThreshold: number;
+        permissionEscalationMs: number;
+        startupGracePeriodMs: number;
+      };
+      sse: {
+        minIntervalPerArmMs: number;
+        maxQueueSize: number;
+        flushIntervalMs: number;
+        heartbeatIntervalMs: number;
+      };
+    }>('/events/health/config');
+  }
+
+  // SSE Event stream URL for global events
+  getEventsStreamUrl(options?: { armIds?: string[]; types?: string[] }): string {
+    const apiKey = this.getApiKey();
+    const params = new URLSearchParams();
+    if (apiKey) params.set('api_key', apiKey);
+    if (options?.armIds?.length) params.set('armIds', options.armIds.join(','));
+    if (options?.types?.length) params.set('types', options.types.join(','));
+    return `${API_BASE}/events/stream?${params.toString()}`;
+  }
+
+}
+
+// Types
+export type ColeoConfig = SharedColeoConfig;
+
+// Arm configuration file structure (from .coleo/arms/*.toml)
+export type ArmConfig = SharedArmConfig;
+
+// Summary of arm config for listing
+export type ArmConfigSummary = SharedArmConfigSummary;
+
+export interface ArmTemplateSummary {
+  id: string;
+  filename: string;
+  name: string;
+  description: string;
+  domain: string;
+  harness: string;
+  contextBudget: number;
+  provider?: string;
+  model?: string;
+}
+
+// OpenCode provider/model info (from the cached authenticated OpenCode catalog)
+export interface OpenCodeModel {
+  id: string;
+  name: string;
+  limit?: {
+    context?: number;
+    output?: number;
+  };
+  modalities?: {
+    input: Array<'text' | 'audio' | 'image' | 'video' | 'pdf'>;
+    output: Array<'text' | 'audio' | 'image' | 'video' | 'pdf'>;
+  };
+  /** Estimated cost index: sum of input + output price per million tokens (USD). */
+  cost?: number;
+  /** Detailed per-million-token pricing when available. */
+  pricing?: {
+    input?: number;
+    output?: number;
+    source?: 'provider' | 'openrouter' | 'known';
+    estimated?: boolean;
+    fetchedAt?: string;
+    matchedModel?: string;
+  };
+}
+
+export type TaskAttachment = SharedTaskAttachment;
+
+export interface SearchResult {
+  id: string;
+  type: string;
+  title: string;
+  content: string;
+  score: number;
+  keywordScore?: number;
+  semanticScore?: number;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface SearchResponse {
+  results: SearchResult[];
+  total: number;
+  query: string;
+  semanticUsed: boolean;
+  took: number;
+}
+
+export interface StatusHistoryEvent {
+  id: string;
+  type: string;
+  timestamp: string;
+  source: string;
+  title: string;
+  content: string;
+  taskId?: string;
+  bugId?: string;
+  discoveryId?: string;
+  armId?: string;
+  status?: string;
+  priority?: string;
+  classification?: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface StatusHistorySearchHit {
+  event: StatusHistoryEvent;
+  score: number;
+  keywordScore: number;
+  semanticScore: number;
+  highlights: string[];
+}
+
+export interface StatusHistorySearchResponse {
+  results: StatusHistorySearchHit[];
+  total: number;
+  query: string;
+  semanticUsed: boolean;
+  query_time_ms: number;
+}
+
+export interface OpenCodeProvider {
+  id: string;
+  name: string;
+  models: OpenCodeModel[];
+  connected?: boolean;
+  authMethod?: 'api-key' | 'oauth' | 'external';
+}
+
+export interface AgentInfo {
+  agentId: string;
+  hostname: string;
+  platform: string;
+  startedAt: string;
+  version: string;
+  capabilities: string[];
+  maxArms: number;
+}
+
+export interface AgentProviderStatus {
+  agentId: string;
+  hostname: string;
+  version: string;
+  configuredProviders: Array<{
+    id: string;
+    name: string;
+    authMethod: 'api-key' | 'oauth' | 'external';
+  }>;
+  availableProviderCount: number;
+  error: string | null;
+}
+
+export interface Arm {
+  id: string;
+  name: string;
+  domain: string;
+  harness: string;
+  status: 'idle' | 'busy' | 'paused' | 'planning_blocked' | 'error' | 'stopped' | 'starting' | 'running';
+  contextBudget: number;
+  currentContextUsed: number;
+  createdAt: string;
+  updatedAt: string;
+  lastActivityAt: string | null;
+  recoveryRequestedAt?: string;
+  lastHeartbeat?: string | null;
+  lastOutputAt?: string | null;
+  config: JsonObject;
+  personality?: string;
+  convictions?: string[];
+  reputation?: number;
+  totalTokens?: number;
+  totalCost?: number;
+  currentTaskSubject?: string;
+  currentBugId?: string;
+  currentBugTitle?: string;
+  pid?: number;
+  port?: number;
+  provider?: string;
+  model?: string;
+  agentId?: string;
+  host?: string;
+  sessionId?: string;
+  workdir?: string;
+  runtime?: ArmRuntimeSummary;
+}
+
+export interface SpawnArmRequest {
+  name?: string;
+  domain?: string;
+  template?: string;
+  workdir?: string;
+  provider?: string;
+  model?: string;
+  initialPrompt?: string;
+  harness?: string;
+  preferAgent?: boolean;
+  agentId?: string;
+  recover?: boolean;
+  allowLocalFallback?: boolean;
+}
+
+export interface SpawnArmResponse {
+  spawned: boolean;
+  recovered?: boolean;
+  recoveryMode?: 'reattached' | 'recovered' | 'restarted';
+  distributed?: boolean;
+  agentId?: string;
+  host?: string;
+  pid?: number;
+  port?: number;
+  sessionId?: string;
+  provider?: string;
+  model?: string;
+}
+
+export interface ArmRuntimeSummary {
+  state: 'starting' | 'active' | 'quiet' | 'hung' | 'recoverable' | 'stopped' | 'unknown';
+  reason: string;
+  distributed: boolean;
+  hasRuntime: boolean;
+  hasSession: boolean;
+  canRecover: boolean;
+  canRestart: boolean;
+  lastActivityAt: string | null;
+  lastHeartbeatAt: string | null;
+  lastOutputAt: string | null;
+  secondsSinceActivity: number | null;
+  secondsSinceHeartbeat: number | null;
+  secondsSinceOutput: number | null;
+  signals: {
+    dbStatus: string;
+    hasPid: boolean;
+    hasPort: boolean;
+    hasSessionId: boolean;
+    hasAgentId: boolean;
+    hasWorkdir: boolean;
+    hasAssignedTask: boolean;
+    distributed: boolean;
+  };
+}
+
+export interface ActivityEntry {
+  id: string;
+  sequence: number | null;
+  timestamp: string;
+  actor: string;
+  action: string;
+  target: string | null;
+  details: JsonObject;
+}
+
+export interface GardenVec3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface GardenSceneAnchor {
+  id: string;
+  label: string;
+  kind: 'workspace' | 'domain' | 'operations';
+  position: GardenVec3;
+  itemCount: number;
+}
+
+export interface GardenSceneBrain {
+  id: 'brain';
+  label: string;
+  position: GardenVec3;
+  status: 'stopped' | 'running' | 'paused';
+  pollIntervalMs: number;
+  lastPollAt?: string;
+  pendingTasks: number;
+  completedToday: number;
+  completedTaskCount: number;
+}
+
+export interface GardenSceneArm {
+  id: string;
+  label: string;
+  domain: string | null;
+  position: GardenVec3;
+  legacyStatus: string;
+  lifecycleState: string | null;
+  currentTaskId: string | null;
+  currentTaskSubject: string | null;
+  currentBugId: string | null;
+  currentBugTitle: string | null;
+  targetAnchorId: string | null;
+  lastActivityAt: string | null;
+  lastHeartbeatAt: string | null;
+  lastOutputAt: string | null;
+  workdir: string | null;
+}
+
+export interface GardenSceneTask {
+  id: string;
+  label: string;
+  position: GardenVec3;
+  status: string;
+  priority: string;
+  domain: string | null;
+  classification: string | null;
+  phase: string | null;
+  assignedTo: string | null;
+  anchorId: string;
+  progress: number | null;
+  updatedAt: string;
+}
+
+export interface GardenSceneBug {
+  id: string;
+  label: string;
+  position: GardenVec3;
+  status: string;
+  priority: string;
+  assigneeArmId: string | null;
+  sourceTaskId: string | null;
+}
+
+export interface GardenSceneBubble {
+  id: string;
+  label: string;
+  kind: 'proposal' | 'discovery' | 'health';
+  position: GardenVec3;
+  status: string;
+  severity?: string | null;
+  phase?: string | null;
+  sourceArmId?: string | null;
+  taskId?: string | null;
+}
+
+export interface GardenSceneLink {
+  id: string;
+  kind: 'brain_arm' | 'task_assignment' | 'claim' | 'consensus';
+  sourceId: string;
+  targetId: string;
+  weight: number;
+  opacity: number;
+  count?: number;
+}
+
+export interface GardenSceneStats {
+  activeArms: number;
+  visibleTasks: number;
+  visibleBugs: number;
+  visibleDiscoveries: number;
+  openProposals: number;
+  activeClaims: number;
+  conflictZones: number;
+  recentActivity: number;
+}
+
+export interface GardenScene {
+  generatedAt: string;
+  brain: GardenSceneBrain;
+  anchors: GardenSceneAnchor[];
+  arms: GardenSceneArm[];
+  tasks: GardenSceneTask[];
+  bugs: GardenSceneBug[];
+  bubbles: GardenSceneBubble[];
+  links: GardenSceneLink[];
+  stats: GardenSceneStats;
+}
+
+interface BaseQueueHealth {
+  status: "healthy" | "lagging" | "stale" | "unavailable" | "error";
+  stream: string;
+  durable: string;
+  consumerFound: boolean;
+  lagMessages: number | null;
+  ackPending: number | null;
+  streamLastSeq: number | null;
+  streamMessages?: number;
+  consumerStreamSeq: number | null;
+  consumerSeq: number | null;
+  lastActive: string | null;
+  staleThresholdMs: number;
+  updatedAt: string;
+  message?: string;
+}
+
+export interface TranscriptIndexerHealth extends BaseQueueHealth {
+  streamMessages?: number;
+}
+
+export interface CommandQueueHealth extends BaseQueueHealth {
+  enabled: boolean;
+}
+
+export interface MailMessage {
+  id: string;
+  from: string;
+  to: string;
+  subject: string;
+  date: string;
+  body: string;
+  headers: Record<string, string>;
+  flags: {
+    seen: boolean;
+    replied: boolean;
+    flagged: boolean;
+    draft: boolean;
+    trashed: boolean;
+  };
+  filePath?: string;
+}
+
+// Arm message from OpenCode session
+export interface ArmMessagePart {
+  type: string;
+  id?: string;
+  text?: string;
+  content?: string;
+  tool?: string;
+  toolName?: string;
+  name?: string;
+  state?: JsonValue;
+  input?: JsonValue;
+  output?: JsonValue;
+  time?: JsonValue;
+  result?: JsonValue;
+  error?: JsonValue;
+  reason?: string;
+}
+
+export interface ArmMessage {
+  info: {
+    id: string;
+    role: 'user' | 'assistant' | 'system';
+    time?: JsonValue;
+    cost?: number;
+    model?: string;
+    provider?: string;
+    tokens?: {
+      input?: number;
+      output?: number;
+      reasoning?: number;
+      cache?: {
+        read?: number;
+        write?: number;
+      };
+    };
+    error?: { name: string; data?: { message: string } };
+  };
+  parts: ArmMessagePart[];
+}
+
+// Arm todo from OpenCode session
+export interface ArmTodo {
+  id: string;
+  content: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+  priority: 'high' | 'medium' | 'low';
+}
+
+// Status report from arm during or after task execution
+export type StatusReport = SharedStatusReport;
+
+// Bug tracking
+export interface Bug {
+  id: string;
+  title: string;
+  description: string;
+  source: "arm_reported" | "human_reported" | "system_detected";
+  sourceArmId?: string;
+  sourceTaskId?: string;
+  status: "open" | "investigating" | "fixing" | "verifying" | "resolved" | "closed";
+  priority: "low" | "medium" | "high" | "critical";
+  assigneeArmId?: string;
+  assigneeArmName?: string;
+  blockers: string[]; // Array of blocking task IDs
+  errorDetails?: string;
+  resolution?: string;
+  sortOrder?: number;
+  metadata?: BugMetadata;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt?: string;
+  humanNotified: boolean;
+}
+
+export interface Discovery {
+  id: string;
+  armId: string;
+  armName: string;
+  kind: string;
+  title: string;
+  details: string;
+  filePath: string | null;
+  lineNumber: number | null;
+  severity: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Task comment/discussion
+export type TaskComment = SharedTaskComment;
+
+// Task work summary/diff log entries
+export type TaskWorkAuthorType = SharedTaskWorkAuthorType;
+export type TaskSummary = SharedTaskSummary;
+export type TaskDiff = SharedTaskDiff;
+// Task checklist item
+export interface ChecklistItem {
+  id: number;
+  taskId: string;
+  text: string;
+  completed: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Brain-managed task
+export interface Task {
+  id: string;
+  subject: string;
+  description: string;
+  status: 'draft' | 'pending' | 'claimed' | 'in_progress' | 'completing' | 'completed' | 'failed' | 'blocked' | 'cancelled';
+  priority: 'critical' | 'high' | 'normal' | 'low';
+  sourceType: 'manual' | 'plan' | 'email' | 'discovery' | 'proposal' | 'system';
+  sourceRef: string | null;
+  phase: string | null;
+  classification: string | null;
+  domain: string | null;
+  assignedTo: string | null;
+  dependencyBlocked?: boolean;
+  assignedArmName?: string;
+  planLineUid?: string | null;
+  sortOrder?: number | null;
+  progress?: number;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  claimedAt: string | null;
+  startedAt: string | null;
+  blockedAt?: string | null;
+  blockedReason?: string | null;
+  blockedCategory?: 'dependency' | 'bug' | 'file_claim' | 'environment' | 'human' | 'arm' | 'planning' | 'unknown' | null;
+  blockedRecheckAt?: string | null;
+  blockedLastCheckedAt?: string | null;
+  blockedReviewCount?: number;
+  blockedNeedsHuman?: boolean;
+  blockedHumanNotifiedAt?: string | null;
+  blockedReviewArmId?: string | null;
+  blockedReviewStartedAt?: string | null;
+  dueDate: string | null;
+  artifacts: string[];
+  metadata: TaskMetadata;
+  commentCount?: number;
+  lastCommentAt?: string | null;
+  checklist?: ChecklistItem[];
+}
+
+// OpenCode SSE event types
+export interface OpenCodeEvent extends JsonObject {
+  type: string;
+  properties: JsonObject;
+  timestamp?: string;
+  sequence?: number;
+}
+
+export function isOpenCodeEvent(value: JsonValue | undefined): value is OpenCodeEvent {
+  if (!isJsonObject(value)) return false;
+  return typeof value.type === 'string' && isJsonObject(value.properties);
+}
+
+// Arm activity analysis types (from brain event-window system)
+export type ArmActivityState =
+  | "productive"
+  | "idle"
+  | "waiting_permission"
+  | "looping"
+  | "silent"
+  | "error"
+  | "starting";
+
+export interface ArmAnalysis {
+  armId: string;
+  state: ArmActivityState;
+  confidence: "high" | "medium" | "low";
+  reason: string;
+  recommendedAction?: "none" | "prompt" | "interrupt" | "kill" | "escalate";
+  silentDurationMs: number;
+  hasPermissionPending: boolean;
+}
+
+export interface ArmAnalysisFull {
+  armId: string;
+  analysis: {
+    state: ArmActivityState;
+    confidence: "high" | "medium" | "low";
+    reason: string;
+    recommendedAction?: string;
+    metrics: {
+      eventCount: number;
+      silentDurationMs: number;
+      lastEventAt: string | null;
+      recentMessageCount: number;
+      recentToolCount: number;
+      recentFileEditCount: number;
+    };
+    pendingPermission?: {
+      requestedAt: string;
+      action: string;
+      context?: string;
+    };
+    loopPattern?: {
+      pattern: string[];
+      repetitions: number;
+    };
+    unknownEventTypes: string[];
+  };
+  trend: {
+    improving: boolean;
+    degrading: boolean;
+    stable: boolean;
+    recentStates: ArmActivityState[];
+  };
+}
+
+export interface AllArmsAnalysis {
+  arms: ArmAnalysis[];
+  summary: {
+    total: number;
+    productive: number;
+    idle: number;
+    waiting: number;
+    looping: number;
+    silent: number;
+    error: number;
+    starting: number;
+  };
+}
+
+export interface EventWindowResponse {
+  armId: string;
+  window: {
+    events: Array<{
+      type: string;
+      timestamp: string;
+      data: JsonObject;
+      sequence?: number;
+    }>;
+    lastEventAt: string | null;
+    silentDurationMs: number;
+    unknownEventTypes: string[];
+  };
+  summary: {
+    totalEvents: number;
+    eventTypeCounts: Record<string, number>;
+    firstEventAt: string | null;
+    lastEventAt: string | null;
+    durationMs: number;
+  };
+}
+
+export type StatusSeriesEntity = 'task' | 'bug';
+export type StatusSeriesResolution = 'hour' | 'day' | 'week';
+
+export interface StatusSeriesResponse {
+  entity: StatusSeriesEntity;
+  resolution: StatusSeriesResolution;
+  start: string;
+  end: string;
+  statuses: string[];
+  buckets: Array<{
+    start: string;
+    end: string;
+    counts: Record<string, number>;
+    total: number;
+  }>;
+}
+
+export interface ArmActivityMetricsResponse {
+  armId: string;
+  window: {
+    start: string;
+    end: string;
+    bucketMs: number;
+  };
+  buckets: Array<{
+    start: string;
+    counts: {
+      write: number;
+      think: number;
+      tool: number;
+      complete: number;
+    };
+  }>;
+  summary: {
+    totalEvents: number;
+    lastEventAt: string | null;
+  };
+}
+
+export interface AllArmsTelemetryResponse {
+  window: {
+    start: string;
+    end: string;
+    bucketMs: number;
+  };
+  armCount: number;
+  activity: {
+    buckets: ArmActivityMetricsResponse['buckets'];
+    summary: ArmActivityMetricsResponse['summary'];
+  };
+  contextSamples: Array<{
+    armId: string;
+    timestamp: string;
+    used: number;
+    budget: number;
+  }>;
+  costSamples: Array<{
+    armId: string;
+    timestamp: string;
+    cost: number;
+    messageId: string;
+    inputTokens: number;
+    outputTokens: number;
+    reasoningTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+  }>;
+}
+
+export interface ArmContextResponse {
+  context: {
+    budget: number;
+    used: number;
+    utilization: number;
+    files: Array<{ path: string; claimedAt: string }>;
+  };
+}
+
+export interface ArmContextHistoryResponse {
+  armId: string;
+  windowMs: number;
+  samples: Array<{
+    timestamp: string;
+    used: number;
+    budget: number;
+  }>;
+}
+
+export interface ArmCostHistoryResponse {
+  armId: string;
+  windowMs: number;
+  samples: Array<{
+    timestamp: string;
+    cost: number;
+    tokens: number;
+    messageId: string;
+  }>;
+}
+
+export interface RecentEventsResponse {
+  events: Array<{
+    sequence?: number;
+    type: string;
+    armId?: string;
+    timestamp: string;
+    data: JsonObject;
+  }>;
+  count: number;
+}
+
+// Singleton instance
+export const api = new ApiClient();

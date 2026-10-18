@@ -1,0 +1,455 @@
+/**
+ * Discoveries routes
+ * 
+ * API for querying arm discoveries
+ */
+import { Hono } from "hono";
+import type { Database } from "bun:sqlite";
+import { HttpError } from "../middleware";
+
+interface DiscoveriesContext {
+  Variables: {
+    db: Database;
+  };
+}
+
+export interface Discovery {
+  id: string;
+  armId: string;
+  armName: string;
+  kind: string;
+  title: string;
+  details: string;
+  filePath: string | null;
+  lineNumber: number | null;
+  severity: string;
+  status: string;
+  taskId?: string | null;
+  phase?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  metadata: Record<string, unknown>;
+}
+
+interface DiscoveryRow {
+  id: string;
+  arm_id: string;
+  arm_name: string;
+  kind: string;
+  title: string;
+  details: string;
+  file_path: string | null;
+  line_number: number | null;
+  severity: string;
+  status: string;
+  task_id: string | null;
+  phase: string | null;
+  created_at: string;
+  updated_at: string;
+  metadata: string | null;
+}
+
+function parseMetadata(raw: string | null): Record<string, unknown> {
+  try {
+    const value: unknown = JSON.parse(raw ?? "{}");
+    return value !== null && typeof value === "object" && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+export function createDiscoveriesRoutes() {
+  const app = new Hono<DiscoveriesContext>();
+
+  // Create a discovery
+  app.post("/", async (c) => {
+    const db = c.var.db;
+    const body = await c.req.json<{
+      id?: string;
+      armId: string;
+      armName?: string;
+      kind: string;
+      title: string;
+      details: string;
+      filePath?: string | null;
+      lineNumber?: number | null;
+      severity?: string;
+      status?: string;
+      taskId?: string | null;
+      phase?: string | null;
+    }>();
+
+    if (!body.armId || !body.kind || !body.title || !body.details) {
+      throw HttpError.badRequest("armId, kind, title, and details are required");
+    }
+
+    const now = new Date().toISOString();
+    const id = body.id || `disc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    try {
+      db.run(
+        `
+        INSERT INTO discoveries (
+          id, arm_id, arm_name, kind, title, details, file_path, line_number, severity, status, task_id, phase, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+        [
+          id,
+          body.armId,
+          body.armName || body.armId,
+          body.kind,
+          body.title,
+          body.details,
+          body.filePath || null,
+          body.lineNumber || null,
+          body.severity || "info",
+          body.status || "open",
+          body.taskId || null,
+          body.phase || null,
+          now,
+          now,
+        ],
+      );
+
+      return c.json({
+        discovery: {
+          id,
+          armId: body.armId,
+          armName: body.armName || body.armId,
+          kind: body.kind,
+          title: body.title,
+          details: body.details,
+          filePath: body.filePath || null,
+          lineNumber: body.lineNumber || null,
+          severity: body.severity || "info",
+          status: body.status || "open",
+          taskId: body.taskId || null,
+          phase: body.phase || null,
+          createdAt: now,
+          updatedAt: now,
+          metadata: {},
+        },
+      }, 201);
+    } catch {
+      throw HttpError.internal("Failed to create discovery");
+    }
+  });
+  
+  // List discoveries with filtering
+  app.get("/", async (c) => {
+    const db = c.var.db;
+    const armId = c.req.query("armId");
+    const kind = c.req.query("kind");
+    const severity = c.req.query("severity");
+    const status = c.req.query("status") || "open";
+    const since = c.req.query("since");
+    const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
+    const offset = Math.max(0, parseInt(c.req.query("offset") || "0", 10));
+    
+    let query = `
+      SELECT id, arm_id, arm_name, kind, title, details, file_path, line_number, severity, status, task_id, phase, created_at, updated_at, metadata
+      FROM discoveries
+      WHERE 1 = 1
+    `;
+    
+    const params: (string | number)[] = [];
+
+    if (status !== "all") {
+      query += " AND status = ?";
+      params.push(status);
+    }
+    
+    if (armId) {
+      query += " AND arm_id = ?";
+      params.push(armId);
+    }
+    
+    if (kind) {
+      query += " AND kind = ?";
+      params.push(kind);
+    }
+    
+    if (severity) {
+      query += " AND severity = ?";
+      params.push(severity);
+    }
+
+    if (since) {
+      query += " AND created_at > ?";
+      params.push(since);
+    }
+    
+    query += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
+    params.push(limit, offset);
+    
+    try {
+      const stmt = db.query(query);
+      const rows = params.length > 0 ? stmt.all(...params) : stmt.all();
+      const typedRows = rows as DiscoveryRow[];
+      
+      const discoveries: Discovery[] = typedRows.map(row => ({
+        id: row.id,
+        armId: row.arm_id,
+        armName: row.arm_name,
+        kind: row.kind,
+        title: row.title,
+        details: row.details,
+        filePath: row.file_path,
+        lineNumber: row.line_number,
+        severity: row.severity,
+        status: row.status,
+        taskId: row.task_id,
+        phase: row.phase,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        metadata: parseMetadata(row.metadata),
+      }));
+      
+      let countQuery = "SELECT COUNT(*) as count FROM discoveries WHERE 1 = 1";
+      const countParams: (string | number)[] = [];
+      if (status !== "all") {
+        countQuery += " AND status = ?";
+        countParams.push(status);
+      }
+      if (armId) {
+        countQuery += " AND arm_id = ?";
+        countParams.push(armId);
+      }
+      if (kind) {
+        countQuery += " AND kind = ?";
+        countParams.push(kind);
+      }
+      if (severity) {
+        countQuery += " AND severity = ?";
+        countParams.push(severity);
+      }
+      if (since) {
+        countQuery += " AND created_at > ?";
+        countParams.push(since);
+      }
+      const count = (db.query(countQuery).get(...countParams) as { count: number }).count;
+
+      return c.json({
+        discoveries,
+        pagination: { limit, offset, total: count },
+      });
+    } catch (err) {
+      throw HttpError.internal("Failed to query discoveries");
+    }
+  });
+  
+  // Update discovery status
+  app.patch("/:id", async (c) => {
+    const db = c.var.db;
+    const id = c.req.param("id");
+    let value: unknown;
+    try {
+      value = await c.req.json<unknown>();
+    } catch {
+      throw HttpError.badRequest("Request body must be valid JSON");
+    }
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw HttpError.badRequest("Request body must be an object");
+    }
+    const body = value as Record<string, unknown>;
+    const validStatuses = ["open", "acknowledged", "resolved", "dismissed"];
+    if (typeof body.status !== "string" || !validStatuses.includes(body.status)) {
+      throw HttpError.badRequest("Invalid status");
+    }
+    for (const field of ["reason", "resolvedBy"] as const) {
+      if (field in body && (typeof body[field] !== "string" || !body[field].trim())) {
+        throw HttpError.badRequest(`${field} must be a non-empty string`);
+      }
+    }
+    const hasResolutionMetadata = "reason" in body || "resolvedBy" in body;
+    if (hasResolutionMetadata && body.status !== "resolved" && body.status !== "dismissed") {
+      throw HttpError.badRequest("reason and resolvedBy require resolved or dismissed status");
+    }
+    const now = new Date().toISOString();
+    const updates = ["status = ?", "updated_at = ?"];
+    const params: string[] = [body.status, now];
+    if (hasResolutionMetadata) {
+      // One SQL update preserves unrelated metadata and commits resolution + status atomically.
+      // Malformed stored JSON fails the entire statement rather than discarding metadata.
+      const fields = ["'$.resolved_by', ?", "'$.resolved_at', ?"];
+      params.push(typeof body.resolvedBy === "string" ? body.resolvedBy : "api", now);
+      if (typeof body.reason === "string") {
+        fields.push("'$.resolution_reason', ?");
+        params.push(body.reason);
+      }
+      // Legacy null/scalar/array values have no object fields to preserve.
+      const metadataObject = "CASE WHEN json_type(COALESCE(metadata, '{}')) = 'object' " +
+        "THEN COALESCE(metadata, '{}') ELSE '{}' END";
+      updates.push(`metadata = json_set(${metadataObject}, ${fields.join(", ")})`);
+    }
+    params.push(id);
+    try {
+      const result = db.run(`UPDATE discoveries SET ${updates.join(", ")} WHERE id = ?`, params);
+      if (result.changes === 0) throw HttpError.notFound("Discovery not found");
+      return c.json({ success: true });
+    } catch (err) {
+      if (err instanceof HttpError) throw err;
+      throw HttpError.internal("Failed to update discovery");
+    }
+  });
+  
+  // Search discoveries (full-text)
+  app.get("/search", async (c) => {
+    const db = c.var.db;
+    const q = c.req.query("q");
+    const severity = c.req.query("severity");
+    const limit = Math.min(parseInt(c.req.query("limit") || "20", 10), 100);
+    
+    if (!q || q.length < 2) {
+      throw HttpError.badRequest("Search query must be at least 2 characters");
+    }
+    
+    try {
+      // Try FTS5 first
+      let query = `
+         SELECT d.id, d.arm_id, d.arm_name, d.kind, d.title, d.details, d.file_path, d.line_number, d.severity, d.status, d.created_at, d.updated_at, d.metadata
+        FROM discoveries d
+        JOIN discoveries_fts fts ON d.rowid = fts.rowid
+        WHERE discoveries_fts MATCH ?
+        ${severity ? "AND d.severity = ?" : ""}
+        ORDER BY d.created_at DESC
+        LIMIT ?
+      `;
+      
+       const params: (string | number)[] = [q];
+      if (severity) params.push(severity);
+      params.push(limit);
+      
+      const stmt = db.query(query);
+      const rows = params.length > 0 ? stmt.all(...params) : stmt.all();
+      const typedRows = rows as DiscoveryRow[];
+      
+      const discoveries: Discovery[] = typedRows.map(row => ({
+        id: row.id,
+        armId: row.arm_id,
+        armName: row.arm_name,
+        kind: row.kind,
+        title: row.title,
+        details: row.details,
+        filePath: row.file_path,
+        lineNumber: row.line_number,
+        severity: row.severity,
+        status: row.status,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        metadata: parseMetadata(row.metadata),
+      }));
+      
+      return c.json({ discoveries });
+    } catch {
+      // Fall back to LIKE search if FTS fails
+      let query = `
+         SELECT id, arm_id, arm_name, kind, title, details, file_path, line_number, severity, status, created_at, updated_at, metadata
+        FROM discoveries
+        WHERE (title LIKE ? OR details LIKE ?)
+        ${severity ? "AND severity = ?" : ""}
+        ORDER BY created_at DESC
+        LIMIT ?
+      `;
+      
+       const searchTerm = `%${q}%`;
+       const params: (string | number)[] = [searchTerm, searchTerm];
+       if (severity) params.push(severity);
+       params.push(limit);
+       
+       const stmt = db.query(query);
+       const rows = params.length > 0 ? stmt.all(...params) : stmt.all();
+       const typedRows = rows as DiscoveryRow[];
+       
+       const discoveries: Discovery[] = typedRows.map(row => ({
+        id: row.id,
+        armId: row.arm_id,
+        armName: row.arm_name,
+        kind: row.kind,
+        title: row.title,
+        details: row.details,
+        filePath: row.file_path,
+        lineNumber: row.line_number,
+        severity: row.severity,
+        status: row.status,
+        createdAt: row.created_at,
+         updatedAt: row.updated_at,
+         metadata: parseMetadata(row.metadata),
+      }));
+      
+      return c.json({ discoveries });
+    }
+  });
+  
+  // Get discovery statistics
+  app.get("/stats", async (c) => {
+    const db = c.var.db;
+    
+    try {
+      const bySeverity = db.query(`
+        SELECT severity, COUNT(*) as count
+        FROM discoveries
+        GROUP BY severity
+      `).all() as Array<{ severity: string; count: number }>;
+      
+      const byKind = db.query(`
+        SELECT kind, COUNT(*) as count
+        FROM discoveries
+        GROUP BY kind
+      `).all() as Array<{ kind: string; count: number }>;
+      
+      const byStatus = db.query(`
+        SELECT status, COUNT(*) as count
+        FROM discoveries
+        GROUP BY status
+      `).all() as Array<{ status: string; count: number }>;
+      
+      const recentCount = db.query(`
+        SELECT COUNT(*) as count
+        FROM discoveries
+        WHERE created_at > datetime('now', '-24 hours')
+      `).get() as { count: number };
+      
+      return c.json({
+        bySeverity: bySeverity.reduce((acc, s) => ({ ...acc, [s.severity]: s.count }), {}),
+        byKind: byKind.reduce((acc, k) => ({ ...acc, [k.kind]: k.count }), {}),
+        byStatus: byStatus.reduce((acc, s) => ({ ...acc, [s.status]: s.count }), {}),
+        recent24h: recentCount.count,
+      });
+    } catch (err) {
+      throw HttpError.internal("Failed to get discovery stats");
+    }
+  });
+  
+  // Register parameterized detail after /search and /stats so static routes win.
+  app.get("/:id", async (c) => {
+    const db = c.var.db;
+    const id = c.req.param("id");
+    const row = db.query(
+      "SELECT id, arm_id, arm_name, kind, title, details, file_path, line_number, severity, status, task_id, phase, created_at, updated_at, metadata FROM discoveries WHERE id = ?"
+    ).get(id) as DiscoveryRow | null;
+    if (!row) throw HttpError.notFound("Discovery not found");
+    const discovery: Discovery = {
+      id: row.id,
+      armId: row.arm_id,
+      armName: row.arm_name,
+      kind: row.kind,
+      title: row.title,
+      details: row.details,
+      filePath: row.file_path,
+      lineNumber: row.line_number,
+      severity: row.severity,
+      status: row.status,
+      taskId: row.task_id,
+      phase: row.phase,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      metadata: parseMetadata(row.metadata),
+    };
+    return c.json({ discovery });
+  });
+
+  return app;
+}

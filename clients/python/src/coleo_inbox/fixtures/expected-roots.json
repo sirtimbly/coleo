@@ -1,0 +1,1111 @@
+{
+  "schemaVersion": 1,
+  "kind": "inbox.snapshot",
+  "view": {
+    "schemaVersion": 1,
+    "client": "cli",
+    "definition": {
+      "schemaVersion": 1,
+      "id": "inbox-triage",
+      "panelKind": "collection",
+      "resource": "messaging",
+      "query": {
+        "schemaVersion": 1,
+        "scope": "inbox",
+        "profileId": "local",
+        "facet": "attention",
+        "mailbox": "inbox",
+        "brainCategory": "all",
+        "search": "",
+        "filters": [],
+        "sort": {
+          "field": "timestamp",
+          "direction": "desc"
+        },
+        "limit": 100
+      },
+      "commands": [
+        "inbox.open",
+        "inbox.mark-read",
+        "inbox.refresh"
+      ],
+      "interactionProfile": "collection-navigation",
+      "interactions": [
+        {
+          "id": "facet",
+          "operation": "inbox.facet",
+          "cli": {
+            "flag": "--facet"
+          }
+        },
+        {
+          "id": "mailbox",
+          "operation": "inbox.mailbox",
+          "cli": {
+            "flag": "--mailbox"
+          }
+        },
+        {
+          "id": "brain-category",
+          "operation": "inbox.brain-category",
+          "cli": {
+            "flag": "--brain-category"
+          }
+        },
+        {
+          "id": "sort",
+          "operation": "collection.sort",
+          "cli": {
+            "flag": "--sort"
+          }
+        },
+        {
+          "id": "limit",
+          "operation": "collection.limit",
+          "cli": {
+            "flag": "--limit"
+          }
+        },
+        {
+          "id": "presentation",
+          "operation": "collection.presentation",
+          "cli": {
+            "flag": "--presentation"
+          }
+        },
+        {
+          "id": "mark-read",
+          "operation": "inbox.mark-read",
+          "cli": {
+            "subcommand": "mark-read"
+          }
+        }
+      ],
+      "slots": {
+        "toolbar.primary.identity": [
+          {
+            "id": "heading",
+            "widget": "resource.identity",
+            "label": "Inbox triage",
+            "layout": {
+              "priority": 0,
+              "collapse": "hide",
+              "overflow": false
+            }
+          }
+        ],
+        "toolbar.primary.context": [
+          {
+            "id": "facet",
+            "widget": "inbox.facet",
+            "label": "View",
+            "binding": "query.facet",
+            "layout": {
+              "priority": 90,
+              "kind": "choice",
+              "collapse": "value",
+              "overflow": true
+            }
+          }
+        ],
+        "toolbar.primary.search": [
+          {
+            "id": "search",
+            "widget": "collection.search",
+            "label": "Search",
+            "binding": "query.search",
+            "layout": {
+              "priority": 100,
+              "kind": "value",
+              "collapse": "value",
+              "overflow": false
+            }
+          }
+        ],
+        "toolbar.primary.actions": [
+          {
+            "id": "mark-read",
+            "widget": "inbox.mark-read",
+            "label": "Mark read",
+            "command": "inbox.mark-read",
+            "layout": {
+              "priority": 60,
+              "collapse": "icon",
+              "overflow": true
+            }
+          },
+          {
+            "id": "refresh",
+            "widget": "collection.refresh",
+            "label": "Refresh",
+            "command": "inbox.refresh",
+            "layout": {
+              "priority": 70,
+              "collapse": "icon",
+              "overflow": true
+            }
+          }
+        ],
+        "toolbar.primary.state": [
+          {
+            "id": "count",
+            "widget": "collection.count",
+            "label": "Results",
+            "layout": {
+              "priority": 20,
+              "collapse": "none",
+              "overflow": true
+            }
+          }
+        ],
+        "toolbar.secondary.sort": [
+          {
+            "id": "sort",
+            "widget": "collection.sort",
+            "label": "Sort",
+            "binding": "query.sort",
+            "layout": {
+              "priority": 40,
+              "kind": "choice",
+              "collapse": "value",
+              "overflow": true
+            }
+          }
+        ],
+        "toolbar.secondary.presentation": [
+          {
+            "id": "display",
+            "widget": "collection.presentation",
+            "label": "Presentation",
+            "binding": "presentation.active",
+            "layout": {
+              "priority": 30,
+              "kind": "choice",
+              "collapse": "value",
+              "overflow": true
+            }
+          }
+        ],
+        "toolbar.secondary.selection": [
+          {
+            "id": "selection",
+            "widget": "collection.selection",
+            "label": "Selected resources",
+            "layout": {
+              "priority": 80,
+              "collapse": "none",
+              "overflow": true
+            }
+          }
+        ],
+        "toolbar.secondary.insights": [
+          {
+            "id": "insights",
+            "widget": "collection.insights",
+            "label": "Metadata overview",
+            "binding": "insights.active",
+            "layout": {
+              "priority": 10,
+              "kind": "toggle",
+              "collapse": "icon",
+              "overflow": true
+            }
+          }
+        ]
+      },
+      "toolbar": {
+        "maxRows": 2,
+        "groups": {
+          "toolbar.primary.identity": {
+            "label": "Identity",
+            "align": "start"
+          },
+          "toolbar.primary.context": {
+            "label": "Context",
+            "align": "start"
+          },
+          "toolbar.primary.search": {
+            "label": "Search",
+            "align": "start"
+          },
+          "toolbar.primary.actions": {
+            "label": "Actions",
+            "align": "end"
+          },
+          "toolbar.primary.state": {
+            "label": "Status",
+            "align": "end"
+          },
+          "toolbar.secondary.sort": {
+            "label": "Ordering",
+            "align": "start"
+          },
+          "toolbar.secondary.presentation": {
+            "label": "Presentation",
+            "align": "start"
+          },
+          "toolbar.secondary.selection": {
+            "label": "Selection",
+            "align": "end"
+          },
+          "toolbar.secondary.insights": {
+            "label": "Insights",
+            "align": "end"
+          }
+        }
+      },
+      "hierarchy": {
+        "initialExpansion": "all",
+        "selectionScope": "loaded-descendants"
+      },
+      "insights": {
+        "active": null,
+        "panels": [
+          {
+            "id": "overview",
+            "renderer": "messaging.overview",
+            "label": "Inbox metadata",
+            "fields": [
+              "unread",
+              "requiresAction",
+              "timestamp"
+            ]
+          }
+        ]
+      },
+      "presentation": {
+        "active": "grid",
+        "renderers": [
+          {
+            "id": "grid",
+            "renderer": "collection.grid",
+            "label": "Resource grid",
+            "fields": [
+              "title",
+              "source",
+              "timestamp",
+              "unread",
+              "requiresAction"
+            ],
+            "kind": "grid"
+          },
+          {
+            "id": "cards",
+            "renderer": "collection.cards",
+            "label": "Resource cards",
+            "fields": [
+              "title",
+              "summary",
+              "source",
+              "timestamp"
+            ],
+            "kind": "cards"
+          },
+          {
+            "id": "timeline",
+            "renderer": "messaging.timeline",
+            "label": "Activity timeline",
+            "fields": [
+              "title",
+              "summary",
+              "timestamp"
+            ],
+            "kind": "custom"
+          }
+        ]
+      }
+    },
+    "queryIdentity": "{\"schemaVersion\":1,\"scope\":\"inbox\",\"profileId\":\"local\",\"facet\":\"attention\",\"mailbox\":\"inbox\",\"brainCategory\":\"all\",\"search\":\"\",\"filters\":[],\"sort\":{\"field\":\"timestamp\",\"direction\":\"desc\"},\"limit\":100}",
+    "features": {
+      "slots": {
+        "toolbar.primary.identity": [
+          {
+            "id": "heading",
+            "implementation": "resource.identity"
+          }
+        ],
+        "toolbar.primary.context": [
+          {
+            "id": "facet",
+            "implementation": "inbox.facet"
+          }
+        ],
+        "toolbar.primary.search": [
+          {
+            "id": "search",
+            "implementation": "collection.search"
+          }
+        ],
+        "toolbar.primary.actions": [
+          {
+            "id": "mark-read",
+            "implementation": "inbox.mark-read"
+          },
+          {
+            "id": "refresh",
+            "implementation": "collection.refresh"
+          }
+        ],
+        "toolbar.primary.state": [
+          {
+            "id": "count",
+            "implementation": "collection.count"
+          }
+        ],
+        "toolbar.secondary.sort": [
+          {
+            "id": "sort",
+            "implementation": "collection.sort"
+          }
+        ],
+        "toolbar.secondary.presentation": [
+          {
+            "id": "display",
+            "implementation": "collection.presentation"
+          }
+        ],
+        "toolbar.secondary.selection": [
+          {
+            "id": "selection",
+            "implementation": "collection.selection"
+          }
+        ],
+        "toolbar.secondary.insights": [
+          {
+            "id": "insights",
+            "implementation": "collection.insights"
+          }
+        ]
+      },
+      "insights": [
+        {
+          "id": "overview",
+          "implementation": "metadata.summary",
+          "diagnostic": "Using metadata.summary instead of messaging.overview"
+        }
+      ],
+      "presentation": [
+        {
+          "id": "grid",
+          "implementation": "collection.grid"
+        },
+        {
+          "id": "cards",
+          "implementation": "collection.list",
+          "diagnostic": "Using collection.list instead of collection.cards"
+        },
+        {
+          "id": "timeline",
+          "implementation": "collection.list",
+          "diagnostic": "Using collection.list instead of messaging.timeline"
+        }
+      ]
+    },
+    "interactions": {
+      "schemaVersion": 1,
+      "profileId": "collection-navigation",
+      "client": "cli",
+      "bindings": [
+        {
+          "label": "Previous item",
+          "kind": "navigation",
+          "target": "focused-item",
+          "id": "previous",
+          "operation": "collection.previous",
+          "keyboard": [],
+          "available": false,
+          "diagnostic": "No cli CLI binding for collection.previous"
+        },
+        {
+          "label": "Next item",
+          "kind": "navigation",
+          "target": "focused-item",
+          "id": "next",
+          "operation": "collection.next",
+          "keyboard": [],
+          "available": false,
+          "diagnostic": "No cli CLI binding for collection.next"
+        },
+        {
+          "label": "Open item",
+          "kind": "navigation",
+          "command": "inbox.open",
+          "target": "focused-item",
+          "value": {
+            "type": "string"
+          },
+          "id": "open",
+          "operation": "collection.open",
+          "keyboard": [],
+          "cli": {
+            "subcommand": "show"
+          },
+          "available": true
+        },
+        {
+          "label": "Back / dismiss",
+          "kind": "navigation",
+          "id": "back",
+          "operation": "collection.back",
+          "keyboard": [],
+          "available": false,
+          "diagnostic": "No cli CLI binding for collection.back"
+        },
+        {
+          "label": "Search",
+          "kind": "query",
+          "binding": "query.search",
+          "value": {
+            "type": "string"
+          },
+          "id": "search",
+          "operation": "collection.search",
+          "keyboard": [],
+          "cli": {
+            "flag": "--search",
+            "alias": "-s"
+          },
+          "available": true
+        },
+        {
+          "label": "Toggle item selection",
+          "kind": "navigation",
+          "target": "focused-item",
+          "id": "select",
+          "operation": "collection.select",
+          "keyboard": [],
+          "available": false,
+          "diagnostic": "No cli CLI binding for collection.select"
+        },
+        {
+          "label": "Toggle loaded branch selection",
+          "kind": "navigation",
+          "target": "loaded-descendants",
+          "id": "select-branch",
+          "operation": "collection.select-branch",
+          "keyboard": [],
+          "available": false,
+          "diagnostic": "No cli CLI binding for collection.select-branch"
+        },
+        {
+          "label": "Collapse branch",
+          "kind": "navigation",
+          "target": "focused-item",
+          "id": "collapse",
+          "operation": "collection.collapse",
+          "keyboard": [],
+          "available": false,
+          "diagnostic": "No cli CLI binding for collection.collapse"
+        },
+        {
+          "label": "Expand branch",
+          "kind": "navigation",
+          "target": "focused-item",
+          "id": "expand",
+          "operation": "collection.expand",
+          "keyboard": [],
+          "available": false,
+          "diagnostic": "No cli CLI binding for collection.expand"
+        },
+        {
+          "label": "Refresh",
+          "kind": "navigation",
+          "command": "inbox.refresh",
+          "id": "refresh",
+          "operation": "collection.refresh",
+          "keyboard": [],
+          "available": false,
+          "diagnostic": "No cli CLI binding for collection.refresh"
+        },
+        {
+          "label": "Show interaction help",
+          "kind": "navigation",
+          "id": "help",
+          "operation": "collection.help",
+          "keyboard": [],
+          "cli": {
+            "flag": "--help",
+            "alias": "-h"
+          },
+          "available": true
+        },
+        {
+          "label": "View",
+          "kind": "query",
+          "binding": "query.facet",
+          "value": {
+            "type": "string",
+            "choices": [
+              "attention",
+              "messages",
+              "brain",
+              "arms",
+              "history",
+              "all"
+            ]
+          },
+          "id": "facet",
+          "operation": "inbox.facet",
+          "keyboard": [],
+          "cli": {
+            "flag": "--facet"
+          },
+          "available": true
+        },
+        {
+          "label": "Mailbox",
+          "kind": "query",
+          "binding": "query.mailbox",
+          "value": {
+            "type": "string",
+            "choices": [
+              "inbox",
+              "sent",
+              "archive"
+            ]
+          },
+          "id": "mailbox",
+          "operation": "inbox.mailbox",
+          "keyboard": [],
+          "cli": {
+            "flag": "--mailbox"
+          },
+          "available": true
+        },
+        {
+          "label": "Brain category",
+          "kind": "query",
+          "binding": "query.brainCategory",
+          "value": {
+            "type": "string",
+            "choices": [
+              "all",
+              "operations",
+              "tasks",
+              "arms",
+              "decisions",
+              "planning",
+              "alerts"
+            ]
+          },
+          "id": "brain-category",
+          "operation": "inbox.brain-category",
+          "keyboard": [],
+          "cli": {
+            "flag": "--brain-category"
+          },
+          "available": true
+        },
+        {
+          "label": "Timestamp order",
+          "kind": "query",
+          "binding": "query.sort.direction",
+          "value": {
+            "type": "string",
+            "choices": [
+              "asc",
+              "desc"
+            ]
+          },
+          "id": "sort",
+          "operation": "collection.sort",
+          "keyboard": [],
+          "cli": {
+            "flag": "--sort"
+          },
+          "available": true
+        },
+        {
+          "label": "Page size",
+          "kind": "query",
+          "binding": "query.limit",
+          "value": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "id": "limit",
+          "operation": "collection.limit",
+          "keyboard": [],
+          "cli": {
+            "flag": "--limit"
+          },
+          "available": true
+        },
+        {
+          "label": "Presentation",
+          "kind": "presentation",
+          "binding": "presentation.active",
+          "value": {
+            "type": "string",
+            "choices": [
+              "grid",
+              "cards",
+              "timeline"
+            ]
+          },
+          "id": "presentation",
+          "operation": "collection.presentation",
+          "keyboard": [],
+          "cli": {
+            "flag": "--presentation"
+          },
+          "available": true
+        },
+        {
+          "label": "Mark selected read",
+          "kind": "command",
+          "command": "inbox.mark-read",
+          "target": "selected-items",
+          "value": {
+            "type": "string-list"
+          },
+          "id": "mark-read",
+          "operation": "inbox.mark-read",
+          "keyboard": [],
+          "cli": {
+            "subcommand": "mark-read"
+          },
+          "available": true
+        }
+      ]
+    }
+  },
+  "query": {
+    "schemaVersion": 1,
+    "scope": "inbox",
+    "profileId": "local",
+    "facet": "attention",
+    "mailbox": "inbox",
+    "brainCategory": "all",
+    "search": "",
+    "filters": [],
+    "sort": {
+      "field": "timestamp",
+      "direction": "desc"
+    },
+    "limit": 100
+  },
+  "presentation": {
+    "id": "grid",
+    "implementation": "collection.grid",
+    "fields": [
+      "title",
+      "source",
+      "timestamp",
+      "unread",
+      "requiresAction"
+    ]
+  },
+  "pages": [
+    {
+      "schemaVersion": 1,
+      "queryId": "{\"schemaVersion\":1,\"scope\":\"inbox\",\"profileId\":\"local\",\"facet\":\"attention\",\"mailbox\":\"inbox\",\"brainCategory\":\"all\",\"search\":\"\",\"filters\":[],\"sort\":{\"field\":\"timestamp\",\"direction\":\"desc\"},\"limit\":100}",
+      "query": {
+        "schemaVersion": 1,
+        "scope": "inbox",
+        "profileId": "local",
+        "facet": "attention",
+        "mailbox": "inbox",
+        "brainCategory": "all",
+        "search": "",
+        "filters": [],
+        "sort": {
+          "field": "timestamp",
+          "direction": "desc"
+        },
+        "limit": 100
+      },
+      "cursor": null,
+      "nextCursor": "older",
+      "items": [
+        {
+          "id": "thread:<first@example.test>",
+          "revision": "fixture-revision-1",
+          "sourceId": "mail",
+          "kind": "brain",
+          "representation": "thread",
+          "title": "Unicode 日本語 🐙 and a deliberately long Inbox subject for narrow terminals",
+          "summary": "Thread summary",
+          "timestamp": "2026-10-09T12:02:00.000Z",
+          "source": "Mail",
+          "unread": true,
+          "requiresAction": false,
+          "severity": "info",
+          "detail": {
+            "kind": "thread",
+            "threadId": "<first@example.test>",
+            "mailbox": "inbox"
+          },
+          "thread": {
+            "id": "<first@example.test>",
+            "mailbox": "inbox",
+            "subject": "Unicode 日本語 🐙 and a deliberately long Inbox subject for narrow terminals",
+            "revision": "fixture-revision-1",
+            "messageCount": 3,
+            "mailboxMessageCount": 2,
+            "unreadCount": 2,
+            "lastMessageAt": "2026-10-09T12:02:00.000Z",
+            "aliases": [
+              "<first@example.test>",
+              "Unicode 日本語 🐙 and a deliberately long Inbox subject for narrow terminals",
+              "<reply@example.test>",
+              "Unicode",
+              "<branch@example.test>"
+            ],
+            "diagnostics": [],
+            "hierarchy": {
+              "schemaVersion": 1,
+              "rootIds": [
+                "thread:inbox:<first@example.test>"
+              ],
+              "complete": true,
+              "nodes": [
+                {
+                  "id": "thread:inbox:<first@example.test>",
+                  "parentId": null,
+                  "kind": "group",
+                  "selectable": false,
+                  "childrenComplete": true,
+                  "data": {
+                    "title": "Unicode 日本語 🐙 and a deliberately long Inbox subject for narrow terminals",
+                    "summary": "Branch reply body.",
+                    "timestamp": "2026-10-09T12:02:00.000Z",
+                    "source": "inbox · 3 messages",
+                    "unread": true,
+                    "requiresAction": true,
+                    "locations": []
+                  }
+                },
+                {
+                  "id": "message:<first@example.test>",
+                  "parentId": "thread:inbox:<first@example.test>",
+                  "kind": "resource",
+                  "selectable": true,
+                  "childrenComplete": true,
+                  "data": {
+                    "title": "Unicode 日本語 🐙 and a deliberately long Inbox subject for narrow terminals",
+                    "summary": "# Review\n\nFull **Markdown** content, not just the summary.",
+                    "timestamp": "2026-10-09T12:00:00.000Z",
+                    "source": "Tim",
+                    "unread": true,
+                    "requiresAction": true,
+                    "locations": [
+                      {
+                        "mailbox": "inbox",
+                        "messageId": "first",
+                        "seen": false
+                      }
+                    ],
+                    "from": "Tim",
+                    "mailbox": "inbox",
+                    "messageId": "<first@example.test>"
+                  }
+                },
+                {
+                  "id": "message:<reply@example.test>",
+                  "parentId": "message:<first@example.test>",
+                  "kind": "resource",
+                  "selectable": true,
+                  "childrenComplete": true,
+                  "data": {
+                    "title": "Re: Unicode",
+                    "summary": "Sent-only context must be skipped by read.",
+                    "timestamp": "2026-10-09T12:01:00.000Z",
+                    "source": "Brain",
+                    "unread": false,
+                    "requiresAction": false,
+                    "locations": [
+                      {
+                        "mailbox": "sent",
+                        "messageId": "reply",
+                        "seen": true
+                      }
+                    ],
+                    "from": "Brain",
+                    "mailbox": "sent",
+                    "messageId": "<reply@example.test>"
+                  }
+                },
+                {
+                  "id": "message:<branch@example.test>",
+                  "parentId": "message:<first@example.test>",
+                  "kind": "resource",
+                  "selectable": true,
+                  "childrenComplete": true,
+                  "data": {
+                    "title": "Re: Unicode",
+                    "summary": "Branch reply body.",
+                    "timestamp": "2026-10-09T12:02:00.000Z",
+                    "source": "Arm",
+                    "unread": true,
+                    "requiresAction": true,
+                    "locations": [
+                      {
+                        "mailbox": "inbox",
+                        "messageId": "branch",
+                        "seen": false
+                      }
+                    ],
+                    "from": "Arm",
+                    "mailbox": "inbox",
+                    "messageId": "<branch@example.test>"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "sources": [
+        {
+          "id": "records",
+          "status": "fresh",
+          "revision": "1",
+          "asOf": "2026-10-09T12:00:00.000Z",
+          "complete": true
+        },
+        {
+          "id": "mail",
+          "status": "fresh",
+          "revision": "1",
+          "asOf": "2026-10-09T12:00:00.000Z",
+          "complete": true
+        },
+        {
+          "id": "activity",
+          "status": "fresh",
+          "revision": "1",
+          "asOf": "2026-10-09T12:00:00.000Z",
+          "complete": true
+        },
+        {
+          "id": "events",
+          "status": "fresh",
+          "revision": "1",
+          "asOf": "2026-10-09T12:00:00.000Z",
+          "complete": true
+        }
+      ],
+      "summaries": {
+        "scope": "query",
+        "total": 2,
+        "unread": 2,
+        "requiresAction": 0,
+        "complete": true
+      }
+    }
+  ],
+  "items": [
+    {
+      "id": "thread:<first@example.test>",
+      "revision": "fixture-revision-1",
+      "sourceId": "mail",
+      "kind": "brain",
+      "representation": "thread",
+      "title": "Unicode 日本語 🐙 and a deliberately long Inbox subject for narrow terminals",
+      "summary": "Thread summary",
+      "timestamp": "2026-10-09T12:02:00.000Z",
+      "source": "Mail",
+      "unread": true,
+      "requiresAction": false,
+      "severity": "info",
+      "detail": {
+        "kind": "thread",
+        "threadId": "<first@example.test>",
+        "mailbox": "inbox"
+      },
+      "thread": {
+        "id": "<first@example.test>",
+        "mailbox": "inbox",
+        "subject": "Unicode 日本語 🐙 and a deliberately long Inbox subject for narrow terminals",
+        "revision": "fixture-revision-1",
+        "messageCount": 3,
+        "mailboxMessageCount": 2,
+        "unreadCount": 2,
+        "lastMessageAt": "2026-10-09T12:02:00.000Z",
+        "aliases": [
+          "<first@example.test>",
+          "Unicode 日本語 🐙 and a deliberately long Inbox subject for narrow terminals",
+          "<reply@example.test>",
+          "Unicode",
+          "<branch@example.test>"
+        ],
+        "diagnostics": [],
+        "hierarchy": {
+          "schemaVersion": 1,
+          "rootIds": [
+            "thread:inbox:<first@example.test>"
+          ],
+          "complete": true,
+          "nodes": [
+            {
+              "id": "thread:inbox:<first@example.test>",
+              "parentId": null,
+              "kind": "group",
+              "selectable": false,
+              "childrenComplete": true,
+              "data": {
+                "title": "Unicode 日本語 🐙 and a deliberately long Inbox subject for narrow terminals",
+                "summary": "Branch reply body.",
+                "timestamp": "2026-10-09T12:02:00.000Z",
+                "source": "inbox · 3 messages",
+                "unread": true,
+                "requiresAction": true,
+                "locations": []
+              }
+            },
+            {
+              "id": "message:<first@example.test>",
+              "parentId": "thread:inbox:<first@example.test>",
+              "kind": "resource",
+              "selectable": true,
+              "childrenComplete": true,
+              "data": {
+                "title": "Unicode 日本語 🐙 and a deliberately long Inbox subject for narrow terminals",
+                "summary": "# Review\n\nFull **Markdown** content, not just the summary.",
+                "timestamp": "2026-10-09T12:00:00.000Z",
+                "source": "Tim",
+                "unread": true,
+                "requiresAction": true,
+                "locations": [
+                  {
+                    "mailbox": "inbox",
+                    "messageId": "first",
+                    "seen": false
+                  }
+                ],
+                "from": "Tim",
+                "mailbox": "inbox",
+                "messageId": "<first@example.test>"
+              }
+            },
+            {
+              "id": "message:<reply@example.test>",
+              "parentId": "message:<first@example.test>",
+              "kind": "resource",
+              "selectable": true,
+              "childrenComplete": true,
+              "data": {
+                "title": "Re: Unicode",
+                "summary": "Sent-only context must be skipped by read.",
+                "timestamp": "2026-10-09T12:01:00.000Z",
+                "source": "Brain",
+                "unread": false,
+                "requiresAction": false,
+                "locations": [
+                  {
+                    "mailbox": "sent",
+                    "messageId": "reply",
+                    "seen": true
+                  }
+                ],
+                "from": "Brain",
+                "mailbox": "sent",
+                "messageId": "<reply@example.test>"
+              }
+            },
+            {
+              "id": "message:<branch@example.test>",
+              "parentId": "message:<first@example.test>",
+              "kind": "resource",
+              "selectable": true,
+              "childrenComplete": true,
+              "data": {
+                "title": "Re: Unicode",
+                "summary": "Branch reply body.",
+                "timestamp": "2026-10-09T12:02:00.000Z",
+                "source": "Arm",
+                "unread": true,
+                "requiresAction": true,
+                "locations": [
+                  {
+                    "mailbox": "inbox",
+                    "messageId": "branch",
+                    "seen": false
+                  }
+                ],
+                "from": "Arm",
+                "mailbox": "inbox",
+                "messageId": "<branch@example.test>"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "rows": [
+    {
+      "id": "thread:<first@example.test>",
+      "parentId": null,
+      "depth": 0,
+      "selectable": false,
+      "values": {
+        "title": "Unicode 日本語 🐙 and a deliberately long Inbox subject for narrow terminals",
+        "source": "Mail",
+        "timestamp": "2026-10-09T12:02:00.000Z",
+        "unread": true,
+        "requiresAction": false
+      }
+    },
+    {
+      "id": "thread:inbox:<first@example.test>",
+      "parentId": null,
+      "depth": 0,
+      "selectable": false,
+      "values": {
+        "title": "Unicode 日本語 🐙 and a deliberately long Inbox subject for narrow terminals",
+        "source": "inbox · 3 messages",
+        "timestamp": "2026-10-09T12:02:00.000Z",
+        "unread": true,
+        "requiresAction": true
+      }
+    },
+    {
+      "id": "message:<first@example.test>",
+      "parentId": "thread:inbox:<first@example.test>",
+      "depth": 1,
+      "selectable": true,
+      "values": {
+        "title": "Unicode 日本語 🐙 and a deliberately long Inbox subject for narrow terminals",
+        "source": "Tim",
+        "timestamp": "2026-10-09T12:00:00.000Z",
+        "unread": true,
+        "requiresAction": true
+      }
+    }
+  ],
+  "metadata": [
+    {
+      "field": "unread",
+      "label": "Unread",
+      "value": 2,
+      "scope": "query"
+    },
+    {
+      "field": "requiresAction",
+      "label": "Needs action",
+      "value": 0,
+      "scope": "query"
+    },
+    {
+      "field": "timestamp",
+      "label": "Latest loaded item",
+      "value": "2026-10-09T12:02:00.000Z",
+      "scope": "loaded-window"
+    }
+  ],
+  "metadataPanelId": "overview",
+  "diagnostics": [
+    "Using metadata.summary instead of messaging.overview"
+  ],
+  "complete": true,
+  "traversal": {
+    "loadedPages": 1,
+    "requestedPages": 1,
+    "nextCursor": "older",
+    "retryCursor": null,
+    "exhausted": false
+  }
+}

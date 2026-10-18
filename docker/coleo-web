@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || { echo "Required command not found: $1" >&2; exit 1; }
+}
+require_cmd bun
+exec bun "${COLEO_APP_DIR:-/home/coleo/coleo}/clients/web/dist/host.js" "$@"

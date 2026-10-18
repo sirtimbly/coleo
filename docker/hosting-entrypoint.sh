@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || { echo "Required command not found: $1" >&2; exit 1; }
+}
+require_cmd bun
+require_cmd coleo-web
+
 log() {
   printf '[coleo-docker] %s\n' "$*"
 }
@@ -20,12 +26,18 @@ COLEO_PROJECTS_DIR=${COLEO_PROJECTS_DIR:-$COLEO_HOME/projects}
 COLEO_WORKDIR=${COLEO_WORKDIR:-$COLEO_PROJECTS_DIR/app}
 COLEO_API_HOST=${COLEO_API_HOST:-0.0.0.0}
 COLEO_API_PORT=${COLEO_API_PORT:-8080}
+COLEO_API_INTERNAL_PORT=${COLEO_API_INTERNAL_PORT:-8081}
 COLEO_WEB_HOST=${COLEO_WEB_HOST:-0.0.0.0}
 COLEO_WEB_PORT=${COLEO_WEB_PORT:-5173}
 COLEO_AGENT_MAX_ARMS=${COLEO_AGENT_MAX_ARMS:-10}
 COLEO_NATS_URL=${COLEO_NATS_URL:-nats://nats:4222}
 
-export COLEO_DIR COLEO_WORKDIR COLEO_API_HOST COLEO_API_PORT COLEO_NATS_URL
+if [ "$COLEO_API_INTERNAL_PORT" = "$COLEO_API_PORT" ] || [ "$COLEO_API_INTERNAL_PORT" = "$COLEO_WEB_PORT" ]; then
+  log "COLEO_API_INTERNAL_PORT must differ from the public listener ports"
+  exit 1
+fi
+
+export COLEO_APP_DIR COLEO_DIR COLEO_WORKDIR COLEO_API_HOST COLEO_API_PORT COLEO_NATS_URL
 export COLEO_API_URL=${COLEO_API_URL:-http://127.0.0.1:${COLEO_API_PORT}}
 export COLEO_CLI_ENTRYPOINT=${COLEO_CLI_ENTRYPOINT:-$COLEO_APP_DIR/src/cli/index.ts}
 export PATH="$COLEO_HOME/.bun/bin:$PATH"
@@ -62,6 +74,7 @@ if [ "$#" -gt 0 ]; then
 fi
 
 pids=()
+# shellcheck disable=SC2329 # Invoked by the signal/exit trap.
 cleanup() {
   log "Stopping services"
   for pid in "${pids[@]}"; do
@@ -71,13 +84,19 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
-log "Starting API on ${COLEO_API_HOST}:${COLEO_API_PORT}"
-run_as_coleo "cd '$COLEO_APP_DIR' && bun '$COLEO_CLI_ENTRYPOINT' serve --host '$COLEO_API_HOST' --port '$COLEO_API_PORT'" &
+log "Starting API on 127.0.0.1:${COLEO_API_INTERNAL_PORT}"
+run_as_coleo "cd '$COLEO_APP_DIR' && exec bun '$COLEO_CLI_ENTRYPOINT' serve --host 127.0.0.1 --port '$COLEO_API_INTERNAL_PORT'" &
 pids+=("$!")
 
-log "Starting web UI on ${COLEO_WEB_HOST}:${COLEO_WEB_PORT}"
-run_as_coleo "cd '$COLEO_APP_DIR' && bun '$COLEO_CLI_ENTRYPOINT' web --host '$COLEO_WEB_HOST' --port '$COLEO_WEB_PORT'" &
+log "Starting web/proxy on ${COLEO_API_HOST}:${COLEO_API_PORT}"
+run_as_coleo "cd '$COLEO_APP_DIR' && COLEO_API_URL='http://127.0.0.1:$COLEO_API_INTERNAL_PORT' exec coleo-web --host '$COLEO_API_HOST' --port '$COLEO_API_PORT'" &
 pids+=("$!")
+
+if [ "$COLEO_WEB_PORT" != "$COLEO_API_PORT" ]; then
+  log "Starting web UI on ${COLEO_WEB_HOST}:${COLEO_WEB_PORT}"
+  run_as_coleo "cd '$COLEO_APP_DIR' && COLEO_API_URL='http://127.0.0.1:$COLEO_API_INTERNAL_PORT' exec coleo-web --host '$COLEO_WEB_HOST' --port '$COLEO_WEB_PORT'" &
+  pids+=("$!")
+fi
 
 if [ "${COLEO_START_BRAIN:-1}" = "1" ]; then
   log "Starting brain"

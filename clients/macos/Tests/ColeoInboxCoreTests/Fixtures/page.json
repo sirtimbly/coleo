@@ -1,0 +1,197 @@
+{
+  "schemaVersion": 1,
+  "queryId": "{\"schemaVersion\":1,\"scope\":\"inbox\",\"profileId\":\"local\",\"facet\":\"attention\",\"mailbox\":\"inbox\",\"brainCategory\":\"all\",\"search\":\"\",\"filters\":[],\"sort\":{\"field\":\"timestamp\",\"direction\":\"desc\"},\"limit\":100}",
+  "query": {
+    "schemaVersion": 1,
+    "scope": "inbox",
+    "profileId": "local",
+    "facet": "attention",
+    "mailbox": "inbox",
+    "brainCategory": "all",
+    "search": "",
+    "filters": [],
+    "sort": {
+      "field": "timestamp",
+      "direction": "desc"
+    },
+    "limit": 100
+  },
+  "cursor": null,
+  "nextCursor": "older",
+  "items": [
+    {
+      "id": "thread:<first@example.test>",
+      "revision": "fixture-revision-1",
+      "sourceId": "mail",
+      "kind": "brain",
+      "representation": "thread",
+      "title": "Unicode 日本語 🐙 and a deliberately long Inbox subject for narrow terminals",
+      "summary": "Thread summary",
+      "timestamp": "2026-10-09T12:02:00.000Z",
+      "source": "Mail",
+      "unread": true,
+      "requiresAction": false,
+      "severity": "info",
+      "detail": {
+        "kind": "thread",
+        "threadId": "<first@example.test>",
+        "mailbox": "inbox"
+      },
+      "thread": {
+        "id": "<first@example.test>",
+        "mailbox": "inbox",
+        "subject": "Unicode 日本語 🐙 and a deliberately long Inbox subject for narrow terminals",
+        "messageCount": 3,
+        "mailboxMessageCount": 2,
+        "unreadCount": 2,
+        "lastMessageAt": "2026-10-09T12:02:00.000Z",
+        "hierarchy": {
+          "schemaVersion": 1,
+          "rootIds": [
+            "thread:inbox:<first@example.test>"
+          ],
+          "nodes": [
+            {
+              "id": "thread:inbox:<first@example.test>",
+              "parentId": null,
+              "kind": "group",
+              "selectable": false,
+              "childrenComplete": true,
+              "data": {
+                "title": "Unicode 日本語 🐙 and a deliberately long Inbox subject for narrow terminals",
+                "summary": "Branch reply body.",
+                "timestamp": "2026-10-09T12:02:00.000Z",
+                "source": "inbox · 3 messages",
+                "unread": true,
+                "requiresAction": true,
+                "locations": []
+              }
+            },
+            {
+              "id": "message:<first@example.test>",
+              "parentId": "thread:inbox:<first@example.test>",
+              "kind": "resource",
+              "selectable": true,
+              "childrenComplete": true,
+              "data": {
+                "title": "Unicode 日本語 🐙 and a deliberately long Inbox subject for narrow terminals",
+                "summary": "# Review\n\nFull **Markdown** content, not just the summary.",
+                "timestamp": "2026-10-09T12:00:00.000Z",
+                "source": "Tim",
+                "from": "Tim",
+                "mailbox": "inbox",
+                "messageId": "<first@example.test>",
+                "locations": [
+                  {
+                    "mailbox": "inbox",
+                    "messageId": "first",
+                    "seen": false
+                  }
+                ],
+                "unread": true,
+                "requiresAction": true
+              }
+            },
+            {
+              "id": "message:<reply@example.test>",
+              "parentId": "message:<first@example.test>",
+              "kind": "resource",
+              "selectable": true,
+              "childrenComplete": true,
+              "data": {
+                "title": "Re: Unicode",
+                "summary": "Sent-only context must be skipped by read.",
+                "timestamp": "2026-10-09T12:01:00.000Z",
+                "source": "Brain",
+                "from": "Brain",
+                "mailbox": "sent",
+                "messageId": "<reply@example.test>",
+                "locations": [
+                  {
+                    "mailbox": "sent",
+                    "messageId": "reply",
+                    "seen": true
+                  }
+                ],
+                "unread": false,
+                "requiresAction": false
+              }
+            },
+            {
+              "id": "message:<branch@example.test>",
+              "parentId": "message:<first@example.test>",
+              "kind": "resource",
+              "selectable": true,
+              "childrenComplete": true,
+              "data": {
+                "title": "Re: Unicode",
+                "summary": "Branch reply body.",
+                "timestamp": "2026-10-09T12:02:00.000Z",
+                "source": "Arm",
+                "from": "Arm",
+                "mailbox": "inbox",
+                "messageId": "<branch@example.test>",
+                "locations": [
+                  {
+                    "mailbox": "inbox",
+                    "messageId": "branch",
+                    "seen": false
+                  }
+                ],
+                "unread": true,
+                "requiresAction": true
+              }
+            }
+          ],
+          "complete": true
+        },
+        "diagnostics": [],
+        "aliases": [
+          "<first@example.test>",
+          "Unicode 日本語 🐙 and a deliberately long Inbox subject for narrow terminals",
+          "<reply@example.test>",
+          "Unicode",
+          "<branch@example.test>"
+        ],
+        "revision": "fixture-revision-1"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "id": "records",
+      "status": "fresh",
+      "revision": "1",
+      "asOf": "2026-10-09T12:00:00.000Z",
+      "complete": true
+    },
+    {
+      "id": "mail",
+      "status": "fresh",
+      "revision": "1",
+      "asOf": "2026-10-09T12:00:00.000Z",
+      "complete": true
+    },
+    {
+      "id": "activity",
+      "status": "fresh",
+      "revision": "1",
+      "asOf": "2026-10-09T12:00:00.000Z",
+      "complete": true
+    },
+    {
+      "id": "events",
+      "status": "fresh",
+      "revision": "1",
+      "asOf": "2026-10-09T12:00:00.000Z",
+      "complete": true
+    }
+  ],
+  "summaries": {
+    "scope": "query",
+    "total": 2,
+    "unread": 2,
+    "requiresAction": 0,
+    "complete": true
+  }
+}

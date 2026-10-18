@@ -1,0 +1,443 @@
+/**
+ * Configuration API Routes
+ * 
+ * CRUD operations for system configuration.
+ * Reads from and writes to ~/.coleo/config.toml
+ * Also handles arm config files in ~/.coleo/arms/*.toml
+ */
+
+import { BRAIN_TEMPLATE_NAMES, validateResponsibilitySettings } from "../../brain/responsibilities";
+import { BrainTemplateManager } from "../../brain/template-manager";
+import { assertSupportedHarness, UnsupportedHarnessError } from "../../harness/supported";
+import { Hono } from "hono";
+import type { Database } from "bun:sqlite";
+import { HttpError } from "../middleware";
+import {
+  loadConfig,
+  updateConfig,
+  readTomlConfig,
+  writeTomlConfig,
+  configToToml,
+  getColeoDir,
+  getConfigPath,
+} from "../../config";
+import type { ColeoConfig, ArmConfig, ArmConfigSummary } from "../../types";
+import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
+import { readdir, readFile, writeFile, mkdir } from "fs/promises";
+import { join } from "path";
+import { existsSync } from "fs";
+import { listBrainModels, resolveBrainModelConfig } from "../../brain/model-config";
+
+interface ConfigContext {
+  Variables: {
+    db: Database;
+  };
+}
+
+function sanitizeConfig(config: ColeoConfig): ColeoConfig {
+  return {
+    ...config,
+    brain: {
+      ...config.brain,
+      apiKey: "",
+    },
+  };
+}
+
+function brainConfigResponse(config: ColeoConfig) {
+  const { apiKey, ...brain } = config.brain;
+  return {
+    ...brain,
+    swarmEvaluationMode: brain.swarmEvaluationMode ?? "off",
+    swarmWindowPolls: brain.swarmWindowPolls ?? 10,
+    apiKeyConfigured: Boolean(apiKey),
+  };
+}
+
+export function createConfigRoutes() {
+  const app = new Hono<ConfigContext>();
+
+  /**
+   * Get full configuration
+   * GET /api/config
+   */
+  app.get("/", async (c) => {
+    try {
+      const config = await loadConfig();
+      return c.json({ config: sanitizeConfig(config) });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw HttpError.internal(`Failed to load config: ${message}`);
+    }
+  });
+
+  /**
+   * Update configuration
+   * PATCH /api/config
+   * 
+   * Accepts partial config updates that are merged with existing config.
+   */
+  app.patch("/", async (c) => {
+    try {
+      const updates = await c.req.json<Partial<ColeoConfig>>();
+      const config = await updateConfig(updates);
+      return c.json({ config: sanitizeConfig(config) });
+    } catch (err) {
+      if (err instanceof UnsupportedHarnessError) throw HttpError.badRequest(err.message);
+      const message = err instanceof Error ? err.message : String(err);
+      throw HttpError.internal(`Failed to update config: ${message}`);
+    }
+  });
+
+  /**
+   * Get raw TOML content
+   * GET /api/config/toml
+   */
+  app.get("/toml", async (c) => {
+    try {
+      const toml = await readTomlConfig();
+      if (!toml) {
+        return c.json({ toml: null, message: "No config file found" });
+      }
+      return c.json({ toml });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw HttpError.internal(`Failed to read config: ${message}`);
+    }
+  });
+
+  /**
+   * Write raw TOML content
+   * PUT /api/config/toml
+   */
+  app.put("/toml", async (c) => {
+    try {
+      const body = await c.req.json<{ toml: Record<string, unknown> }>();
+      if (!body.toml) {
+        throw HttpError.badRequest("toml field is required");
+      }
+      await writeTomlConfig(body.toml);
+      return c.json({ success: true });
+    } catch (err) {
+      if (err instanceof UnsupportedHarnessError) throw HttpError.badRequest(err.message);
+      if (err instanceof HttpError) throw err;
+      const message = err instanceof Error ? err.message : String(err);
+      throw HttpError.internal(`Failed to write config: ${message}`);
+    }
+  });
+
+  /**
+   * Get defaults section only
+   * GET /api/config/defaults
+   */
+  app.get("/defaults", async (c) => {
+    try {
+      const config = await loadConfig();
+      return c.json({ defaults: config.defaults });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw HttpError.internal(`Failed to load config: ${message}`);
+    }
+  });
+
+  /**
+   * Update defaults section
+   * PATCH /api/config/defaults
+   */
+  app.patch("/defaults", async (c) => {
+    try {
+      const updates = await c.req.json<Partial<ColeoConfig["defaults"]>>();
+      const config = await updateConfig({ defaults: updates as ColeoConfig["defaults"] });
+      return c.json({ defaults: config.defaults });
+    } catch (err) {
+      if (err instanceof UnsupportedHarnessError) throw HttpError.badRequest(err.message);
+      const message = err instanceof Error ? err.message : String(err);
+      throw HttpError.internal(`Failed to update config: ${message}`);
+    }
+  });
+
+  /**
+   * Get brain configuration
+   * GET /api/config/brain
+   */
+  app.get("/brain", async (c) => {
+    try {
+      const config = await loadConfig();
+      return c.json({ brain: brainConfigResponse(config) });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw HttpError.internal(`Failed to load config: ${message}`);
+    }
+  });
+
+  app.get("/brain/templates/:name", async (c) => {
+    const name = c.req.param("name");
+    if (!BRAIN_TEMPLATE_NAMES.includes(name)) throw HttpError.notFound("Unknown Brain template");
+    const templates = new BrainTemplateManager(await getColeoDir(), () => {});
+    await templates.ensureTemplatesExist();
+    const content = await templates.renderTemplate(name);
+    return c.json({ name, content, path: `.coleo/src/brain/templates/${name}` });
+  });
+
+  /**
+   * List models available from the configured brain provider.
+   * GET /api/config/brain/models
+   */
+  app.get("/brain/models", async (c) => {
+    try {
+      const config = await loadConfig();
+      const models = await listBrainModels(resolveBrainModelConfig(config.brain));
+      return c.json({ models });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw HttpError.badRequest(message);
+    }
+  });
+
+  /**
+   * Update brain configuration
+   * PATCH /api/config/brain
+   */
+  app.patch("/brain", async (c) => {
+    let stage = "save configuration";
+    try {
+      const updates = await c.req.json<Partial<ColeoConfig["brain"]>>();
+      try { validateResponsibilitySettings(updates); } catch (error) { throw HttpError.badRequest(String(error)); }
+      if (updates.swarmEvaluationMode !== undefined && !["off", "shadow", "execute"].includes(updates.swarmEvaluationMode)) {
+        throw HttpError.badRequest("Swarm evaluation mode must be off, shadow, or execute");
+      }
+      if (updates.swarmWindowPolls !== undefined &&
+        (!Number.isInteger(updates.swarmWindowPolls) || updates.swarmWindowPolls < 1 || updates.swarmWindowPolls > 100)) {
+        throw HttpError.badRequest("Swarm window must be an integer from 1 to 100 polls");
+      }
+      const config = await updateConfig({ brain: updates as ColeoConfig["brain"] });
+      if ("provider" in updates || "model" in updates || "apiKey" in updates) {
+        stage = "refresh model health status after saving configuration";
+        c.get("db").run("DELETE FROM infrastructure_health WHERE component = 'brain_model_api'");
+      }
+      return c.json({ brain: brainConfigResponse(config) });
+    } catch (err) {
+      if (err instanceof UnsupportedHarnessError) {
+        throw HttpError.badRequest(
+          `Cannot save Brain settings: defaults.harness is unsupported. Set defaults.harness to "opencode-api" in ${getConfigPath()} ` +
+          `or through Settings, and check the COLEO_DEFAULT_HARNESS environment override. Then retry the Brain setting.`,
+        );
+      }
+      if (err instanceof SyntaxError) throw HttpError.badRequest("Cannot save Brain settings: request body must be valid JSON.");
+      if (err instanceof HttpError) throw err;
+      const message = err instanceof Error ? err.message : String(err);
+      const remedies: Record<string, string> = {
+        EACCES: "Permission denied. Give the API server user write access to the configuration file and directory.",
+        EPERM: "Operation not permitted. Check file ownership and filesystem restrictions.",
+        ENOENT: "Configuration directory not found. Check COLEO_DIR and create the directory before retrying.",
+        ENOSPC: "No space left on the configuration filesystem. Free disk space and retry.",
+        EROFS: "The configuration filesystem is read-only. Use a writable COLEO_DIR.",
+        EISDIR: "The configuration file path is a directory. Replace it with a config.toml file.",
+      };
+      const code = err instanceof Error && "code" in err && typeof err.code === "string" ? err.code : "";
+      const detail = Object.hasOwn(remedies, code)
+        ? `${code}: ${remedies[code]}`
+        : "See the API server log for the underlying exception.";
+      throw HttpError.internal(`Failed to ${stage}: ${message}`,
+        `Could not ${stage}. Configuration: ${getConfigPath()}. ${detail}`);
+    }
+  });
+
+  /**
+   * Get mail configuration
+   * GET /api/config/mail
+   */
+  app.get("/mail", async (c) => {
+    try {
+      const config = await loadConfig();
+      return c.json({ mail: config.mail });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw HttpError.internal(`Failed to load config: ${message}`);
+    }
+  });
+
+  /**
+   * Update mail configuration
+   * PATCH /api/config/mail
+   */
+  app.patch("/mail", async (c) => {
+    try {
+      const updates = await c.req.json<Partial<ColeoConfig["mail"]>>();
+      const config = await updateConfig({ mail: updates as ColeoConfig["mail"] });
+      return c.json({ mail: config.mail });
+    } catch (err) {
+      if (err instanceof HttpError) throw err;
+      const message = err instanceof Error ? err.message : String(err);
+      throw HttpError.internal(`Failed to update config: ${message}`);
+    }
+  });
+
+  // ========================================
+  // Arm Configuration Files
+  // ========================================
+
+  /**
+   * Get arms config directory path
+   */
+  const getArmsConfigDir = async (): Promise<string> => {
+    const coleoDir = await getColeoDir();
+    return join(coleoDir, "arms");
+  };
+
+  /**
+   * List all arm config files
+   * GET /api/config/arms
+   */
+  app.get("/arms", async (c) => {
+    try {
+      const armsDir = await getArmsConfigDir();
+      
+      // Create dir if doesn't exist
+      if (!existsSync(armsDir)) {
+        await mkdir(armsDir, { recursive: true });
+        return c.json({ arms: [] });
+      }
+
+      const files = await readdir(armsDir);
+      const tomlFiles = files.filter(f => f.endsWith('.toml'));
+
+      const arms: ArmConfigSummary[] = [];
+      for (const filename of tomlFiles) {
+        try {
+          const content = await readFile(join(armsDir, filename), 'utf-8');
+          const parsed = parseToml(content) as unknown as ArmConfig;
+          arms.push({
+            filename,
+            name: parsed.arm?.name || filename.replace('.toml', ''),
+            domain: parsed.arm?.domain || 'unknown',
+            harness: parsed.arm?.harness || 'opencode-api',
+            budget: parsed.context?.budget,
+          });
+        } catch {
+          // Skip invalid files
+          arms.push({
+            filename,
+            name: filename.replace('.toml', ''),
+            domain: 'unknown',
+            harness: 'unknown',
+          });
+        }
+      }
+
+      return c.json({ arms });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw HttpError.internal(`Failed to list arm configs: ${message}`);
+    }
+  });
+
+  /**
+   * Get specific arm config file
+   * GET /api/config/arms/:name
+   */
+  app.get("/arms/:name", async (c) => {
+    try {
+      const name = c.req.param("name");
+      const armsDir = await getArmsConfigDir();
+      const filename = name.endsWith('.toml') ? name : `${name}.toml`;
+      const filepath = join(armsDir, filename);
+
+      if (!existsSync(filepath)) {
+        throw HttpError.notFound(`Arm config '${name}' not found`);
+      }
+
+      const content = await readFile(filepath, 'utf-8');
+      const config = parseToml(content) as unknown as ArmConfig;
+
+      return c.json({ 
+        filename,
+        config,
+        raw: content,
+      });
+    } catch (err) {
+      if (err instanceof HttpError) throw err;
+      const message = err instanceof Error ? err.message : String(err);
+      throw HttpError.internal(`Failed to read arm config: ${message}`);
+    }
+  });
+
+  /**
+   * Update arm config file
+   * PUT /api/config/arms/:name
+   * 
+   * Can accept either:
+   * - { config: ArmConfig } - will be converted to TOML
+   * - { raw: string } - raw TOML content
+   */
+  app.put("/arms/:name", async (c) => {
+    try {
+      const name = c.req.param("name");
+      const armsDir = await getArmsConfigDir();
+      const filename = name.endsWith('.toml') ? name : `${name}.toml`;
+      const filepath = join(armsDir, filename);
+
+      // Ensure directory exists
+      if (!existsSync(armsDir)) {
+        await mkdir(armsDir, { recursive: true });
+      }
+
+      const body = await c.req.json<{ config?: ArmConfig; raw?: string }>();
+
+      let content: string;
+      if (body.raw) {
+        // Validate it's valid TOML
+        parseToml(body.raw);
+        content = body.raw;
+      } else if (body.config) {
+        content = stringifyToml(body.config as unknown as Record<string, unknown>);
+      } else {
+        throw HttpError.badRequest("Either 'config' or 'raw' field is required");
+      }
+
+      const config = parseToml(content) as unknown as ArmConfig;
+      if (config.arm?.harness !== undefined) assertSupportedHarness(config.arm.harness);
+      const flatHarness = (config as unknown as Record<string, unknown>).harness;
+      if (flatHarness !== undefined) assertSupportedHarness(flatHarness);
+      await writeFile(filepath, content, 'utf-8');
+      return c.json({ 
+        filename, 
+        config,
+        raw: content,
+      });
+    } catch (err) {
+      if (err instanceof UnsupportedHarnessError) throw HttpError.badRequest(err.message);
+      if (err instanceof HttpError) throw err;
+      const message = err instanceof Error ? err.message : String(err);
+      throw HttpError.internal(`Failed to update arm config: ${message}`);
+    }
+  });
+
+  /**
+   * Delete arm config file
+   * DELETE /api/config/arms/:name
+   */
+  app.delete("/arms/:name", async (c) => {
+    try {
+      const name = c.req.param("name");
+      const armsDir = await getArmsConfigDir();
+      const filename = name.endsWith('.toml') ? name : `${name}.toml`;
+      const filepath = join(armsDir, filename);
+
+      if (!existsSync(filepath)) {
+        throw HttpError.notFound(`Arm config '${name}' not found`);
+      }
+
+      const { unlink } = await import("fs/promises");
+      await unlink(filepath);
+
+      return c.json({ deleted: true, filename });
+    } catch (err) {
+      if (err instanceof HttpError) throw err;
+      const message = err instanceof Error ? err.message : String(err);
+      throw HttpError.internal(`Failed to delete arm config: ${message}`);
+    }
+  });
+
+  return app;
+}

@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-13T00:00:00Z",
+  "title": "Design System: Coleo Inbox for macOS",
+  "extensions": {
+    "motion": [
+      {
+        "name": "native-feedback",
+        "value": "system-managed",
+        "purpose": "SwiftUI/AppKit focus, selection, menus, and window transitions; no custom animation timing tokens."
+      }
+    ]
+  },
+  "components": [],
+  "narrative": {
+    "northStar": "Native macOS workbench",
+    "overview": "The user-pinned reference is Finder and standard macOS window UI. Compact, familiar SwiftUI controls support scanning activity, selecting exact items for actions, and reading full content. AppKit owns native window tabs, with independent state per window. Template semantics choose content; the native host chooses placement.",
+    "keyCharacteristics": [
+      "System-native window chrome, controls, and feedback.",
+      "Compact collections beside a comfortable reading pane.",
+      "Explicit selection and data-freshness states."
+    ],
+    "rules": [],
+    "dos": [
+      "Do preserve native controls, semantic type/color, and independent window state.",
+      "Do map template semantics to macOS surfaces and expose unsupported diagnostics.",
+      "Do keep preview focus separate from frozen action selection."
+    ],
+    "donts": [
+      "Don't rebuild browser toolbar rows or paint a custom title bar.",
+      "Don't introduce custom fonts or replace native tabs with presentation toggles.",
+      "Don't describe unverified screenshots or pending checks as certified results."
+    ]
+  }
+}

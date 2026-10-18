@@ -42,9 +42,11 @@ The TUI turns that same control plane into a keyboard-driven terminal workspace 
 
 ## Quick Start
 
-Requires the [Bun](https://bun.sh/) runtime (v1.1+).
+The operator tools require the [Bun](https://bun.sh/) runtime (v1.3.14+).
 
-For installation details and configuration guidance, see the [Coleo getting started guide](https://coleo.dev/guides/getting-started).
+For component installation and configuration, see the [installation guide](docs/guides/installation.md).
+The server/Arm Host tools and Python client are installed separately. From a checkout,
+`mise run setup:cli` installs `coleo-client`; `mise run setup:tui` adds the terminal workspace.
 
 ```bash
 # Install Bun + coleo globally (Linux/macOS, no mise required)
@@ -56,19 +58,19 @@ coleo init --dir ./.coleo
 
 # Terminal 1: start the API server
 # If COLEO_NATS_URL is unset, this will auto-start local NATS for you
-coleo serve
+coleo-server run
 
 # Terminal 2: start the Brain (foreground polling loop)
-coleo brain run
+coleo-server brain run
 
 # Terminal 3: spawn an Arm (headless by default via opencode-api)
-coleo arm spawn --name explorer --harness opencode-api --workdir ./your-repo
+coleo-client arms spawn --name explorer --harness opencode-api --workdir /path/on/arm-host/your-repo
 
 # Send a task via mail
-coleo mail send "Explore the codebase and identify refactoring opportunities"
+coleo-client mail send "Explore the codebase and identify refactoring opportunities"
 
 # Check status
-coleo status
+coleo-client status
 ```
 
 ## Docker Quick Start
@@ -87,10 +89,12 @@ docker compose up -d
 ssh -p 2222 coleo@localhost  # password: coleo
 
 # Inside the container:
-coleo serve                         # Start the API server
-coleo brain run                     # Start the Brain
-coleo arm spawn -n coder --terminal tmux     # Spawn in tmux (uses opencode-tui)
-coleo status                        # Check status
+coleo-server run                    # Start the API server
+coleo-server brain run              # Start the Brain
+
+# From a separately installed client connected to that API:
+coleo-client arms list
+coleo-client status
 
 # View Arm logs (headless mode)
 tail -f ~/.coleo/logs/coleo_coder.log
@@ -134,18 +138,19 @@ Arm       Arm       Arm
 ```bash
 coleo init                      # Initialize ./.coleo in the current project
 coleo init --dir ~/.coleo       # Optional: use a global directory instead
-coleo serve                     # Start API server in foreground
-coleo serve start               # Start API server in background
-coleo brain run                 # Start Brain (foreground)
-coleo brain run --once          # Single poll cycle
-coleo arm spawn -n NAME         # Spawn an Arm (via API server)
-coleo arm spawn -n NAME --terminal tmux  # Spawn in a visible terminal (opencode-tui)
-coleo arm list                  # List active Arms
-coleo mail inbox                # View inbox
-coleo mail send "task"          # Send task to Brain
+coleo-server run                # Start API server in foreground
+coleo-server start              # Start API server in background
+coleo-server brain run          # Start Brain (foreground)
+coleo-server brain run --once   # Single poll cycle
+coleo-agent run                 # Run an Arm Host in foreground
+coleo-client arms spawn -n NAME # Spawn an Arm through the selected API
+coleo-client arms list          # List active Arms
+coleo-client mail inbox         # View inbox
+coleo-client mail send "task"   # Send task to Brain
 coleo imap serve                # Start IMAP gateway for mail clients
 coleo imap password             # Show/reset IMAP password
-coleo status                    # Overall status
+coleo-client status             # Selected server status
+coleo-client web                # Serve the separately installed web client
 coleo mcp serve                 # Run MCP server (for Arms)
 ```
 
@@ -155,35 +160,41 @@ Coleo separates “coordination” from “agent UI” via harnesses:
 
 ```bash
 # Headless (API-driven) harness
-coleo arm spawn -n worker --harness opencode-api --workdir /path/to/repo
+coleo-client arms spawn -n worker --harness opencode-api --workdir /path/on/arm-host/repo
 
-# Visible terminal harness (recommended when you want to watch/debug)
-coleo arm spawn -n worker --terminal tmux --workdir /path/to/repo
+# Watch the remote arm's conversation
+coleo-client arms watch worker
 ```
 
 ## Local Development
 
 ### Prerequisites
 
-- [Bun](https://bun.sh/) runtime (v1.1+)
+- [mise](https://mise.jdx.dev/) for the pinned Bun/Python toolchain
+- [uv](https://docs.astral.sh/uv/) for the Python client environment
 - [NATS Server](https://nats.io/) with JetStream enabled (optional, for distributed arms and stream-backed events)
 - [OpenCode](https://opencode.ai/) CLI (for spawning AI Arms)
 
-This section is for contributors running Coleo from source. For regular usage, install the global CLI and run `coleo` commands.
+This section is for contributors running Coleo from source. For regular usage,
+install the operator or client components described in the installation guide.
 
 ### Setup
 
-Dependencies are managed with Bun from the repository root. The root `bun.lock` covers the CLI/server, docs
-toolchain, and the `src/web` workspace; do not create nested lockfiles.
+The monorepo keeps the Python client project at the root (`pyproject.toml` and
+`uv.lock`), the TypeScript backend under `server/src/`, and the React app under
+`clients/web/`. `mise.toml` is the contributor task/toolchain entry point.
+The root `bun.lock` covers the server, docs toolchain, and web workspace; do not
+create nested lockfiles.
 
 ```bash
 # Clone and install dependencies
 git clone https://github.com/sirtimbly/coleo.git
 cd coleo
-bun run setup
+mise install
+mise run setup
 
 # Initialize Coleo (creates ./.coleo directory and database by default)
-bun run src/cli/index.ts init
+bun run server/src/cli/index.ts init
 
 # Build the web UI
 bun run web:build
@@ -194,13 +205,13 @@ bun run web:build
 ```bash
 # Start the API server
 # If COLEO_NATS_URL is unset, this auto-starts local NATS into ./.coleo/
-bun run src/cli/index.ts serve
+mise run server
 
 # Start the Brain orchestrator
-bun run src/cli/index.ts brain run
+mise run brain
 
 # Development mode for web UI (hot reload)
-bun run web:dev
+mise run web:dev
 ```
 
 ### Available Scripts
@@ -217,6 +228,8 @@ bun run web:dev
 | `bun run test:e2e`         | Run full end-to-end regression tests |
 | `bun run web:dev`          | Start web UI dev server (hot reload) |
 | `bun run web:build`        | Build web UI for production          |
+| `mise run client:test`     | Run Python client tests              |
+| `mise run client:cli`      | Run the Python Rich/Textual client   |
 | `bun run docs:dev`         | Start documentation dev server       |
 
 ### Environment Variables

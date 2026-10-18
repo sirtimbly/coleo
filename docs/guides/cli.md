@@ -10,14 +10,46 @@ banner:
 
 # CLI Reference
 
-Complete reference for the `coleo` command-line interface.
+Coleo has separate operator and API-client executables.
+
+| Operation | Command |
+| --- | --- |
+| API host lifecycle | `coleo-server run`, `start`, `stop`, `restart`, `status`, `logs` |
+| Brain host lifecycle | `coleo-server brain run`, `start`, `stop`, `restart`, `status`, `logs` |
+| Arm Host lifecycle | `coleo-agent run`, `start`, `stop`, `restart`, `status`, `logs` |
+| Host configuration and checks | `coleo-server configure`, `coleo-agent configure`, each tool's `doctor` |
+| Server selection | `coleo-client connect URL --name NAME`, `connections`, `use NAME`, `doctor` |
+| Tasks, bugs, Inbox | `coleo-client tasks`, `bugs`, `inbox` |
+| Fleet and activity | `coleo-client arms`, `agents`, `activity`, `status` |
+| Mail and settings | `coleo-client mail`, `discoveries`, `config`, `status-reports` |
+| Terminal workspace | `coleo-client tui` |
+| Installed browser workspace | `coleo-client web` |
+
+`run` stays foreground; `start` launches a background service. Operator commands
+target the host running them. Client commands target the selected API server.
+See [Component Installation](./installation), [Server and clients](../architecture/client-server-separation),
+and [Workspace CLI and TUI](./workspace-client).
+
+The sections below retain the **legacy `coleo` syntax** as a migration reference.
+Its migrated domain commands now print a `coleo-client` replacement and exit without
+performing the operation. Use the client's `--help` for current flags and JSON shapes.
+`inbox views` and `inbox validate` become root client `views` and `validate`.
+Local initialization, IMAP, MCP, Git helpers, arm log files, discovery summarization,
+report backfill, and prompt/harness diagnostics remain available under `coleo`.
+The legacy `coleo agent start` remains foreground; use `coleo-agent run` for that behavior.
+
+Client arm spawning is noninteractive and uses the `opencode-api` harness on the
+selected host. Legacy `--terminal tmux` spawning is retired; use `arms watch ID`
+to observe the remote conversation. `arms list` is a one-shot command;
+`arms list --watch` enables repeated snapshots. Watch/tail JSON output is JSONL,
+while one-shot commands return versioned JSON objects.
 
 ## Installation
 
 The CLI is published to npm as `coleo` and runs using the Bun runtime.
 
 ```bash
-# Requires Bun v1.1+
+# Requires Bun v1.3.14+
 bun install -g coleo
 ```
 
@@ -309,6 +341,60 @@ coleo arm logs explorer
 # View last 100 lines
 coleo arm logs explorer -n 100
 ```
+
+---
+
+### inbox
+
+Read the workbench Inbox through the same named-view API as the browser.
+Each invocation produces an HTTP snapshot and exits.
+
+```bash
+coleo inbox --help
+coleo inbox views
+coleo inbox --view inbox-triage
+coleo inbox --facet messages --limit 5 --json
+coleo inbox --mailbox archive --search review
+coleo inbox --brain-category operations --sort asc
+coleo inbox --facet messages --limit 2 --pages 2 --tree
+coleo inbox --facet messages --expand roots --metadata overview
+```
+
+View flags and help come from the resolved interaction definition. `--json`
+prints a versioned envelope with the effective query, items, reply context,
+source freshness/completeness, diagnostics, and continuation cursor. `--pages`
+fetches a bounded window; `--cursor` continues the same query. Exit `0` means a
+complete requested window, `2` means incomplete sources, and `1` means an error.
+
+Default text is a width-aware table with readable subjects, state/source columns,
+relative ages, and compact references. Rows truncate rather than wrapping; use
+`--width 100` to override the terminal width. Full IDs and cursors remain in JSON.
+
+`--presentation cards` switches to boxed text entries with wrapped previews;
+`--presentation timeline` uses the declared stacked-list text fallback and reports
+that fallback explicitly. Grid remains the compact table. Query semantics are
+the same across presentations.
+
+Cards use colored title bars, icons, state markers, and box drawing. Timeline
+text uses date dividers and a vertical spine with status dots. Color is automatic
+in interactive terminals; use `--color always` or `--color never` to override.
+Auto mode honors `NO_COLOR`; JSON remains undecorated.
+
+Use displayed references or full snapshot IDs with `coleo inbox show <id>` or
+`coleo inbox mark-read <ids...>`. `show <ref>` works independently of the list's
+filters and page size. Inspection is read-only; read actions select
+explicit loaded IDs and use revision-checked thread commands. `--branch` selects
+loaded descendants. Successful writes refresh the projection; a failed refresh
+is reported separately from a failed write.
+
+`coleo inbox validate <JSON path>` validates a view without contacting the API.
+Snapshots require the API configured by `COLEO_API_URL` and `COLEO_API_KEY`.
+The older `mail inbox` listing below reads raw Maildir messages; use
+`inbox --facet messages` for workbench conversations, `--limit` for page size,
+and full stable IDs instead of raw-mail prefixes.
+
+See [the named Inbox CLI contract](../workbench/review/inbox-cli.md) for output,
+paging, selection, fallback, and migration details.
 
 ---
 

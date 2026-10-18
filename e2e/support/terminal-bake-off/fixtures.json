@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-10-01T13:00:00.000Z",
+  "roots": [
+    { "id": "unicode", "subject": "配送レビュー 🐙 — café, 日本語, and a deliberately long subject that must remain readable in narrow terminals", "body": "# Delivery review\n\nPlease check **Unicode**, wrapping, and keyboard focus.\n\n- API: ready\n- Terminal: awaiting review\n\n```ts\nconst selected = new Set<string>();\n```", "mailbox": "inbox", "seen": false },
+    { "id": "release", "subject": "Release checklist — approval needed", "body": "Please approve the staged release after both clients pass the same scenarios.", "mailbox": "inbox", "seen": false },
+    { "id": "incident", "subject": "Recovered source: retain partial data", "body": "The source recovered. Counts during the outage were incomplete, not authoritative zeroes.", "mailbox": "inbox", "seen": true },
+    { "id": "design", "subject": "Design notes: focus and selection", "body": "Focus follows navigation. Selection remains explicit and does not grow when replies arrive.", "mailbox": "inbox", "seen": true },
+    { "id": "sent-only", "subject": "Outbound context awaiting a reply", "body": "This message is sent context and cannot be marked read through Inbox thread actions.", "mailbox": "sent", "seen": true },
+    { "id": "archived", "subject": "Archived rollout discussion", "body": "Resolved last week. Available through the archive mailbox and independent reference lookup.", "mailbox": "archive", "seen": true }
+  ],
+  "tasks": [
+    { "id": "bakeoff-approval", "subject": "Approve terminal preview", "description": "Compare both candidates before choosing a framework." },
+    { "id": "bakeoff-outage", "subject": "Review source recovery behavior", "description": "Verify retained partial data and authenticated reconnect refresh." }
+  ],
+  "expected": { "inboxThreads": 6, "sentThreads": 3, "archiveThreads": 1, "reviewMessages": 5, "reviewBranchMembers": 2 }
+}
