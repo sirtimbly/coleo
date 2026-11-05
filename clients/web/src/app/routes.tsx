@@ -1,3 +1,4 @@
+import { HostsHarnessesPage } from "@/pages/HostsHarnessesPage";
 /**
  * Static workbench view contributions.
  *
@@ -64,6 +65,8 @@ export interface AppRouteDefinition {
 }
 
 export const APP_ROUTES: AppRouteDefinition[] = [
+  { id: 'hosts', href: '/hosts', path: 'hosts', label: 'Hosts & harnesses', icon: Bot,
+    component: HostsHarnessesPage, showInNav: true },
 	{
 		id: "dashboard",
 		href: "/",

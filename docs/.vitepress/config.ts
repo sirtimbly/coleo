@@ -43,6 +43,7 @@ export default defineConfig({
 						{ text: "Overview", link: "/architecture/overview" },
 						{ text: "Components", link: "/architecture/components" },
 						{ text: "Clients and Operator CLI", link: "/architecture/client-server-separation" },
+						{ text: "Workbench Across Clients", link: "/architecture/workbench-clients" },
 						{
 							text: "Brain/API Boundary",
 							link: "/architecture/brain-api-boundary",

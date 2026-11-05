@@ -469,3 +469,45 @@ use mocked HTTP; no live Brain start/stop was performed.
   remains a hands-on comparison step; local tests cover retained partial data.
 
 Both candidates remain experiments; this implementation makes no winner claim.
+
+### Hosts, harnesses, and service connections
+
+Open **Hosts & harnesses** in the web sidebar or launch the Textual view:
+
+```sh
+mise run client:cli -- tui hosts
+mise run client:cli -- hosts list
+mise run client:cli -- hosts create --name Reef --hostname reef.local --roles arm,api --agent-id reef-one
+mise run client:cli -- hosts edit HOST_ID --notes 'Primary machine'
+mise run client:cli -- hosts delete HOST_ID
+mise run client:cli -- harnesses list
+mise run client:cli -- harnesses create --name Octavia --agent reef-one
+mise run client:cli -- harnesses edit Octavia --model MODEL
+mise run client:cli -- harnesses stop Octavia
+mise run client:cli -- harnesses delete Octavia
+mise run client:cli -- services list
+mise run client:cli -- services configure --host 0.0.0.0 --port 8080 --nats-url nats://broker:4222
+mise run client:cli -- services restart --yes
+```
+
+Inventory entries support the roles `arm`, `api`, `nats`, and `database`. Discovered
+hosts show observed processes and connected Arm Hosts. Register an observed host to
+save its label and notes; deleting inventory never shuts down its services.
+Harnesses are Arm runtimes and share the existing spawn, pause, resume, stop, and
+recovery controls. Stop a harness before deleting it. Model edits apply on next start.
+
+Service settings distinguish active connections from saved settings. Applying them
+restarts a Coleo-managed API through a separate operator process, after all harnesses
+are stopped. The client can disconnect during restart; reconnect to the configured
+API address. Restart output appears in the service view after reconnecting.
+Externally managed APIs and NATS servers require their deployment controls.
+Changing the API's NATS connection does not reconfigure remote Arm Hosts or Brain.
+SQLite runs on the API host; `services configure --db-path /absolute/path/coleo.db`
+selects an existing compatible database on that host without migrating or copying it.
+
+New catalogs include the Hosts module. Existing catalogs remain unchanged;
+`coleo-client tui hosts` opens it directly, or add this entry to your catalog:
+
+```json
+{ "id": "hosts", "title": "Hosts & harnesses", "description": "Host and runtime management", "symbol": "server.rack", "renderer": "hosts" }
+```

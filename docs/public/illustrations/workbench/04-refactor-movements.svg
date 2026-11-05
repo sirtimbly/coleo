@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1190" viewBox="0 0 1440 1190" role="img" aria-labelledby="title desc">
+<title id="title">Move ownership to the layer that can keep it.</title><desc id="desc">Five architectural movements explain the flexibility—and the costs that come with it.</desc>
+<defs>
+<marker id="teal" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#176E69"/></marker>
+<marker id="blue" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#2D5F9A"/></marker>
+<marker id="coral" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#B04B39"/></marker>
+<marker id="ink" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#132F39"/></marker>
+<marker id="amber" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#8B5E19"/></marker>
+</defs>
+<rect x="0" y="0" width="1440" height="1190" rx="0" fill="#F7F5EF"/>
+<text x="56" y="47" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#176E69" text-anchor="start" letter-spacing="2">COLEO  /  WORKBENCH FIELD GUIDE</text>
+<text x="1384" y="48" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" fill="#526970" text-anchor="end">04 / 05</text>
+<text x="56" y="104" font-family="Athelas, Georgia, serif" font-size="42" font-weight="400" fill="#132F39" text-anchor="start">Move ownership to the layer that can keep it.</text>
+<text x="56" y="143" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="400" fill="#526970" text-anchor="start">Five architectural movements explain the flexibility—and the costs that come with it.</text>
+<rect x="56" y="166" width="408.0" height="27" rx="5" fill="#E5F2EE"/>
+<text x="68" y="185" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#176E69" text-anchor="start" letter-spacing="0.5">DOCUMENTED CHANGES / SELECTED FOLLOW-UPS</text>
+<text x="56" y="250" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#526970" text-anchor="start" letter-spacing="1">STARTING POINT</text>
+<text x="494" y="250" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#176E69" text-anchor="start" letter-spacing="1">DIRECTION AND MOTIVATION</text>
+<text x="1092" y="250" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#8B5E19" text-anchor="start" letter-spacing="1">TRADEOFF</text>
+<rect x="56" y="278" width="350" height="137" rx="14" fill="#FFFFFF" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="78" y="316" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">Browser assembles Inbox</text>
+<text x="78" y="350" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Nine reads; local merges</text>
+<text x="78" y="377" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">and competing refreshes</text>
+<path d="M 424 348 L 474 348" fill="none" stroke="#176E69" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#teal)"/>
+<rect x="494" y="278" width="550" height="137" rx="14" fill="#E5F2EE" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="516" y="309" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#176E69" text-anchor="start" letter-spacing="0.8">IMPLEMENTED</text>
+<text x="516" y="339" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" fill="#132F39" text-anchor="start">API owns the projection</text>
+<text x="516" y="369" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">One requested scope, shared query meaning,</text>
+<text x="516" y="394" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">visible partial results and ordered refresh.</text>
+<text x="1092" y="321" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">The API owns more projection</text>
+<text x="1092" y="347" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">logic; source clocks still differ.</text>
+<rect x="56" y="436" width="350" height="137" rx="14" fill="#FFFFFF" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="78" y="474" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">One language</text>
+<text x="78" y="508" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Reuse tied to TypeScript</text>
+<text x="78" y="535" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">and browser machinery</text>
+<path d="M 424 506 L 474 506" fill="none" stroke="#176E69" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#teal)"/>
+<rect x="494" y="436" width="550" height="137" rx="14" fill="#E5F2EE" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="516" y="467" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#176E69" text-anchor="start" letter-spacing="0.8">IMPLEMENTED</text>
+<text x="516" y="497" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" fill="#132F39" text-anchor="start">Wire contracts cross languages</text>
+<text x="516" y="527" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">React, Rich/Textual and SwiftUI use native</text>
+<text x="516" y="552" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">controls with common resource semantics.</text>
+<text x="1092" y="479" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">Python / Swift need validation</text>
+<text x="1092" y="505" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">and conformance fixtures.</text>
+<rect x="56" y="594" width="350" height="137" rx="14" fill="#FFFFFF" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="78" y="632" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">Mixed operator / user CLI</text>
+<text x="78" y="666" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Local processes and remote</text>
+<text x="78" y="693" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">project operations look alike</text>
+<path d="M 424 664 L 474 664" fill="none" stroke="#176E69" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#teal)"/>
+<rect x="494" y="594" width="550" height="137" rx="14" fill="#E5F2EE" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="516" y="625" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#176E69" text-anchor="start" letter-spacing="0.8">IMPLEMENTED</text>
+<text x="516" y="655" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" fill="#132F39" text-anchor="start">Separate host tools from API client</text>
+<text x="516" y="685" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">coleo-server / coleo-agent manage this host.</text>
+<text x="516" y="710" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">coleo-client targets the selected server.</text>
+<text x="1092" y="637" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">Breaking command migration;</text>
+<text x="1092" y="663" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">separate installs and config.</text>
+<rect x="56" y="752" width="350" height="137" rx="14" fill="#FFFFFF" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="78" y="790" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">Shared panel defaults</text>
+<text x="78" y="824" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">A view key can connect</text>
+<text x="78" y="851" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">sibling panels’ settings</text>
+<path d="M 424 822 L 474 822" fill="none" stroke="#8B5E19" stroke-width="2.4" stroke-linejoin="round" stroke-dasharray="7 6" marker-end="url(#amber)"/>
+<rect x="494" y="752" width="550" height="137" rx="14" fill="#F7EFD9" stroke="#8B5E19" stroke-width="1.5" stroke-dasharray="8 6"/>
+<text x="516" y="783" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#8B5E19" text-anchor="start" letter-spacing="0.8">SELECTED / PARTIAL</text>
+<text x="516" y="813" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" fill="#132F39" text-anchor="start">Give every panel an independent view</text>
+<text x="516" y="843" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">Separate resource, template and panel IDs.</text>
+<text x="516" y="868" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">Keep renderer state and editors alive.</text>
+<text x="1092" y="795" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">Client tabs are independent;</text>
+<text x="1092" y="821" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">browser persistence work</text>
+<text x="1092" y="847" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">remains staged.</text>
+<rect x="56" y="910" width="350" height="137" rx="14" fill="#FFFFFF" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="78" y="948" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">Code-defined workflows</text>
+<text x="78" y="982" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Views and controls evolve</text>
+<text x="78" y="1009" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">inside the product</text>
+<path d="M 424 980 L 474 980" fill="none" stroke="#8B5E19" stroke-width="2.4" stroke-linejoin="round" stroke-dasharray="7 6" marker-end="url(#amber)"/>
+<rect x="494" y="910" width="550" height="137" rx="14" fill="#F7EFD9" stroke="#8B5E19" stroke-width="1.5" stroke-dasharray="8 6"/>
+<text x="516" y="941" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#8B5E19" text-anchor="start" letter-spacing="0.8">PLANNED BLUEPRINTS</text>
+<text x="516" y="971" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" fill="#132F39" text-anchor="start">Ship a team’s way of working</text>
+<text x="516" y="1001" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">Proposed blueprints describe views/actions;</text>
+<text x="516" y="1026" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">ordinary files support review and distribution.</text>
+<text x="1092" y="953" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">Source authority, migrations</text>
+<text x="1092" y="979" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">and authoring tools still need</text>
+<text x="1092" y="1005" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">implementation.</text>
+<path d="M 56 1117 L 1384 1117" fill="none" stroke="#132F39" stroke-width="0.7" stroke-linejoin="round"/>
+<text x="56" y="1146" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#526970" text-anchor="start">The goal is reliable shared ownership and native client quality. Generalization remains incremental, driven by real consumers.</text>
+<text x="56" y="1170" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="400" fill="#526970" text-anchor="start">Sources [S1, S3, S5, S6, S7, S8, S10]  ·  Branch snapshot 8b0c2e4  ·  17 Oct 2026  ·  Source key in the companion guide</text>
+</svg>

@@ -21,7 +21,7 @@ def write_catalog(path, identifier="work", renderer="tasks", title="Project work
 def test_seed_once_reload_authoritative_and_retain_on_failure(tmp_path):
     catalog = ModuleCatalog()
     assert catalog.path == config_directory() / "modules.json"
-    assert set(catalog.modules) == {"inbox", "tasks", "bugs", "brain", "dashboard"}
+    assert set(catalog.modules) == {"inbox", "tasks", "bugs", "brain", "dashboard", "hosts"}
     write_catalog(catalog.path)
     assert "inbox" in catalog.modules  # No file watcher.
     catalog.reload()

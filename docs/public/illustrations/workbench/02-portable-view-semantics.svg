@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1150" viewBox="0 0 1440 1150" role="img" aria-labelledby="title desc">
+<title id="title">Share meaning. Adapt the interface.</title><desc id="desc">The named Inbox view is the working cross-language proof of the ResourceView model.</desc>
+<defs>
+<marker id="teal" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#176E69"/></marker>
+<marker id="blue" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#2D5F9A"/></marker>
+<marker id="coral" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#B04B39"/></marker>
+<marker id="ink" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#132F39"/></marker>
+<marker id="amber" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#8B5E19"/></marker>
+</defs>
+<rect x="0" y="0" width="1440" height="1150" rx="0" fill="#F7F5EF"/>
+<text x="56" y="47" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#176E69" text-anchor="start" letter-spacing="2">COLEO  /  WORKBENCH FIELD GUIDE</text>
+<text x="1384" y="48" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" fill="#526970" text-anchor="end">02 / 05</text>
+<text x="56" y="104" font-family="Athelas, Georgia, serif" font-size="42" font-weight="400" fill="#132F39" text-anchor="start">Share meaning. Adapt the interface.</text>
+<text x="56" y="143" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="400" fill="#526970" text-anchor="start">The named Inbox view is the working cross-language proof of the ResourceView model.</text>
+<rect x="56" y="166" width="370.0" height="27" rx="5" fill="#E5F2EE"/>
+<text x="68" y="185" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#176E69" text-anchor="start" letter-spacing="0.5">DOCUMENTED CORE / SELECTED DIRECTION</text>
+<rect x="56" y="228" width="408" height="438" rx="14" fill="#E5F2EE" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="78" y="257" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#176E69" text-anchor="start" letter-spacing="1">NAMED DEFINITION  /  inbox-triage</text>
+<text x="78" y="292" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" fill="#132F39" text-anchor="start">A portable resource view</text>
+<text x="78" y="350" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="700" fill="#132F39" text-anchor="start">Identity + query</text>
+<text x="78" y="378" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#526970" text-anchor="start">Stable IDs, scope, filters, sort, cursor</text>
+<text x="78" y="426" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="700" fill="#132F39" text-anchor="start">Commands + interactions</text>
+<text x="78" y="454" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#526970" text-anchor="start">Operation IDs, typed values, exact targets</text>
+<text x="78" y="502" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="700" fill="#132F39" text-anchor="start">Hierarchy + fields</text>
+<text x="78" y="530" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#526970" text-anchor="start">Reply ancestry and loaded selection</text>
+<text x="78" y="578" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="700" fill="#132F39" text-anchor="start">Composition + presentation</text>
+<text x="78" y="606" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#526970" text-anchor="start">Two semantic toolbar tiers; optional insights</text>
+<path d="M 464 438 L 520 438" fill="none" stroke="#176E69" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#teal)"/>
+<rect x="520" y="228" width="380" height="438" rx="14" fill="#FFFFFF" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="542" y="257" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#176E69" text-anchor="start" letter-spacing="1">VERSIONED JSON  /  SHARED FIXTURES</text>
+<text x="542" y="292" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" fill="#132F39" text-anchor="start">API resolves the contract</text>
+<text x="542" y="350" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#526970" text-anchor="start">Validate fields and registered IDs.</text>
+<text x="542" y="388" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#526970" text-anchor="start">Normalize the query identity.</text>
+<text x="542" y="426" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#526970" text-anchor="start">Resolve client capabilities.</text>
+<text x="542" y="464" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#526970" text-anchor="start">Return effective bindings + help.</text>
+<text x="542" y="502" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#526970" text-anchor="start">Declare fallbacks or unsupported</text>
+<text x="542" y="540" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#526970" text-anchor="start">features instead of hiding them.</text>
+<rect x="542" y="599" width="336" height="45" rx="6" fill="#F7EFD9"/>
+<text x="710" y="628" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" fill="#8B5E19" text-anchor="middle">Layout never authorizes a command.</text>
+<path d="M 900 438 L 948 438" fill="none" stroke="#176E69" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#teal)"/>
+<rect x="948" y="228" width="436" height="96" rx="14" fill="#EAF0FA" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="970" y="266" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">Web</text>
+<text x="970" y="300" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Semantic groups → toolbar + grid/cards</text>
+<rect x="948" y="342" width="436" height="96" rx="14" fill="#EAF0FA" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="970" y="380" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">CLI</text>
+<text x="970" y="414" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Bindings → flags, subcommands, JSON</text>
+<rect x="948" y="456" width="436" height="96" rx="14" fill="#EAF0FA" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="970" y="494" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">TUI</text>
+<text x="970" y="528" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Operations → keys, menus, trees</text>
+<rect x="948" y="570" width="436" height="96" rx="14" fill="#EAF0FA" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="970" y="608" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">macOS</text>
+<text x="970" y="642" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Slots → sidebar, controls, native panes</text>
+<text x="56" y="713" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#176E69" text-anchor="start" letter-spacing="1.2">THE OWNERSHIP MODEL</text>
+<rect x="56" y="747" width="248" height="146" rx="14" fill="#FFFFFF" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="78" y="785" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">Resource model</text>
+<text x="78" y="819" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Identity, queries,</text>
+<text x="78" y="846" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">commands</text>
+<rect x="326" y="747" width="248" height="146" rx="14" fill="#FFFFFF" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="348" y="785" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">Product recipe</text>
+<text x="348" y="819" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Task / bug / mail</text>
+<text x="348" y="846" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">workflow policy</text>
+<rect x="596" y="747" width="248" height="146" rx="14" fill="#FFFFFF" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="618" y="785" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">Signal desk</text>
+<text x="618" y="819" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Refresh relevance</text>
+<text x="618" y="846" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">and recovery</text>
+<rect x="866" y="747" width="248" height="146" rx="14" fill="#FFFFFF" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="888" y="785" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">Panel notebook</text>
+<text x="888" y="819" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">This panel’s view</text>
+<text x="888" y="846" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">and saved settings</text>
+<rect x="1136" y="747" width="248" height="146" rx="14" fill="#FFFFFF" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="1158" y="785" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">Panel host</text>
+<text x="1158" y="819" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Placement, routes,</text>
+<text x="1158" y="846" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">adapter lifetime</text>
+<rect x="56" y="918" width="474.5" height="27" rx="5" fill="#F7EFD9"/>
+<text x="68" y="937" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#8B5E19" text-anchor="start" letter-spacing="0.5">SELECTED RESPONSIBILITIES; EXTRACTION IS STAGED</text>
+<text x="56" y="974" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#526970" text-anchor="start">Shared TypeScript helpers can serve web code. Python and Swift consume wire contracts and conformance fixtures.</text>
+<text x="56" y="1005" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#526970" text-anchor="start">Only Inbox uses the named-view mechanism today. Other modules use their domain APIs and coded adapters.</text>
+<text x="56" y="1036" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#526970" text-anchor="start">Independent clients have different coverage: native/TUI Tasks and Bugs browse and inspect; web retains editing.</text>
+<path d="M 56 1077 L 1384 1077" fill="none" stroke="#132F39" stroke-width="0.7" stroke-linejoin="round"/>
+<text x="56" y="1106" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#526970" text-anchor="start">Portable semantics do not require identical widgets, keyboard delivery or pixel layout across clients.</text>
+<text x="56" y="1130" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="400" fill="#526970" text-anchor="start">Sources [S1, S3, S5, S6, S7]  ·  Branch snapshot 8b0c2e4  ·  17 Oct 2026  ·  Source key in the companion guide</text>
+</svg>

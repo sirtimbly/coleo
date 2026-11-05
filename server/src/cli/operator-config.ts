@@ -5,6 +5,7 @@ import { getColeoDir } from "../config";
 import { loadEnvFile } from "../config/env";
 
 export const SETTINGS = {
+  dbPath: ["COLEO_DB_PATH", ""],
   host: ["COLEO_API_HOST", "0.0.0.0"], port: ["COLEO_API_PORT", "8080"],
   apiUrl: ["COLEO_API_URL", ""], apiKey: ["COLEO_API_KEY", ""],
   natsUrl: ["COLEO_NATS_URL", "nats://127.0.0.1:4222"], natsToken: ["COLEO_NATS_TOKEN", ""],
@@ -31,7 +32,7 @@ export async function readOperatorConfig(): Promise<Partial<OperatorValues>> {
   } catch { throw new Error(`Invalid operator configuration: ${operatorConfigPath()}`); }
 }
 export function validateOperatorConfig(values: Partial<OperatorValues>): void {
-  for (const key of ["host", "id", "workspace"] as const) {
+  for (const key of ["host", "id", "workspace", "dbPath"] as const) {
     if (values[key]?.includes("\0") || values[key]?.includes("\n")) throw new Error(`${key} contains invalid characters`);
   }
   if (values.host !== undefined && !values.host.trim()) throw new Error("host must not be empty");

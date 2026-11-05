@@ -50,7 +50,7 @@ def decode_catalog(data):
                 raise ValueError(f"Module needs a valid {key}")
         if entry["id"] in result or entry["id"] in reserved or entry["id"].startswith("-"):
             raise ValueError(f"Duplicate or reserved module ID: {entry['id']}")
-        if entry["renderer"] not in {"messaging", "tasks", "bugs", "brain", "dashboard"}:
+        if entry["renderer"] not in {"messaging", "tasks", "bugs", "brain", "dashboard", "hosts"}:
             raise ValueError(f"Unsupported renderer: {entry['renderer']}")
         for key in ("namedView", "facet", "mailbox", "brainCategory", "presentation"):
             if entry.get(key) is not None and (not isinstance(entry[key], str) or not entry[key]):

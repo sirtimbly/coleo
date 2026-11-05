@@ -11,7 +11,7 @@ import { operatorDoctor } from "./operator-doctor";
 import type { Setting, ResolvedOperatorConfig, OperatorValues } from "./operator-config";
 
 const fields = {
-  server: ["host", "port", "apiUrl", "natsUrl"],
+  server: ["host", "port", "apiUrl", "natsUrl", "dbPath"],
   agent: ["id", "workspace", "natsUrl", "maxArms", "heartbeatInterval", "apiUrl", "verbose"],
   brain: ["interval", "verbose", "swarmEvaluation", "swarmWindowPolls"],
 } satisfies Record<string, Setting[]>;
@@ -87,7 +87,7 @@ function registerLifecycle(parent: Command, service: "server" | "agent" | "brain
     if (service === "brain" && operation === "run") command.option("--once", "Run one polling cycle")
       .option("--cycles <count>", "Run a bounded number of polling cycles");
     if (operation !== "run") command.option("--startup-timeout <ms>", "Readiness deadline", "30000");
-    if (operation === "restart") command.option("--force", "Kill if graceful shutdown times out").option("--timeout <ms>", "Shutdown deadline", "10000");
+    if (operation === "restart") command.option("--delay-ms <ms>", "Delay before restart (allows API response delivery)").option("--force", "Kill if graceful shutdown times out").option("--timeout <ms>", "Shutdown deadline", "10000");
     command.action(async () => {
       const flags = command.optsWithGlobals();
       const previousValues: Partial<OperatorValues> = {};
@@ -115,6 +115,9 @@ function registerLifecycle(parent: Command, service: "server" | "agent" | "brain
         return;
       }
       if (service === "agent") console.error("coleo-agent start runs in background; use coleo-agent run for foreground operation.");
+      if (operation === "restart" && flags.delayMs !== undefined) {
+        await new Promise(resolve => setTimeout(resolve, numberOption(flags.delayMs, 1000)));
+      }
       const status = await (operation === "start" ? startService : restartService)(service, {
         args: launchArgs(service, config), force: flags.force, timeout: numberOption(flags.timeout, 10000),
         startupTimeout: numberOption(flags.startupTimeout, 30000),

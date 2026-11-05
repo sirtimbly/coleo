@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "id": "arm-list",
+  "panelKind": "collection",
+  "resource": "arms",
+  "query": {
+    "search": "",
+    "status": "all",
+    "limit": 100
+  },
+  "commands": [
+    "arms.open",
+    "arms.refresh",
+    "arms.spawn"
+  ],
+  "slots": {
+    "toolbar.primary.identity": [
+      {
+        "id": "identity",
+        "widget": "resource.identity",
+        "label": "Arms"
+      }
+    ],
+    "toolbar.primary.search": [
+      {
+        "id": "search",
+        "widget": "collection.search",
+        "label": "Search arms",
+        "binding": "query.search"
+      }
+    ],
+    "toolbar.primary.context": [
+      {
+        "id": "status",
+        "widget": "arms.status",
+        "label": "Status",
+        "binding": "query.status"
+      }
+    ],
+    "toolbar.primary.actions": [
+      {
+        "id": "open",
+        "widget": "arms.action",
+        "label": "Open activity",
+        "command": "arms.open"
+      },
+      {
+        "id": "refresh",
+        "widget": "arms.action",
+        "label": "Refresh",
+        "command": "arms.refresh"
+      },
+      {
+        "id": "spawn",
+        "widget": "arms.action",
+        "label": "Spawn arm",
+        "command": "arms.spawn"
+      }
+    ],
+    "toolbar.primary.state": [
+      {
+        "id": "freshness",
+        "widget": "collection.freshness",
+        "label": "Updated"
+      }
+    ]
+  },
+  "presentation": {
+    "active": "table",
+    "renderers": [
+      {
+        "id": "table",
+        "renderer": "collection.grid",
+        "label": "Arms",
+        "kind": "grid",
+        "fields": [
+          "name",
+          "status",
+          "agentId",
+          "currentTask",
+          "provider",
+          "model",
+          "lastActivity"
+        ]
+      }
+    ]
+  }
+}

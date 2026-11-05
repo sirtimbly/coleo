@@ -1,3 +1,4 @@
+import type { HostInput, HostRecord, ServiceSettings, ServiceState } from "../../../../server/src/shared/hosts";
 import { isSessionActive } from './session-heartbeat';
 import { ApiRequestError } from './workspace-startup';
 import type { FleetVersions } from "../../../../server/src/shared/version-compatibility";
@@ -484,6 +485,27 @@ class ApiClient {
 
   async listArmTemplates() {
     return this.request<{ templates: ArmTemplateSummary[] }>('/arms/templates');
+  }
+
+  async listHosts() { return this.request<{ hosts: HostRecord[]; discoveryAvailable: boolean }>('/hosts'); }
+  async saveHost(id: string | null, host: HostInput) {
+    return this.request<{ host: HostRecord }>(id ? `/hosts/${encodeURIComponent(id)}` : '/hosts', {
+      method: id ? 'PATCH' : 'POST', body: JSON.stringify(host),
+    });
+  }
+  async deleteHost(id: string) {
+    return this.request<{ deleted: boolean }>(`/hosts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+  async getHostServices() { return this.request<ServiceState>('/hosts/services'); }
+  async saveHostServices(settings: Partial<ServiceSettings>) {
+    return this.request<ServiceState>('/hosts/services', { method: 'PATCH', body: JSON.stringify(settings) });
+  }
+  async restartHostServices() {
+    return this.request<{ accepted: boolean; message: string }>('/hosts/services/restart', { method: 'POST', body: '{}' });
+  }
+  async listHarnesses() { return this.request<{ arms: Arm[] }>('/arms?includeAll=true'); }
+  async controlHarness(id: string, action: 'pause' | 'resume' | 'kill') {
+    return this.request(`/arms/${encodeURIComponent(id)}/${action}`, { method: 'POST', body: '{}' });
   }
 
   // Arms

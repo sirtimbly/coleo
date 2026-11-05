@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "forms": [
+    {
+      "id": "new-message",
+      "title": "New Message",
+      "operations": [
+        "mail.send",
+        "arms.prompt"
+      ],
+      "submitLabel": "Send message",
+      "fields": [
+        {
+          "id": "to",
+          "label": "Recipient",
+          "type": "text",
+          "required": true,
+          "placeholder": "Recipient address"
+        },
+        {
+          "id": "subject",
+          "label": "Subject",
+          "type": "text",
+          "required": true,
+          "operations": [
+            "mail.send"
+          ]
+        },
+        {
+          "id": "body",
+          "label": "Message",
+          "type": "multiline",
+          "required": true
+        },
+        {
+          "id": "attachments",
+          "label": "Attachments",
+          "type": "attachments",
+          "operations": [
+            "mail.send"
+          ]
+        },
+        {
+          "id": "interrupt",
+          "label": "Interrupt current work",
+          "type": "boolean",
+          "default": false,
+          "operations": [
+            "arms.prompt"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "spawn-arm",
+      "title": "Spawn Arm",
+      "operations": [
+        "arms.spawn"
+      ],
+      "submitLabel": "Spawn arm",
+      "fields": [
+        {
+          "id": "name",
+          "label": "Name",
+          "type": "text",
+          "placeholder": "Optional arm name"
+        },
+        {
+          "id": "workdir",
+          "label": "Workspace",
+          "type": "text",
+          "placeholder": "Path on the Arm Host"
+        },
+        {
+          "id": "agentId",
+          "label": "Arm Host",
+          "type": "text",
+          "placeholder": "Choose an available host"
+        },
+        {
+          "id": "provider",
+          "label": "Provider",
+          "type": "text"
+        },
+        {
+          "id": "model",
+          "label": "Model",
+          "type": "text"
+        },
+        {
+          "id": "taskId",
+          "label": "Task",
+          "type": "text",
+          "placeholder": "Optional assignment"
+        },
+        {
+          "id": "prompt",
+          "label": "Initial prompt",
+          "type": "multiline"
+        }
+      ]
+    }
+  ],
+  "launches": [
+    {
+      "id": "new-message",
+      "formId": "new-message",
+      "label": "New Message",
+      "operation": "mail.send",
+      "scope": "global"
+    },
+    {
+      "id": "spawn-arm",
+      "formId": "spawn-arm",
+      "label": "Spawn Arm",
+      "operation": "arms.spawn",
+      "scope": "global"
+    },
+    {
+      "id": "reply-message",
+      "formId": "new-message",
+      "label": "Reply",
+      "operation": "mail.send",
+      "scope": "resource",
+      "resources": [
+        "mail-thread"
+      ],
+      "contextBindings": {
+        "to": "to",
+        "subject": "subject"
+      }
+    },
+    {
+      "id": "message-arm",
+      "formId": "new-message",
+      "label": "Message arm",
+      "operation": "arms.prompt",
+      "scope": "resource",
+      "resources": [
+        "arm-activity"
+      ],
+      "contextBindings": {
+        "to": "armId"
+      },
+      "fixedFields": [
+        "to"
+      ]
+    },
+    {
+      "id": "spawn-arm-from-list",
+      "formId": "spawn-arm",
+      "label": "Spawn Arm",
+      "operation": "arms.spawn",
+      "scope": "resource",
+      "resources": [
+        "arms"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1210" viewBox="0 0 1440 1210" role="img" aria-labelledby="title desc">
+<title id="title">A shared foundation. An organization’s own practice.</title><desc id="desc">Agentic programming can make the adaptation work practical; the contracts keep that work reviewable.</desc>
+<defs>
+<marker id="teal" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#176E69"/></marker>
+<marker id="blue" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#2D5F9A"/></marker>
+<marker id="coral" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#B04B39"/></marker>
+<marker id="ink" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#132F39"/></marker>
+<marker id="amber" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#8B5E19"/></marker>
+</defs>
+<rect x="0" y="0" width="1440" height="1210" rx="0" fill="#F7F5EF"/>
+<text x="56" y="47" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#176E69" text-anchor="start" letter-spacing="2">COLEO  /  WORKBENCH FIELD GUIDE</text>
+<text x="1384" y="48" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" fill="#526970" text-anchor="end">05 / 05</text>
+<text x="56" y="104" font-family="Athelas, Georgia, serif" font-size="42" font-weight="400" fill="#132F39" text-anchor="start">A shared foundation. An organization’s own practice.</text>
+<text x="56" y="143" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="400" fill="#526970" text-anchor="start">Agentic programming can make the adaptation work practical; the contracts keep that work reviewable.</text>
+<rect x="56" y="166" width="531.5" height="27" rx="5" fill="#F7EFD9"/>
+<text x="68" y="185" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#8B5E19" text-anchor="start" letter-spacing="0.5">PROPOSED INTERPRETATION / DOCUMENTED EXTENSION POINTS</text>
+<rect x="56" y="229" width="1328" height="135" rx="14" fill="#E5F2EE" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="80" y="261" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#176E69" text-anchor="start" letter-spacing="1">DOCUMENTED FOUNDATION</text>
+<text x="80" y="302" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700" fill="#132F39" text-anchor="start">Coleo domain resources</text>
+<text x="80" y="335" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Plans, tasks, bugs, mail, Arms</text>
+<text x="514" y="302" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700" fill="#132F39" text-anchor="start">API-owned semantics</text>
+<text x="514" y="335" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Queries, commands, freshness</text>
+<text x="958" y="302" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700" fill="#132F39" text-anchor="start">Independent clients</text>
+<text x="958" y="335" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Web · CLI · TUI · native macOS</text>
+<text x="56" y="415" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#8B5E19" text-anchor="start" letter-spacing="1">PROPOSED ADAPTATION PATH</text>
+<rect x="56" y="445" width="300" height="202" rx="14" fill="#F7EFD9" stroke="#8B5E19" stroke-width="1.5" stroke-dasharray="8 6"/>
+<text x="78" y="474" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#8B5E19" text-anchor="start" letter-spacing="1">01  /  PEOPLE SET THE PRACTICE</text>
+<text x="78" y="509" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" fill="#132F39" text-anchor="start">Organization intent</text>
+<text x="78" y="541" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Delivery stages and roles</text>
+<text x="78" y="568" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Repository conventions</text>
+<text x="78" y="595" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Review and oversight policy</text>
+<path d="M 356 546 L 414 546" fill="none" stroke="#8B5E19" stroke-width="2.4" stroke-linejoin="round" stroke-dasharray="7 6" marker-end="url(#amber)"/>
+<rect x="414" y="445" width="326" height="202" rx="14" fill="#F7EFD9" stroke="#8B5E19" stroke-width="1.5" stroke-dasharray="8 6"/>
+<text x="436" y="474" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#8B5E19" text-anchor="start" letter-spacing="1">02  /  AGENTS HELP BUILD</text>
+<text x="436" y="509" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" fill="#132F39" text-anchor="start">Agent-assisted work</text>
+<text x="436" y="541" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Draft views and recipes</text>
+<text x="436" y="568" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Implement needed API / UI code</text>
+<text x="436" y="595" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Test, review and revise</text>
+<path d="M 740 546 L 798 546" fill="none" stroke="#8B5E19" stroke-width="2.4" stroke-linejoin="round" stroke-dasharray="7 6" marker-end="url(#amber)"/>
+<rect x="798" y="445" width="586" height="202" rx="14" fill="#FFFFFF" stroke="#8B5E19" stroke-width="1.5" stroke-dasharray="8 6"/>
+<text x="820" y="474" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#176E69" text-anchor="start" letter-spacing="1">03  /  ILLUSTRATIVE PROJECT; NO FIXED STACK</text>
+<text x="820" y="509" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" fill="#132F39" text-anchor="start">A monorepo of the organization’s choosing</text>
+<rect x="820" y="555" width="166" height="69" rx="7" fill="#F7F5EF"/>
+<text x="834" y="582" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#132F39" text-anchor="start">apps/</text>
+<text x="834" y="608" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#526970" text-anchor="start">products</text>
+<rect x="1004" y="555" width="166" height="69" rx="7" fill="#F7F5EF"/>
+<text x="1018" y="582" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#132F39" text-anchor="start">packages/</text>
+<text x="1018" y="608" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#526970" text-anchor="start">shared code</text>
+<rect x="1188" y="555" width="166" height="69" rx="7" fill="#F7F5EF"/>
+<text x="1202" y="582" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#132F39" text-anchor="start">services/</text>
+<text x="1202" y="608" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#526970" text-anchor="start">backends</text>
+<rect x="56" y="699" width="1328" height="291" rx="14" fill="#F7EFD9" stroke="#8B5E19" stroke-width="1.5" stroke-dasharray="8 6"/>
+<text x="80" y="735" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#8B5E19" text-anchor="start" letter-spacing="1">PLANNED BLUEPRINT LIFECYCLE</text>
+<rect x="80" y="765" width="382" height="147" rx="14" fill="#FFFFFF" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="102" y="803" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">Authored process definitions</text>
+<text x="102" y="837" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Queries, fields, registered commands</text>
+<text x="102" y="864" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Role-oriented starting workspaces</text>
+<text x="102" y="891" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Exact source path / notation undecided</text>
+<path d="M 462 835 L 522 835" fill="none" stroke="#8B5E19" stroke-width="2.4" stroke-linejoin="round" stroke-dasharray="7 6" marker-end="url(#amber)"/>
+<rect x="522" y="765" width="362" height="147" rx="14" fill="#FFFFFF" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="544" y="803" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">Validate + resolve in API</text>
+<text x="544" y="837" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Version and capability checks</text>
+<text x="544" y="864" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Last valid definition on bad edits</text>
+<text x="544" y="891" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Definitions separate from panel state</text>
+<path d="M 884 835 L 944 835" fill="none" stroke="#8B5E19" stroke-width="2.4" stroke-linejoin="round" stroke-dasharray="7 6" marker-end="url(#amber)"/>
+<rect x="944" y="765" width="416" height="147" rx="14" fill="#FFFFFF" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="966" y="803" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">Interpret through each client</text>
+<text x="966" y="837" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Same resource and command meaning</text>
+<text x="966" y="864" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Native controls and explicit fallbacks</text>
+<text x="966" y="891" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Independent workspace overrides</text>
+<text x="80" y="958" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#8B5E19" text-anchor="start">Illustrative workflow views: triage → ready work → active work → review. Role-oriented views do not grant permissions.</text>
+<text x="56" y="1030" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#176E69" text-anchor="start" letter-spacing="1">WHAT EXISTS NOW</text>
+<text x="56" y="1061" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Builtin named Inbox definition + reloadable Python/macOS module catalogs. Catalogs launch supported coded renderers.</text>
+<text x="56" y="1100" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#8B5E19" text-anchor="start" letter-spacing="1">WHAT STILL REQUIRES ENGINEERING</text>
+<text x="56" y="1131" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">New lifecycles, automation, resources or renderers need domain/API/client code. A blueprint is not an executable workflow engine.</text>
+<path d="M 56 1137 L 1384 1137" fill="none" stroke="#132F39" stroke-width="0.7" stroke-linejoin="round"/>
+<text x="56" y="1166" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#526970" text-anchor="start">“Arbitrary monorepo” is an adaptation vision, not a documented zero-configuration or universal-plugin guarantee.</text>
+<text x="56" y="1190" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="400" fill="#526970" text-anchor="start">Sources [S1, S3, S5, S6, S7, S11]  ·  Branch snapshot 8b0c2e4  ·  17 Oct 2026  ·  Source key in the companion guide</text>
+</svg>

@@ -8,7 +8,7 @@ async def run_remote(args, api, stdout):
     Invalid input/request failures raise ValueError. Cancellation is deliberately
     propagated so the embedding CLI can terminate cleanly with status 130.
     """
-    if not args or args[0] not in ("arm", "arms", "agents", "activity", "status"):
+    if not args or args[0] not in ("arm", "arms", "agents", "activity", "status", "hosts", "harnesses", "services"):
         raise ValueError("Expected arm, arms, agents, activity, or status")
     common = Parser(add_help=False, allow_abbrev=False)
     common.add_argument("--json", action="store_true")
@@ -16,6 +16,9 @@ async def run_remote(args, api, stdout):
     common.add_argument("--color", choices=("auto", "always", "never"), default="auto")
     options, rest = common.parse_known_args(args[1:])
     output = Output(stdout, options)
+    if args[0] in ("hosts", "harnesses", "services"):
+        from .hosts_cli import run_hosts
+        return await run_hosts(rest, api, output, args[0])
     if args[0] in ("arm", "arms"):
         from .arms_cli import run_arms
         return await run_arms(rest, api, output)

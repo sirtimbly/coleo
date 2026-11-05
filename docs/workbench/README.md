@@ -1,5 +1,10 @@
 # Coleo Workbench
 
+For the current cross-client architecture, see
+[Workbench across clients](../architecture/workbench-clients). Its illustrated
+guide reconciles the implemented web, Python CLI/TUI, and native macOS clients
+with the staged plans below. Older dated descriptions remain a migration record.
+
 This directory records the architecture and migration decisions for Coleo's
 browser workbench. It is intentionally kept beside the product documentation
 so future changes to the UI can be reviewed against the same small set of

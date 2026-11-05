@@ -1651,6 +1651,10 @@ export function createArmsRoutes() {
     const db = c.get("db");
     const id = c.req.param("id");
 
+    const existing = db.query("SELECT status, pid FROM arms WHERE id = ?").get(id) as { status: string; pid: number | null } | null;
+    if (existing && (existing.status !== "stopped" || existing.pid)) {
+      throw new HttpError(409, "Stop the harness before deleting its Arm record");
+    }
     const result = db.run("DELETE FROM arms WHERE id = ?", [id]);
     if (result.changes === 0) {
       throw HttpError.notFound(`Arm not found: ${id}`);

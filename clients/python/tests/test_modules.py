@@ -101,7 +101,7 @@ async def test_registry_and_domain_help_work_offline():
     protocol = DomainProtocol()
     output = io.StringIO()
     assert await run(["modules", "--json"], api=protocol.api(), stdout=output) == 0
-    assert {m["id"] for m in json.loads(output.getvalue())["modules"]} == {"inbox", "tasks", "bugs", "brain", "dashboard"}
+    assert {m["id"] for m in json.loads(output.getvalue())["modules"]} == {"inbox", "tasks", "bugs", "brain", "dashboard", "hosts"}
     assert await run(["tasks", "--help"], api=protocol.api(), stdout=io.StringIO()) == 0
     assert not protocol.calls
 
