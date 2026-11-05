@@ -1,6 +1,6 @@
 [project]
 name = "coleo-inbox"
-version = "0.14.4"
+version = "1.0.0"
 description = "Coleo Python CLI and Textual terminal client"
 requires-python = ">=3.12,<3.14"
 dependencies = ["httpx==0.28.1", "rich==14.2.0"]
