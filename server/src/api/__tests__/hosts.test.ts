@@ -79,6 +79,19 @@ describe('host inventory and service connections', () => {
     expect(after.hosts.some((h: { id: string }) => h.id === 'runtime:api')).toBe(true);
     expect(after.hosts.some((h: { id: string }) => h.id === 'agent:reef-1')).toBe(true);
   });
+  it('preserves omitted fields during partial updates and allows explicitly clearing notes', async () => {
+    const { host: saved } = await (await request('', 'POST', host)).json();
+    expect((await request('/' + saved.id, 'PATCH', { name: 'Renamed' })).status).toBe(200);
+    expect((await (await request('/' + saved.id)).json()).host).toEqual({ ...saved, name: 'Renamed' });
+    expect((await request('/' + saved.id, 'PATCH', {})).status).toBe(200);
+    expect((await (await request('/' + saved.id)).json()).host.notes).toBe(host.notes);
+    expect((await request('/' + saved.id, 'PATCH', { notes: '' })).status).toBe(200);
+    expect((await (await request('/' + saved.id)).json()).host.notes).toBe('');
+    const { notes: omittedNotes, ...withoutNotes } = host;
+    const created = await request('', 'POST', withoutNotes);
+    expect(created.status).toBe(201);
+    expect((await created.json()).host.notes).toBe('');
+  });
   it('rejects invalid bodies and editing observations', async () => {
     for (const body of [
       null,

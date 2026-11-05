@@ -24,9 +24,11 @@ const hostSchema = z
       .max(4)
       .transform((v) => [...new Set(v)]),
     agentId: z.string().trim().min(1).max(200).nullable().optional(),
-    notes: z.string().max(4000).default(''),
+    notes: z.string().max(4000),
   })
   .strict();
+const createHostSchema = hostSchema.extend({ notes: hostSchema.shape.notes.default('') });
+const patchHostSchema = hostSchema.partial();
 interface HostRow {
   id: string;
   name: string;
@@ -101,7 +103,7 @@ export function createHostsRoutes(): Hono<ServerContext> {
     return c.json({ host });
   });
   app.post('/', async (c) => {
-    const parsed = hostSchema.safeParse(await c.req.json().catch(() => null));
+    const parsed = createHostSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) throw HttpError.badRequest(parsed.error.issues.map((i) => i.message).join('; '));
     const data: HostInput = parsed.data;
     const id = crypto.randomUUID();
@@ -116,7 +118,7 @@ export function createHostsRoutes(): Hono<ServerContext> {
     const db = c.get('db');
     const current = registered(db).find((r) => r.id === c.req.param('id'));
     if (!current) throw HttpError.notFound('Registered host not found; register discovered hosts before editing');
-    const parsed = hostSchema.partial().safeParse(await c.req.json().catch(() => null));
+    const parsed = patchHostSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) throw HttpError.badRequest(parsed.error.issues.map((i) => i.message).join('; '));
     const next = { ...current, ...parsed.data };
     db.run('UPDATE hosts SET name=?, hostname=?, roles=?, agent_id=?, notes=?, updated_at=? WHERE id=?', [

@@ -5,8 +5,20 @@ from .arms_cli import run_arms
 
 async def run_hosts(args, api, output, family="hosts"):
     if family == "harnesses":
-        if args[:1] in (["create"], ["start"], ["stop"], ["delete"]):
-            args = [{"create": "spawn", "start": "recover", "stop": "kill", "delete": "remove"}[args[0]], *args[1:]]
+        if args[:1] == ["start"]:
+            parser = Parser(prog="coleo-client harnesses start", add_help=False, allow_abbrev=False)
+            parser.add_argument("id", type=nonblank)
+            if "--help" in args or "-h" in args:
+                print(parser.format_help(), file=output.stdout)
+                return 0
+            options = parser.parse_args(args[1:])
+            result = checked(await api.request("/api/arms/" + encoded(options.id) + "/spawn", {}))
+            if result.get("spawned") is False:
+                raise ValueError("Server did not spawn the harness")
+            output.emit("harnesses.start", result)
+            return 0
+        if args[:1] in (["create"], ["stop"], ["delete"]):
+            args = [{"create": "spawn", "stop": "kill", "delete": "remove"}[args[0]], *args[1:]]
         if args[:1] == ["edit"]:
             parser = Parser(prog="coleo-client harnesses edit")
             parser.add_argument("id", type=nonblank)

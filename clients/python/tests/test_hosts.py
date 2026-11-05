@@ -58,6 +58,7 @@ class FleetProtocol:
     (["harnesses", "edit", "arm-one", "--model", "new-model"], "/api/arms/arm-one", "PATCH", {"model": "new-model"}),
     (["harnesses", "pause", "arm-one"], "/api/arms/arm-one/pause", "POST", {}),
     (["harnesses", "stop", "arm-one"], "/api/arms/arm-one/kill", "POST", {}),
+    (["harnesses", "start", "a/b ?"], "/api/arms/a%2Fb%20%3F/spawn", "POST", {}),
 ])
 async def test_cli_routes_and_fields(args, path, method, body):
     protocol = FleetProtocol()
@@ -66,6 +67,28 @@ async def test_cli_routes_and_fields(args, path, method, body):
         output = io.StringIO()
         assert await run([*args, "--json"], api, output) == 0
         assert protocol.calls[-1] == (method, path, body)
+    finally:
+        await api.close()
+
+
+async def test_cli_starts_a_stopped_harness_without_a_previous_host_association():
+    calls = []
+    def handle(request):
+        calls.append((request.method, request.url.path, json.loads(request.content)))
+        if request.method == "POST" and request.url.path == "/api/arms/remote-arm/kill":
+            return httpx.Response(200, json={"killed": True})
+        if request.method == "POST" and request.url.path == "/api/arms/remote-arm/spawn":
+            return httpx.Response(200, json={"spawned": True, "agentId": "new-remote-host"})
+        return httpx.Response(503, json={"error": "No previous host association for recovery"})
+
+    api = Api("http://fixture", transport=httpx.MockTransport(handle))
+    try:
+        for operation in ("stop", "start"):
+            output = io.StringIO()
+            assert await run_remote(["harnesses", operation, "remote-arm", "--json"], api, output) == 0
+        assert json.loads(output.getvalue())["spawned"] is True
+        assert calls == [("POST", "/api/arms/remote-arm/kill", {}),
+                         ("POST", "/api/arms/remote-arm/spawn", {})]
     finally:
         await api.close()
 
