@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1170" viewBox="0 0 1440 1170" role="img" aria-labelledby="title desc">
+<title id="title">Four clients. One project control plane.</title><desc id="desc">Four independently usable clients connect through HTTP to the Coleo API. Live clients also use authenticated WebSockets. The browser uses a separate web host proxy. Brain uses the API; API connects storage and NATS/JetStream; Arm Hosts manage harnesses and project workspaces.</desc>
+<defs>
+<marker id="teal" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#176E69"/></marker>
+<marker id="blue" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#2D5F9A"/></marker>
+<marker id="coral" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#B04B39"/></marker>
+<marker id="ink" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#132F39"/></marker>
+<marker id="amber" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#8B5E19"/></marker>
+</defs>
+<rect x="0" y="0" width="1440" height="1170" rx="0" fill="#F7F5EF"/>
+<text x="56" y="47" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#176E69" text-anchor="start" letter-spacing="2">COLEO  /  WORKBENCH FIELD GUIDE</text>
+<text x="1384" y="48" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" fill="#526970" text-anchor="end">01 / 05</text>
+<text x="56" y="104" font-family="Athelas, Georgia, serif" font-size="42" font-weight="400" fill="#132F39" text-anchor="start">Four clients. One project control plane.</text>
+<text x="56" y="143" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="400" fill="#526970" text-anchor="start">Choose the interface for the work; keep project authority behind the API.</text>
+<rect x="56" y="166" width="265.5" height="27" rx="5" fill="#E5F2EE"/>
+<text x="68" y="185" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#176E69" text-anchor="start" letter-spacing="0.5">DOCUMENTED IMPLEMENTATION</text>
+<rect x="56" y="224" width="314" height="196" rx="14" fill="#FFFFFF" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="78" y="253" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#176E69" text-anchor="start" letter-spacing="1">React / Vite</text>
+<text x="78" y="288" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" fill="#132F39" text-anchor="start">Web</text>
+<text x="78" y="320" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Browser workspace</text>
+<text x="78" y="347" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Separate web host + proxy</text>
+<text x="78" y="374" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">API, uploads and /ws forwarded</text>
+<path d="M 213 420 L 213 454" fill="none" stroke="#176E69" stroke-width="2.4" stroke-linejoin="round"/>
+<rect x="394" y="224" width="314" height="196" rx="14" fill="#FFFFFF" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="416" y="253" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#2D5F9A" text-anchor="start" letter-spacing="1">Python / Rich</text>
+<text x="416" y="288" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" fill="#132F39" text-anchor="start">CLI</text>
+<text x="416" y="320" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">coleo-client</text>
+<text x="416" y="347" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">One-shot HTTP + text / JSON</text>
+<text x="416" y="374" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Automation and explicit actions</text>
+<path d="M 551 420 L 551 454" fill="none" stroke="#176E69" stroke-width="2.4" stroke-linejoin="round"/>
+<rect x="732" y="224" width="314" height="196" rx="14" fill="#FFFFFF" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="754" y="253" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#176E69" text-anchor="start" letter-spacing="1">Python / Textual</text>
+<text x="754" y="288" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" fill="#132F39" text-anchor="start">TUI</text>
+<text x="754" y="320" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">coleo-client tui</text>
+<text x="754" y="347" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Independent terminal tabs</text>
+<text x="754" y="374" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">HTTP + authenticated live hints</text>
+<path d="M 889 420 L 889 454" fill="none" stroke="#176E69" stroke-width="2.4" stroke-linejoin="round"/>
+<rect x="1070" y="224" width="314" height="196" rx="14" fill="#FFFFFF" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="1092" y="253" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#2D5F9A" text-anchor="start" letter-spacing="1">SwiftUI / AppKit</text>
+<text x="1092" y="288" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" fill="#132F39" text-anchor="start">macOS</text>
+<text x="1092" y="320" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Native windows and tabs</text>
+<text x="1092" y="347" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">HTTP + live Inbox hints</text>
+<text x="1092" y="374" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Other modules poll over HTTP</text>
+<path d="M 1227 420 L 1227 454" fill="none" stroke="#176E69" stroke-width="2.4" stroke-linejoin="round"/>
+<path d="M 213 454 L 1227 454" fill="none" stroke="#176E69" stroke-width="2.4" stroke-linejoin="round"/>
+<path d="M 720 454 L 720 550" fill="none" stroke="#176E69" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#teal)"/>
+<rect x="344" y="469" width="752" height="43" rx="0" fill="#F7F5EF"/>
+<text x="720" y="495" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" fill="#176E69" text-anchor="middle">HTTP reads + commands  /  JSON contracts</text>
+<text x="720" y="524" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#526970" text-anchor="middle">Live clients: WebSocket change hints; one-shot CLI opens no socket.</text>
+<rect x="416" y="550" width="592" height="160" rx="14" fill="#E5F2EE" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="438" y="588" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">API server</text>
+<text x="438" y="622" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Authentication, validation and domain actions</text>
+<text x="438" y="649" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Named views, queries, details and persistence</text>
+<text x="438" y="676" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">HTTP snapshots remain the Inbox data authority</text>
+<rect x="56" y="550" width="300" height="160" rx="14" fill="#FFFFFF" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="78" y="588" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">Brain</text>
+<text x="78" y="622" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Plans and coordinates work</text>
+<text x="78" y="649" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">API queue / event reads</text>
+<text x="78" y="676" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Inference calls omitted here</text>
+<path d="M 356 626 L 416 626" fill="none" stroke="#2D5F9A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#blue)" marker-start="url(#blue)"/>
+<text x="386" y="607" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#2D5F9A" text-anchor="middle">API</text>
+<rect x="1080" y="550" width="304" height="160" rx="14" fill="#F7EFD9" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="1102" y="588" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">Host operator tools</text>
+<text x="1102" y="622" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">coleo-server: API / Brain</text>
+<text x="1102" y="649" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">coleo-agent: Arm Host</text>
+<text x="1102" y="676" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Manage this host’s processes</text>
+<text x="1080" y="741" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="400" fill="#8B5E19" text-anchor="start">Host lifecycle differs from remote API actions.</text>
+<rect x="56" y="800" width="520" height="148" rx="14" fill="#FFFFFF" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="78" y="838" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">SQLite + Maildir</text>
+<text x="78" y="872" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Application records, attention and mail</text>
+<text x="78" y="899" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Sampled telemetry keeps its own semantics</text>
+<text x="78" y="926" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Stores do not share an atomic snapshot</text>
+<path d="M 500 710 L 500 756 L 316 756 L 316 800" fill="none" stroke="#2D5F9A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#blue)"/>
+<text x="64" y="780" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#2D5F9A" text-anchor="start" letter-spacing="1">SERVICE-OWNED DATA</text>
+<rect x="656" y="800" width="352" height="148" rx="14" fill="#EAF0FA" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="678" y="838" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">NATS + JetStream</text>
+<text x="678" y="872" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Commands, lifecycle and activity</text>
+<text x="678" y="899" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Retained event history</text>
+<text x="678" y="926" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">API bridges messages to Brain</text>
+<path d="M 832 710 L 832 800" fill="none" stroke="#2D5F9A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#blue)" marker-start="url(#blue)"/>
+<text x="849" y="760" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#2D5F9A" text-anchor="start">Commands / events</text>
+<rect x="1080" y="800" width="304" height="148" rx="14" fill="#FFFFFF" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="1102" y="838" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">Arm Host</text>
+<text x="1102" y="872" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Receives coordinated work</text>
+<text x="1102" y="899" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Owns harness / OpenCode</text>
+<text x="1102" y="926" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Runs coding-agent processes</text>
+<path d="M 1008 874 L 1080 874" fill="none" stroke="#2D5F9A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#blue)" marker-start="url(#blue)"/>
+<text x="1044" y="855" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#2D5F9A" text-anchor="middle">NATS</text>
+<path d="M 1232 948 L 1232 982" fill="none" stroke="#176E69" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#teal)"/>
+<rect x="656" y="982" width="728" height="80" rx="14" fill="#E5F2EE" stroke="#C4D0CD" stroke-width="1.5"/>
+<text x="678" y="1020" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#132F39" text-anchor="start">Project workspace / Garden</text>
+<text x="678" y="1041" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#526970" text-anchor="start">Code, plans, docs, tests and shared integration history</text>
+<text x="56" y="999" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#176E69" text-anchor="start" letter-spacing="1">BOUNDARY TO PRESERVE</text>
+<text x="56" y="1030" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">Clients do not read SQLite, Maildir or JetStream.</text>
+<text x="56" y="1057" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#526970" text-anchor="start">Brain reaches transport-backed state through the API.</text>
+<path d="M 56 1097 L 1384 1097" fill="none" stroke="#132F39" stroke-width="0.7" stroke-linejoin="round"/>
+<text x="56" y="1126" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#526970" text-anchor="start">Component boundaries are logical: API, Brain and Arm Hosts may share a computer or run on different hosts.</text>
+<text x="56" y="1150" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="400" fill="#526970" text-anchor="start">Sources [S1, S2, S3, S4]  ·  Branch snapshot 8b0c2e4  ·  17 Oct 2026  ·  Source key in the companion guide</text>
+</svg>

@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "id": "arm-activity",
+  "panelKind": "collection",
+  "resource": "arm-activity",
+  "query": {
+    "search": "",
+    "limit": 100,
+    "follow": true
+  },
+  "commands": [
+    "arms.refresh",
+    "arms.message",
+    "arms.stuck",
+    "arms.kill",
+    "arms.remove"
+  ],
+  "slots": {
+    "toolbar.primary.identity": [
+      {
+        "id": "identity",
+        "widget": "resource.identity",
+        "label": "Arm activity"
+      }
+    ],
+    "toolbar.primary.search": [
+      {
+        "id": "search",
+        "widget": "collection.search",
+        "label": "Search activity",
+        "binding": "query.search"
+      }
+    ],
+    "toolbar.primary.actions": [
+      {
+        "id": "refresh",
+        "widget": "arms.action",
+        "label": "Refresh",
+        "command": "arms.refresh"
+      },
+      {
+        "id": "message",
+        "widget": "arms.action",
+        "label": "Send message",
+        "command": "arms.message"
+      },
+      {
+        "id": "stuck",
+        "widget": "arms.action",
+        "label": "Report stuck",
+        "command": "arms.stuck"
+      },
+      {
+        "id": "kill",
+        "widget": "arms.action",
+        "label": "Stop arm",
+        "command": "arms.kill"
+      },
+      {
+        "id": "remove",
+        "widget": "arms.action",
+        "label": "Remove stopped arm",
+        "command": "arms.remove"
+      }
+    ],
+    "toolbar.primary.state": [
+      {
+        "id": "follow",
+        "widget": "arms.follow",
+        "label": "Follow",
+        "binding": "query.follow"
+      }
+    ]
+  },
+  "presentation": {
+    "active": "activity",
+    "renderers": [
+      {
+        "id": "activity",
+        "renderer": "collection.list",
+        "label": "Activity",
+        "kind": "custom",
+        "fields": [
+          "timestamp",
+          "type",
+          "content"
+        ]
+      }
+    ]
+  }
+}

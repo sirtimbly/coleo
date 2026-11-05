@@ -15,6 +15,7 @@ API-only operations target the selected server.
   doctor [--json]            Check selected server and optional TUI
   web [--host HOST] [--port PORT]  Run the installed web client
   modules | views | validate | tui | inbox | tasks | bugs | brain | dashboard
+  hosts | harnesses | services
   arms | agents | activity | status | mail | discoveries | config | status-reports
   --profile ID              Named-view query profile, not a server connection
   --catalog PATH            Module catalog for domain commands

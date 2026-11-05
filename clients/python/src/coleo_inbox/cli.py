@@ -69,7 +69,7 @@ async def run(args, api=None, stdout=None, stderr=None):
             from .web_cli import run_web
             return await run_web(args[1:], api, stdout)
         args, catalog_path = catalog_arguments(args)
-        if args and args[0] in {"arm", "arms", "agents", "activity", "status"}:
+        if args and args[0] in {"arm", "arms", "agents", "activity", "status", "hosts", "harnesses", "services"}:
             domain_command = True
             from .remote_cli import run_remote
             return await run_remote(args, api, stdout)
@@ -100,10 +100,16 @@ async def run(args, api=None, stdout=None, stderr=None):
         recipe = catalog.modules.get(args[0]) if args else None
         if args and args[0] in DOMAIN_MODULES and recipe is None:
             raise ValueError(f"Module {args[0]} is not in {catalog.path}")
+        if recipe and recipe.renderer == "hosts":
+            from .remote_cli import run_remote
+            return await run_remote(["hosts", *args[1:]], api, stdout)
         if recipe and recipe.renderer != "messaging":
             domain_command = True
             from .module_cli import run_module
             return await run_module(args, api, stdout, recipe=recipe)
+        if args[:2] == ["tui", "hosts"] and "hosts" not in catalog.modules:
+            # Existing user catalogs stay authoritative on disk; explicit launch remains available.
+            catalog.modules["hosts"] = decode_catalog(files("coleo_inbox").joinpath("resources/modules.json").read_text())["hosts"]
         if len(args) >= 2 and args[0] == "tui" and not args[1].startswith("-"):
             if args[1] not in catalog.modules:
                 raise ValueError(f"Module {args[1]} is not in {catalog.path}")

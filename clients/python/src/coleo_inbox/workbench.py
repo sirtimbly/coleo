@@ -118,6 +118,9 @@ class WorkbenchApp(App):
                     if not (reuse_initial and self.inbox_options):
                         recipe.apply(options, view)
                     pane = InboxPane(self.api, view, options, live=self.live, id=identifier)
+                elif recipe.renderer == "hosts":
+                    from .hosts_app import HostsPane
+                    pane = HostsPane(self.api, live=self.live, id=identifier)
                 else:
                     pane = ModulePane(self.api, recipe.renderer, module_title=recipe.title, live=self.live, id=identifier)
                 pane.module_recipe = recipe
@@ -150,6 +153,8 @@ class WorkbenchApp(App):
             return
         if isinstance(pane, InboxPane):
             pane.query_one("#grid" if pane.session.options.presentation == "grid" else "#cards").focus()
+        elif pane.module_recipe.renderer == "hosts":
+            pane.query_one("#fleet-grid").focus()
         elif MODULES[pane.module].statuses:
             pane.query_one("#module-grid").focus()
         else:

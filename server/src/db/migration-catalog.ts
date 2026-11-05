@@ -176,6 +176,11 @@ export function getMigrations(): Migration[] {
 		["070_swarm_evaluations", MIGRATION_070_SWARM_EVALUATIONS],
 		["071_swarm_recommendations", MIGRATION_071_SWARM_RECOMMENDATIONS],
 		["072_task_handoff", MIGRATION_072_TASK_HANDOFF],
+    ["073_hosts", `CREATE TABLE hosts (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, hostname TEXT NOT NULL,
+      roles TEXT NOT NULL, agent_id TEXT, notes TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );`],
 	];
   return migrations.map(([name, sql, columns]) => ({
     name, sql, columns,

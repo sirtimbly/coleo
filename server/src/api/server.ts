@@ -10,6 +10,8 @@ import { cors } from "hono/cors";
 import { dirname } from "path";
 import { subjectToken } from "../nats/subject-token";
 import { initDatabase, Database, seedDatabase } from "../db";
+import { createHostsRoutes } from "./routes/hosts";
+import { createServiceRoutes } from "./routes/services";
 import { apiKeyMatches, logger, createAuthMiddleware, REEF_PROXY_API_KEY_HEADER } from "./middleware";
 import { formatErrorResponse } from "./middleware/error";
 import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createTaskDiscussionsRoutes, createTaskSummariesRoutes, createTaskDiffsRoutes, createAgentsRoutes, createDiscoveriesRoutes, createStatusReportsRoutes, createBugsRoutes, createEscalationRoutes, createEventsRoutes, createSearchRoutes, createStatusHistoryRoutes, createStatusSeriesRoutes, createUploadApiRoutes, createUploadContentRoutes, createOnboardingRoutes, createProjectSetupRoutes, createWorkbenchRoutes, createRunsRoutes } from "./routes";
@@ -235,6 +237,8 @@ export function createApp(db: Database, config: ApiConfig, options: CreateAppOpt
   app.route("/api/tasks/:id/summaries", createTaskSummariesRoutes());
   app.route("/api/tasks/:id/diffs", createTaskDiffsRoutes());
   app.route("/api/agents", createAgentsRoutes());
+  app.route("/api/hosts/services", createServiceRoutes(config));
+  app.route("/api/hosts", createHostsRoutes());
   app.route("/api/discoveries", createDiscoveriesRoutes());
   app.route("/api/status-reports", createStatusReportsRoutes());
   app.route("/api/bugs", createBugsRoutes());

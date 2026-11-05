@@ -27,6 +27,7 @@
       }
     },
     { "id": "brain", "title": "Brain", "description": "Orchestrator status and planning health", "symbol": "brain", "renderer": "brain" },
-    { "id": "dashboard", "title": "Dashboard", "description": "Project progress and system overview", "symbol": "chart.bar.xaxis", "renderer": "dashboard" }
+    { "id": "dashboard", "title": "Dashboard", "description": "Project progress and system overview", "symbol": "chart.bar.xaxis", "renderer": "dashboard" },
+    { "id": "hosts", "title": "Hosts & harnesses", "description": "Host inventory, harness runtimes, and service connections", "symbol": "server.rack", "renderer": "hosts" }
   ]
 }

@@ -5,6 +5,10 @@ description: Run the Coleo server, connect clients, and manage server and Arm Ho
 
 # Server and clients
 
+See [Workbench across clients](./workbench-clients) for illustrated component
+boundaries, portable view semantics, Inbox data flows, and the distinction between
+the implemented clients and planned process blueprints.
+
 Coleo consists of a server, a brain process, Arm Hosts, and user clients. The
 server exposes the API and stores application data. The brain coordinates work.
 Arm Hosts run coding agents. Clients connect to the server to display data and
