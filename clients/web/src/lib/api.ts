@@ -38,15 +38,11 @@ import type { MessagingCollectionPage } from '../../../../server/src/workbench/m
 import type { MessagingQuery, MessagingMailbox } from '../../../../server/src/workbench/messaging-query';
 import type { MailThreadDetail } from '../../../../server/src/workbench/mail-thread-detail';
 import type { ResolvedNamedResourceView } from '../../../../server/src/workbench/named-resource-views';
+import type { JsonObject, JsonValue } from './json-types';
+
+export type { JsonPrimitive, JsonValue, JsonObject } from './json-types';
 
 const API_BASE = '/api';
-
-export type JsonPrimitive = string | number | boolean | null;
-export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
-
-export interface JsonObject {
-  [key: string]: JsonValue | undefined;
-}
 
 export interface ResourceSearchMatches {
   total: number;

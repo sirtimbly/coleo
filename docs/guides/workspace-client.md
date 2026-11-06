@@ -1,6 +1,6 @@
 ---
 title: Workspace CLI and TUI
-description: Choose an optional terminal client and understand how it fits alongside the Bun server CLI.
+description: Choose an optional terminal client and understand command ownership after the CLI split.
 ---
 
 # Workspace CLI and TUI
@@ -10,7 +10,8 @@ Choose the tools you need; running the server does not require Python.
 
 | What you need | Install | Command | Runtime |
 | --- | --- | --- | --- |
-| Host Coleo, configure services, run agents | Existing `coleo` npm package | `coleo` | Bun |
+| Host Coleo and configure local services | `server` component or Bun package | `coleo-server` | Bun (private runtime with component installer) |
+| Run an Arm Host | `agent` component or Bun package | `coleo-agent` | Bun (private runtime with component installer) |
 | Browse and automate Inbox, Tasks, Bugs, Brain, Dashboard | Python workspace client | `coleo-client` | Python 3.12 or 3.13 |
 | Interactive terminal workspace with tabs | Python client with `tui` extra | `coleo-client tui` | Python plus Textual |
 | Browser interface | Open a running web client; launch one with `coleo-client web` | Browser; separate host process | Install the `web` component on its host |
@@ -104,28 +105,34 @@ the TUI without its extra.
 
 ## Which command should I use today?
 
-| Job | Workspace client | Existing Bun CLI |
+The CLI split is breaking. See [Upgrading from 0.14.4 to 1.0](./upgrading-to-1.0)
+for command migration, shutdown, backup, and recovery instructions.
+
+| Job | Workspace client | Local operator interface |
 | --- | --- | --- |
-| Task and bug browsing, CSV, task discussions | `coleo-client tasks …`, `bugs …` | Existing commands remain available |
+| Task and bug browsing, CSV, task discussions | `coleo-client tasks …`, `bugs …` | Old Bun domain commands print migration guidance and exit 1 |
 | Tabbed terminal workspace | `coleo-client tui` | Use the optional client |
-| Brain status/start/stop through the server API | `coleo-client brain …` | Process-management commands retain their existing meaning |
-| Initialize installation, run/stop server, configure services | Use the Bun CLI | `coleo init`, `coleo serve …`, `coleo config …` |
-| Agent/arm processes, MCP, IMAP, debugging and other operator commands | Use the Bun CLI | `coleo --help` lists supported commands |
+| Brain status/start/stop through the server API | `coleo-client brain …` | `coleo-server brain …` manages the local process |
+| Initialize installation, run/stop server, configure local services | Use the operator CLI | `coleo init`, `coleo-server …`, `coleo-server configure` |
+| Arm Host lifecycle | Use the operator CLI | `coleo-agent …`, `coleo-agent configure` |
+| Individual arms and server-side arm configuration | `coleo-client arms …`, `coleo-client config …` | `coleo config` is a migration stub, not local service configuration |
+| MCP, IMAP, local diagnostics | Use the transitional operator command | `coleo --help` lists retained commands |
 
 **Similar names do not always mean identical behavior.** In particular:
 
 - Python `tasks sync` and `tasks reparse` use the connected **server's workspace**,
-  including a configured remote Arm Host. Original Bun commands use their local
-  project/database context.
+  including a configured remote Arm Host. The old Bun implementation used local
+  project/database context; it is no longer available through the migrated commands.
 - Python CSV commands modify the connected server through its API. Original Bun
-  CSV commands directly access the local Coleo database.
+  CSV implementations accessed the local Coleo database.
 - Python `brain start/stop` call server control endpoints; they do not launch a
   standalone local brain process.
 - Python reads `COLEO_API_URL` and `COLEO_API_KEY`; do not assume the Bun CLI's
   project configuration or environment-file discovery carries over automatically.
 - Rich text is for people. Use versioned `--json` output for new automation and
   check exit codes: 0 complete, 1 input/request failure, 2 partial results/conflicts.
-  Existing scripts should retain their original executable until migrated.
+  Update existing scripts to the new executable, options, and API semantics before
+  upgrading; retaining a migrated Bun command causes failure, not a fallback.
 
 CSV files retain the original format and conflict columns. The newer CSV and
 maintenance commands require the corresponding server API routes; upgrade the

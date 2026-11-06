@@ -218,7 +218,7 @@ export function TaskSheet({
 		)),
 		[tagOptions],
 	);
-	const { view, preferences: savedPreferences, updatePreferences: updateSavedPreferences, updateShared } = useViewPreferences(viewId, {
+	const { view, preferences: savedPreferences, updatePreferences: updateSavedPreferences, updateShared, saveStatus } = useViewPreferences(viewId, {
 		id: viewId,
 		name: viewId === "plan-items-sheet" ? "Plan items" : "Tasks",
 		kind: "sheet",
@@ -290,6 +290,7 @@ export function TaskSheet({
 
 	return (
 		<div className="relative flex h-full min-h-0 flex-col">
+			{saveStatus}
 			{externallyConfigured ? null : <div className="flex h-9 shrink-0 items-center justify-between border-b border-border bg-surface-secondary/35 px-3">
 				{formattingTask ? (
 					<RowFormattingToolbar

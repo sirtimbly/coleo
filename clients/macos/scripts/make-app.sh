@@ -19,6 +19,7 @@ APP=".build/ColeoInbox.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/ColeoInboxMac"
+cp ../../LICENSE.txt "$APP/Contents/Resources/LICENSE.txt"
 cp "Sources/ColeoInboxMac/Resources/modules.json" "$APP/Contents/Resources/modules.json"
 cp "Artwork/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 xcrun actool Artwork/AppIcon.icon --compile "$APP/Contents/Resources" \

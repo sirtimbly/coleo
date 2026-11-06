@@ -1,0 +1,65 @@
+name: Release packaging checks
+
+on:
+  pull_request:
+    paths:
+      - 'release-please-config.json'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'packaging/**'
+      - 'Dockerfile.cloudflare-*'
+      - '.dockerignore'
+      - 'docker/**'
+      - 'server/**'
+      - 'clients/web/**'
+      - 'package.json'
+      - 'bun.lock'
+      - 'LICENSE.txt'
+      - '.github/workflows/release-packaging.yml'
+      - '.github/workflows/release-please.yml'
+      - '.github/workflows/publish-components.yml'
+      - '.github/workflows/publish-cloudflare-container.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  version-propagation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.11.8
+      - name: Test release-please TOML updates against uv
+        run: |
+          npm install --prefix "$RUNNER_TEMP/release-please-test" --no-package-lock --ignore-scripts release-please@17.11.2
+          NODE_PATH="$RUNNER_TEMP/release-please-test/node_modules" node packaging/test-release-version.cjs
+
+  containers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [control, agent]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build release image
+        run: docker build --platform linux/amd64 --file Dockerfile.cloudflare-${{ matrix.image }} --tag coleo-${{ matrix.image }}:test .
+      - name: Smoke control CLI
+        if: matrix.image == 'control'
+        run: |
+          docker run --rm --entrypoint bun coleo-control:test dist/server.js --version
+          docker run --rm --entrypoint bun coleo-control:test dist/server.js --help
+          docker run --rm --entrypoint bun coleo-control:test server/src/regression/smoke-topology.ts --skip-nats
+      - name: Smoke Arm Host bundle and runtime dependencies
+        if: matrix.image == 'agent'
+        run: |
+          docker run --rm --entrypoint bun coleo-agent:test -e 'const agent = await import("./cloudflare-agent.js"); if (typeof agent.main !== "function") throw new Error("Missing agent entrypoint"); await import("bun-pty");'
+          docker run --rm --entrypoint opencode coleo-agent:test --version
+          docker run --rm --entrypoint nats-server coleo-agent:test --version

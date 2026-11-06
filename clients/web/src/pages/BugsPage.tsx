@@ -482,7 +482,7 @@ export function BugsPage() {
 	const [cardEditBugId, setCardEditBugId] = useState<string | null>(null);
 	const [configuringView, setConfiguringView] = useState(false);
 	const [formattingBug, setFormattingBug] = useState<Bug>();
-	const { display, updateDisplay } = useCollectionDisplayPreferences({
+	const { display, updateDisplay, saveStatus: displaySaveStatus } = useCollectionDisplayPreferences({
 		viewId: 'bugs-display',
 		name: 'Bugs',
 		resourceKind: 'bug',
@@ -896,6 +896,8 @@ export function BugsPage() {
 					</React.Suspense>
 				)}
 			</div>
+			{displaySaveStatus}
+			{bugView.saveStatus}
 			<ViewConfigurator
 				showGridFontSize
 				open={configuringView}

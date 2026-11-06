@@ -47,7 +47,7 @@ export function ProcessesPage() {
 	const [filter, setFilter] = useState<ProcessFilter>("active");
 	const [loading, setLoading] = useState(true);
 	const toolbarTemplate = useToolbarTemplate("processes");
-	const { display, updateDisplay } = useCollectionDisplayPreferences({
+	const { display, updateDisplay, saveStatus } = useCollectionDisplayPreferences({
 		viewId: "processes-display",
 		name: "Processes",
 		resourceKind: "run",
@@ -97,6 +97,7 @@ export function ProcessesPage() {
 
 	return (
 		<div className="flex h-full min-h-0 flex-col bg-background">
+			{saveStatus}
 			<ToolbarTemplateRows
 				template={toolbarTemplate}
 				widgets={{

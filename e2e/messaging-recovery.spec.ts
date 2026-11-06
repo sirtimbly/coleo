@@ -101,6 +101,16 @@ test("production reply branches retain selected descendants on collapse and new 
 	await page.goto("/messaging?facet=messages");
 	const root = page.locator('[data-inbox-item-id="thread:inbox:review"]');
 	await root.getByRole("button", { name: "Expand Review branch card" }).click();
+	// Controlled inputs in the expanded card must settle before the native click
+	// returns, including two consecutive gestures without an intervening render.
+	const branch = root.getByRole("checkbox", { name: "Select loaded branch Review branch" });
+	await expect(branch).toBeVisible();
+	expect(await branch.evaluate((element: HTMLInputElement) => {
+		element.click();
+		const selected = element.checked;
+		element.click();
+		return [selected, element.checked];
+	})).toEqual([true, false]);
 	await root.getByRole("checkbox", { name: "Select loaded branch Review branch" }).check();
 	await expect(page.getByText("2 loaded members selected", { exact: true })).toBeVisible();
 	await root.getByRole("button", { name: "Collapse replies to Review branch" }).click();

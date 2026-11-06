@@ -15,7 +15,7 @@
  *   end (unless --keep is passed for debugging).
  *
  * Usage:
- *   bun run src/regression/smoke-topology.ts [--api-port N] [--nats-port N] [--keep] [--skip-nats]
+ *   bun run server/src/regression/smoke-topology.ts [--api-port N] [--nats-port N] [--keep] [--skip-nats]
  *   bun run smoke:topology
  */
 import { mkdtemp, rm } from "node:fs/promises";
@@ -109,6 +109,12 @@ async function main(): Promise<void> {
 	const apiKey = `smoke-${randomUUID()}`;
 	const apiBase = `http://127.0.0.1:${apiPort}`;
 	const headers = { "Content-Type": "application/json", "X-API-Key": apiKey };
+	// Never mistake an existing service for the isolated process this suite owns.
+	for (const port of [apiPort, natsPort]) {
+		if (await tcpOpen("127.0.0.1", port)) {
+			throw new Error(`Smoke port ${port} is already in use; choose an unused port`);
+		}
+	}
 	let apiProc: Subprocess | null = null;
 	let natsProc: Subprocess | null = null;
 	let root = "";
@@ -242,15 +248,21 @@ async function main(): Promise<void> {
 		} else {
 			try {
 				apiProc = spawn({
-					cmd: ["bun", "run", "src/cli/index.ts", "serve", "--host", "127.0.0.1", "--port", String(apiPort)],
+					cmd: ["bun", "run", "server/src/cli/server.ts", "run", "--host", "127.0.0.1", "--port", String(apiPort)],
 					cwd: repoRoot,
 					env: {
 						...process.env,
 						COLEO_DIR: coleoDir,
+						COLEO_DB_PATH: join(coleoDir, "coleo.db"),
 						COLEO_PROJECT_DIR: root,
 						COLEO_API_KEY: apiKey,
+						COLEO_API_URL: apiBase,
 						COLEO_API_PORT: String(apiPort),
-						COLEO_NATS_URL: natsUp ? `nats://127.0.0.1:${natsPort}` : "",
+						// An explicit unavailable endpoint also prevents local broker autostart
+						// in --skip-nats mode and overrides inherited production settings.
+						COLEO_NATS_URL: `nats://127.0.0.1:${natsPort}`,
+						COLEO_NATS_TOKEN: "",
+						COLEO_TRANSCRIPT_INDEXER_AUTOSTART: "false",
 					},
 					stdout: "ignore",
 					stderr: "ignore",
@@ -288,7 +300,7 @@ async function main(): Promise<void> {
 		}
 	}
 
-	// Stage 7: CLI against the test server.
+	// Stage 7: operator CLI identifies the foreground server it registered.
 	{
 		const start = Date.now();
 		if (!apiUp) {
@@ -296,7 +308,7 @@ async function main(): Promise<void> {
 		} else {
 			try {
 				const proc = Bun.spawn(
-					["bun", "run", "src/cli/index.ts", "status"],
+					["bun", "run", "server/src/cli/server.ts", "status", "--json"],
 					{
 						cwd: repoRoot,
 						env: {
@@ -316,11 +328,12 @@ async function main(): Promise<void> {
 					new Response(proc.stderr).text(),
 					proc.exited,
 				]);
-				if (code !== 0) throw new Error(`coleo status exited ${code}: ${stderr.slice(0, 300)}`);
-				if (!/healthy|running|ok|Coleo/i.test(stdout)) {
+				if (code !== 0) throw new Error(`coleo-server status exited ${code}: ${stderr.slice(0, 300)}`);
+				const status = JSON.parse(stdout) as { running?: boolean; pid?: number };
+				if (!status.running || status.pid !== apiProc?.pid) {
 					throw new Error(`unexpected status output: ${stdout.slice(0, 200)}`);
 				}
-				record("cli", "pass", "coleo status against test server", Date.now() - start);
+				record("cli", "pass", "coleo-server status identifies the isolated server", Date.now() - start);
 			} catch (error) {
 				record("cli", "fail", String(error), Date.now() - start);
 			}

@@ -79,6 +79,9 @@ NATS configuration are separate.
 
 ## Upgrade and uninstall
 
+Moving from 0.14.4? Follow [Upgrading to 1.0](./upgrading-to-1.0) for the breaking
+command migration, service shutdown order, backups, verification, and recovery.
+
 ```sh
 coleo-install upgrade client --version VERSION
 coleo-install install tui --version VERSION

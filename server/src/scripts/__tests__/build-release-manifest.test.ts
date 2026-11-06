@@ -5,9 +5,9 @@ import { join, resolve } from 'node:path';
 import { buildReleaseManifest } from '../build-release-manifest';
 import { normalizeReleaseVersion } from '../component-release-version';
 
-async function webDependencies(assets: string): Promise<void> {
+async function webDependencies(assets: string, targets = ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64']): Promise<void> {
   const compatibility = { testedServer: '1.2.3', requiredCapabilities: [] };
-  const artifacts = Object.fromEntries(['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64']
+  const artifacts = Object.fromEntries(targets
     .map(platform => [platform, { file: 'web.tar.gz', format: 'tar.gz', entry: 'runtime' }]));
   await writeFile(join(assets, 'runtime.component.json'), JSON.stringify({
     bun: { version: '1.2.3', compatibility, artifacts },
@@ -60,6 +60,39 @@ describe('component release manifest', () => {
     for (const input of ['', 'latest', 'coleo-vv1.2.3', 'coleo-v1.2.3/other']) {
       expect(() => normalizeReleaseVersion(input)).toThrow();
     }
+  });
+  test('platform smoke accepts partial web dependencies but final assembly remains strict', async () => {
+    const assets = await mkdtemp(join(tmpdir(), 'coleo-scoped-manifest-'));
+    try {
+      await writeFile(join(assets, 'web.tar.gz'), 'fixture');
+      await webDependencies(assets, ['darwin-arm64']);
+      await writeFile(join(assets, 'web.component.json'), JSON.stringify({ web: {
+        version: '1.2.3', runtime: 'bun', dependencies: ['client'],
+        compatibility: { testedServer: '1.2.3', requiredCapabilities: [] },
+        artifacts: { any: { file: 'web.tar.gz', format: 'tar.gz' } },
+      } }));
+      const options = { assets, version: '1.2.3', commit: 'a'.repeat(40) };
+      const scoped = { ...options, platform: 'darwin-arm64' };
+      const manifest = await buildReleaseManifest(scoped);
+      expect(manifest.components.web!.artifacts.any).toBeDefined();
+      await expect(buildReleaseManifest(options)).rejects.toThrow('Missing bun runtime for linux-x64');
+      for (const platform of ['any', 'windows-x64', '']) {
+        await expect(buildReleaseManifest({ ...options, platform })).rejects.toThrow('Unsupported validation platform');
+      }
+      const child = Bun.spawn([process.execPath, resolve(import.meta.dir, '../build-release-manifest.ts'),
+        '--assets', assets, '--version', options.version, '--commit', options.commit, '--platform', scoped.platform],
+      { stdout: 'pipe', stderr: 'pipe' });
+      expect(await child.exited).toBe(0);
+
+      const path = join(assets, 'runtime.component.json');
+      const dependencies = JSON.parse(await readFile(path, 'utf8'));
+      delete dependencies.client;
+      await writeFile(path, JSON.stringify(dependencies));
+      await expect(buildReleaseManifest(scoped)).rejects.toThrow('Missing client dependency for darwin-arm64');
+      delete dependencies.bun;
+      await writeFile(path, JSON.stringify(dependencies));
+      await expect(buildReleaseManifest(scoped)).rejects.toThrow('Missing bun runtime for darwin-arm64');
+    } finally { await rm(assets, { recursive: true, force: true }); }
   });
   test('web any bundle requires platform Bun and client dependencies', async () => {
     const assets = await mkdtemp(join(tmpdir(), 'coleo-web-manifest-'));

@@ -5,7 +5,7 @@
  * configuration, and Golden Layout persistence independent from any one page.
  */
 
-import type { JsonObject, JsonValue } from "@/lib/api";
+import type { JsonObject, JsonValue } from "../lib/json-types";
 
 export type ResourceKind =
 	| "project"

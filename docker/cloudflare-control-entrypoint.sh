@@ -9,6 +9,7 @@ for command in coleo coleo-web bun curl qdrant; do require_cmd "$command"; done
 COLEO_DIR=${COLEO_DIR:-/home/coleo/.coleo}
 PORT=${PORT:-3000}
 API_PORT=${COLEO_API_INTERNAL_PORT:-8081}
+export COLEO_API_URL="http://127.0.0.1:${API_PORT}"
 if [[ "$API_PORT" == "$PORT" ]]; then
   echo "COLEO_API_INTERNAL_PORT must differ from PORT" >&2
   exit 1
@@ -118,9 +119,11 @@ API_PID=""
 WEB_PID=""
 BRAIN_PID=""
 INDEXER_PID=""
+SLEEP_PID=""
 # shellcheck disable=SC2317,SC2329 # Invoked indirectly by the signal/exit trap below.
 cleanup() {
   trap - TERM INT EXIT
+  if [[ -n "$SLEEP_PID" ]]; then kill -TERM "$SLEEP_PID" 2>/dev/null || true; fi
   if [[ -n "$WEB_PID" ]]; then kill -TERM "$WEB_PID" 2>/dev/null || true; fi
   if [[ -n "$INDEXER_PID" ]]; then kill -TERM "$INDEXER_PID" 2>/dev/null || true; fi
   if [[ -n "$BRAIN_PID" ]]; then kill -TERM "$BRAIN_PID" 2>/dev/null || true; fi
@@ -218,7 +221,10 @@ while kill -0 "$QDRANT_PID" 2>/dev/null \
   && kill -0 "$WEB_PID" 2>/dev/null \
   && kill -0 "$INDEXER_PID" 2>/dev/null \
   && kill -0 "$BRAIN_PID" 2>/dev/null; do
-  sleep 60
+  sleep 60 &
+  SLEEP_PID=$!
+  wait "$SLEEP_PID"
+  SLEEP_PID=""
   if (( SECONDS - last_qdrant_snapshot >= QDRANT_SNAPSHOT_INTERVAL_SECONDS )); then
     snapshot_qdrant
     last_qdrant_snapshot=$SECONDS

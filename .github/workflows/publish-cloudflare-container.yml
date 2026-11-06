@@ -102,6 +102,20 @@ jobs:
         if: steps.arm-image.outputs.exists != 'true'
         run: docker build --platform linux/amd64 --file Dockerfile.cloudflare-agent --tag coleo-agent:${{ steps.arm-image.outputs.tag }} .
 
+      - name: Smoke control image before publication
+        if: steps.control-image.outputs.exists != 'true' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
+        run: |
+          docker run --rm --entrypoint bun coleo-control:${{ steps.release.outputs.control_tag }} dist/server.js --version
+          docker run --rm --entrypoint bun coleo-control:${{ steps.release.outputs.control_tag }} dist/server.js --help
+          docker run --rm --entrypoint bun coleo-control:${{ steps.release.outputs.control_tag }} server/src/regression/smoke-topology.ts --skip-nats
+
+      - name: Smoke Arm Host image before publication
+        if: steps.arm-image.outputs.exists != 'true'
+        run: |
+          docker run --rm --entrypoint bun coleo-agent:${{ steps.arm-image.outputs.tag }} -e 'const agent = await import("./cloudflare-agent.js"); if (typeof agent.main !== "function") throw new Error("Missing agent entrypoint"); await import("bun-pty");'
+          docker run --rm --entrypoint opencode coleo-agent:${{ steps.arm-image.outputs.tag }} --version
+          docker run --rm --entrypoint nats-server coleo-agent:${{ steps.arm-image.outputs.tag }} --version
+
       - name: Push immutable control image
         if: steps.control-image.outputs.exists != 'true'
         run: bunx wrangler@4.110.0 containers push coleo-control:${{ steps.release.outputs.control_tag }}

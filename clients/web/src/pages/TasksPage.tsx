@@ -485,7 +485,7 @@ export function TasksPage() {
 	const [burndownRefresh, setBurndownRefresh] = useState(0);
 	const [configuringView, setConfiguringView] = useState(false);
 	const [formattingTask, setFormattingTask] = useState<Task>();
-	const { display, updateDisplay } = useCollectionDisplayPreferences({
+	const { display, updateDisplay, saveStatus: displaySaveStatus } = useCollectionDisplayPreferences({
 		viewId: "tasks-display",
 		name: "Tasks",
 		resourceKind: "task",
@@ -862,6 +862,9 @@ export function TasksPage() {
 		/>
 	) : undefined;
 	const taskViewConfigurator = (
+		<>
+		{displaySaveStatus}
+		{taskView.saveStatus}
 		<ViewConfigurator
 			showGridFontSize
 			open={configuringView}
@@ -872,6 +875,7 @@ export function TasksPage() {
 			onSharedChange={(shared) => void taskView.updateShared(shared)}
 			onClose={() => setConfiguringView(false)}
 		/>
+		</>
 	);
 
 	const handleRemoveTagFromTask = useCallback(

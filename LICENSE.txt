@@ -6,7 +6,6 @@ Licensor:             Systematic UI, LLC
 Licensed Work:        The licensed work is (c) 2026 Systematic UI, LLC 
                       This license applies to all files in this repository
                       unless another license is specified in a subdirectory.
-                      The Licensed Work is (c) 2025 [Your Name].
 Additional Use Grant: 
                       You may use the Licensed Work for production purposes 
                       if you are:
@@ -29,7 +28,7 @@ Change Date:          2029-01-31 (4 years from release date)
 Change License:       Apache License, Version 2.0
 
 For information about alternative licensing arrangements for the Software,
-please visit: [your-website.com/licensing]
+please visit: https://coleo.dev/licensing
 
 -----------------------------------------------------------------------------
 

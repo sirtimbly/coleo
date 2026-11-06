@@ -84,7 +84,7 @@ export function DiscoverySheet({
 	hasNextPage?: boolean;
 }) {
 	const [configuring, setConfiguring] = useState(false);
-	const { view, preferences, updatePreferences, updateShared } = useViewPreferences(
+	const { view, preferences, updatePreferences, updateShared, saveStatus } = useViewPreferences(
 		"discoveries-sheet",
 		{
 			id: "discoveries-sheet",
@@ -112,6 +112,7 @@ export function DiscoverySheet({
 
 	return (
 		<div className="relative flex h-full min-h-0 flex-col">
+			{saveStatus}
 			<div className="flex h-9 shrink-0 items-center justify-between border-b border-border bg-surface-secondary/35 px-3">
 				<span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
 					Spreadsheet · status is editable

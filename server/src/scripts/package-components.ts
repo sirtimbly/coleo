@@ -66,6 +66,7 @@ try {
       if (!(await Bun.file(join(root, 'clients/web/dist', name)).exists())) throw new Error(`Missing web resource: ${name}`);
     }
     const file = `coleo-web-${version}.tar.gz`;
+    await cp(join(root, 'LICENSE.txt'), join(root, 'clients/web/dist/LICENSE.txt'));
     await archive(join(root, 'clients/web/dist'), file);
     await descriptor('web', { web: { version, runtime: 'bun', dependencies: ['client'], compatibility,
       artifacts: { any: { file, format: 'tar.gz' } } } });
@@ -76,7 +77,7 @@ try {
     await run(['bun', 'run', 'build']);
     const operator = join(temp, 'operator');
     await mkdir(join(operator, 'clients/web'), { recursive: true });
-    for (const file of ['package.json', 'bun.lock', 'clients/web/package.json']) {
+    for (const file of ['package.json', 'bun.lock', 'clients/web/package.json', 'LICENSE.txt']) {
       await cp(join(root, file), join(operator, file));
     }
     await cp(join(root, 'dist'), join(operator, 'dist'), { recursive: true });
@@ -87,6 +88,7 @@ try {
     await archive(operator, operatorFile);
     const client = join(temp, 'client');
     await mkdir(join(client, 'wheels'), { recursive: true });
+    await cp(join(root, 'LICENSE.txt'), join(client, 'LICENSE.txt'));
     await run(['uv', 'build', '--wheel', '--out-dir', client]);
     const wheel = (await readdir(client)).find(file => file.endsWith('.whl'));
     if (!wheel || !wheel.startsWith(`coleo_inbox-${version.replace(/-/g, '')}-`)) {

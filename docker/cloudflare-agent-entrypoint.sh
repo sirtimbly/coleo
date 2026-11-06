@@ -77,16 +77,24 @@ export COLEO_API_URL=${COLEO_API_URL:?COLEO_API_URL is required}
 
 NATS_PID=""
 AGENT_PID=""
-# shellcheck disable=SC2329 # Invoked indirectly by the signal/exit trap below.
+SLEEP_PID=""
+# shellcheck disable=SC2317,SC2329 # Invoked indirectly by the signal/exit trap below.
 cleanup() {
   trap - TERM INT EXIT
-  [[ -n "$AGENT_PID" ]] && kill -TERM -- "-$AGENT_PID" 2>/dev/null || true
-  [[ -n "$AGENT_PID" ]] && wait "$AGENT_PID" 2>/dev/null || true
-  [[ -n "$NATS_PID" ]] && kill -TERM "$NATS_PID" 2>/dev/null || true
-  [[ -n "$NATS_PID" ]] && wait "$NATS_PID" 2>/dev/null || true
+  if [[ -n "$SLEEP_PID" ]]; then kill -TERM "$SLEEP_PID" 2>/dev/null || true; fi
+  if [[ -n "$AGENT_PID" ]]; then kill -TERM -- "-$AGENT_PID" 2>/dev/null || true; fi
+  if [[ -n "$AGENT_PID" ]]; then wait "$AGENT_PID" 2>/dev/null || true; fi
+  if [[ -n "$NATS_PID" ]]; then kill -TERM "$NATS_PID" 2>/dev/null || true; fi
+  if [[ -n "$NATS_PID" ]]; then wait "$NATS_PID" 2>/dev/null || true; fi
   sync_state full
 }
-trap cleanup TERM INT EXIT
+# shellcheck disable=SC2317,SC2329 # Invoked indirectly by the signal trap below.
+shutdown() {
+  cleanup
+  exit 0
+}
+trap shutdown TERM INT
+trap cleanup EXIT
 
 nats-server -c "$NATS_CONFIG" &
 NATS_PID=$!
@@ -111,7 +119,10 @@ setsid coleo-agent \
 AGENT_PID=$!
 
 while kill -0 "$NATS_PID" 2>/dev/null && kill -0 "$AGENT_PID" 2>/dev/null; do
-  sleep 60
+  sleep 60 &
+  SLEEP_PID=$!
+  wait "$SLEEP_PID"
+  SLEEP_PID=""
   sync_state
 done
 

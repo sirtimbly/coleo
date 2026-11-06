@@ -27,6 +27,7 @@ export default defineConfig({
 					items: [
 						{ text: "Getting Started", link: "/guides/getting-started" },
 						{ text: "Component Installation", link: "/guides/installation" },
+						{ text: "Upgrading to 1.0", link: "/guides/upgrading-to-1.0" },
 						{ text: "Task Workflow", link: "/guides/task-workflow" },
 						{ text: "Planning Gate", link: "/guides/planning-gate" },
 						{ text: "CLI", link: "/guides/cli" },

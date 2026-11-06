@@ -3,6 +3,7 @@ FROM oven/bun:1.3.14-debian AS builder
 
 WORKDIR /app
 COPY package.json bun.lock ./
+COPY package.json ./server/package.json
 COPY clients/web/package.json ./clients/web/package.json
 RUN bun install --frozen-lockfile --production
 COPY server/src ./server/src
@@ -52,6 +53,7 @@ RUN bun install --global "opencode-ai@1.17.19" && opencode --version
 
 RUN useradd -m -s /bin/bash coleo
 WORKDIR /home/coleo
+COPY LICENSE.txt /home/coleo/LICENSE.txt
 COPY --from=builder /app/dist/cloudflare-agent.js /home/coleo/cloudflare-agent.js
 COPY --from=builder /app/dist/node_modules /home/coleo/node_modules
 RUN mkdir -p /home/coleo/runtime \

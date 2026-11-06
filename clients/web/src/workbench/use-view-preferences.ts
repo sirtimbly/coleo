@@ -1,55 +1,40 @@
-/**
- * Debounced bridge between interactive projection state and database-backed
- * saved-view preferences.
- */
-
-import { useCallback, useEffect, useRef, useState } from "react";
+/** Debounced, serialized persistence scoped to the active profile and view. */
+import { createElement, useEffect, useMemo, useSyncExternalStore } from "react";
 
 import { useSavedView } from "./profile-context";
+import { ViewPreferenceSave } from "./view-preference-save";
+import { ViewPreferenceSaveStatus } from "./ViewPreferenceSaveStatus";
 
-import type { ViewDefinition, ViewPreferences } from "./types";
+import type { ViewDefinition } from "./types";
 
 export function useViewPreferences(
 	viewId: string,
 	defaults: Omit<ViewDefinition, "profileId" | "key" | "createdAt" | "updatedAt" | "version">,
 ) {
-	const { view, savePreferences, saveDefinition, isPersisted } = useSavedView(viewId, defaults);
-	const [preferences, setPreferences] = useState<ViewPreferences>(view.preferences);
-	const dirtyRef = useRef(false);
-
+	const { view, saveDefinition, isPersisted, profileId } = useSavedView(viewId, defaults);
+	// Capture the writer with its identity, never retarget an in-flight save.
+	const session = useMemo(() => new ViewPreferenceSave(view, saveDefinition),
+		// The initial view/writer belong to this identity; subsequent confirmations are synchronized below.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[profileId, viewId]);
+	const state = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
 	useEffect(() => {
-		if (!dirtyRef.current) setPreferences(view.preferences);
-	}, [view.preferences, view.version]);
-
-	useEffect(() => {
-		if (!dirtyRef.current) return;
-		const timer = window.setTimeout(() => {
-			void savePreferences(preferences).finally(() => {
-				dirtyRef.current = false;
-			});
-		}, 500);
-		return () => window.clearTimeout(timer);
-	}, [preferences, savePreferences]);
-
-	const updatePreferences = useCallback((next: ViewPreferences) => {
-		dirtyRef.current = true;
-		setPreferences(next);
-	}, []);
-
-	const updateShared = useCallback(async (shared: boolean) => {
-		await saveDefinition({
-			...view,
-			preferences,
-			shared,
-			updatedAt: new Date().toISOString(),
-		});
-	}, [preferences, saveDefinition, view]);
+		// Bootstrap may resolve an imported view ID after the initial render.
+		session.setWriter(saveDefinition);
+		session.confirm(view);
+	}, [session, view, saveDefinition]);
 
 	return {
-		view,
-		preferences,
-		updatePreferences,
-		updateShared,
+		view: state.view,
+		preferences: state.view.preferences,
+		updatePreferences: session.updatePreferences,
+		updateShared: session.updateShared,
 		isPersisted,
+		saving: state.saving,
+		error: state.error,
+		dirty: state.dirty,
+		retry: session.retry,
+		lastConfirmed: state.lastConfirmed,
+		saveStatus: createElement(ViewPreferenceSaveStatus, { state, retry: session.retry }),
 	};
 }

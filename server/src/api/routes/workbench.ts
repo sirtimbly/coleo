@@ -16,6 +16,7 @@ import { broadcast } from "../websocket";
 import { createWorkbenchAttentionRoutes } from "./workbench-attention";
 import { createWorkbenchCardRoutes } from "./workbench-cards";
 import { createWorkbenchInboxRoutes } from "./workbench-inbox";
+import { parseWorkbenchImport, WORKBENCH_VIEW_KINDS } from "./workbench-import";
 import { createWorkbenchNamedViewRoutes } from "./workbench-named-views";
 
 import type { Database } from "bun:sqlite";
@@ -71,16 +72,7 @@ interface LayoutRow {
 	updatedAt: string;
 }
 
-const VIEW_KINDS = new Set([
-	"sheet",
-	"inbox",
-	"timeline",
-	"conversation",
-	"process",
-	"document",
-	"dashboard",
-	"inspector",
-]);
+const VIEW_KINDS = new Set<string>(WORKBENCH_VIEW_KINDS);
 
 function parseObject(value: string): JsonRecord {
 	try {
@@ -322,15 +314,12 @@ export function createWorkbenchRoutes(options: WorkbenchRouteOptions = {}) {
 
 	app.post("/profiles/import", async (c) => {
 		const db = c.get("db");
-		const body = await c.req.json<JsonRecord>();
-		const bundle = requireObject(body.bundle, "bundle");
-		const profileInput = requireObject(bundle.profile, "bundle.profile");
-		const importedProfileId = requiredString(profileInput.id, "bundle.profile.id");
-		const copyMode = body.mode === "copy";
-		const profileId = copyMode ? randomUUID() : importedProfileId;
+		const { bundle, mode } = parseWorkbenchImport(await c.req.json().catch(() => null));
+		const profileInput = bundle.profile;
+		const copyMode = mode === "copy";
+		const profileId = copyMode ? randomUUID() : profileInput.id;
 		const now = new Date().toISOString();
-		const views = Array.isArray(bundle.views) ? bundle.views : [];
-		const layouts = Array.isArray(bundle.layouts) ? bundle.layouts : [];
+		const { views, layouts } = bundle;
 
 		const importBundle = db.transaction(() => {
 			db.run(
@@ -342,13 +331,9 @@ export function createWorkbenchRoutes(options: WorkbenchRouteOptions = {}) {
 				 preferences = excluded.preferences, updated_at = excluded.updated_at`,
 				[
 					profileId,
-					copyMode
-						? `${requiredString(profileInput.name, "bundle.profile.name")} (imported)`
-						: requiredString(profileInput.name, "bundle.profile.name"),
+					copyMode ? `${profileInput.name} (imported)` : profileInput.name,
 					copyMode ? null : optionalString(profileInput.email),
-					JSON.stringify(profileInput.preferences && typeof profileInput.preferences === "object"
-						? profileInput.preferences
-						: {}),
+					JSON.stringify(profileInput.preferences),
 					now,
 					now,
 				],
@@ -356,51 +341,45 @@ export function createWorkbenchRoutes(options: WorkbenchRouteOptions = {}) {
 			db.run("DELETE FROM workbench_views WHERE profile_id = ?", [profileId]);
 			db.run("DELETE FROM workbench_layouts WHERE profile_id = ?", [profileId]);
 
-			for (const rawView of views) {
-				const view = requireObject(rawView, "bundle.views[]");
-				const kind = requiredString(view.kind, "bundle.views[].kind");
-				if (!VIEW_KINDS.has(kind)) throw HttpError.badRequest(`Unsupported view kind: ${kind}`);
+			for (const view of views) {
 				db.run(
 					`INSERT INTO workbench_views
 					 (id, profile_id, view_key, name, description, kind, resource_kind, query,
 					  preferences, shared, version, created_at, updated_at)
 					 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 					[
-						copyMode ? randomUUID() : requiredString(view.id, "bundle.views[].id"),
+						copyMode ? randomUUID() : view.id,
 						profileId,
-						optionalString(view.key) ?? requiredString(view.id, "bundle.views[].id"),
-						requiredString(view.name, "bundle.views[].name"),
+						view.key ?? view.id,
+						view.name,
 						optionalString(view.description),
-						kind,
+						view.kind,
 						optionalString(view.resourceKind),
-						JSON.stringify(view.query && typeof view.query === "object" ? view.query : {}),
-						JSON.stringify(view.preferences && typeof view.preferences === "object"
-							? view.preferences
-							: {}),
+						JSON.stringify(view.query),
+						JSON.stringify(view.preferences),
 						view.shared === true ? 1 : 0,
-						typeof view.version === "number" ? view.version : 1,
+						view.version,
 						now,
 						now,
 					],
 				);
 			}
 
-			for (const rawLayout of layouts) {
-				const layout = requireObject(rawLayout, "bundle.layouts[]");
+			for (const layout of layouts) {
 				db.run(
 					`INSERT INTO workbench_layouts
 					 (id, profile_id, name, description, layout, is_default, shared,
 					  version, created_at, updated_at)
 					 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 					[
-						copyMode ? randomUUID() : requiredString(layout.id, "bundle.layouts[].id"),
+						copyMode ? randomUUID() : layout.id,
 						profileId,
-						requiredString(layout.name, "bundle.layouts[].name"),
+						layout.name,
 						optionalString(layout.description),
-						JSON.stringify(requireObject(layout.layout, "bundle.layouts[].layout")),
+						JSON.stringify(layout.layout),
 						layout.isDefault === true ? 1 : 0,
 						layout.shared === true ? 1 : 0,
-						typeof layout.version === "number" ? layout.version : 1,
+						layout.version,
 						now,
 						now,
 					],

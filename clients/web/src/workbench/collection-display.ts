@@ -82,5 +82,5 @@ export function useCollectionDisplayPreferences({
 		});
 	}, [controller]);
 
-	return { display, updateDisplay };
+	return { display, updateDisplay, saveStatus: controller.saveStatus };
 }

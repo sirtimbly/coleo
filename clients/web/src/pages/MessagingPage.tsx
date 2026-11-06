@@ -137,7 +137,7 @@ function MessagingCollection({ projection, resolvedView }: { projection: "inbox"
 			node.data.locations.some((location) => location.mailbox === "inbox" && !location.seen))
 		: selectedIds.has(item.id) && item.unread);
 	const setSelectedIds = useCallback((ids: ReadonlySet<string>) => setSelection({ scope, ids }), [scope]);
-	const { display: savedDisplay, updateDisplay } = useCollectionDisplayPreferences({ viewId: resolvedView ? `named:${resolvedView.definition.id}:display` : mailOnly ? "mail-display" : "inbox-display",
+	const { display: savedDisplay, updateDisplay, saveStatus } = useCollectionDisplayPreferences({ viewId: resolvedView ? `named:${resolvedView.definition.id}:display` : mailOnly ? "mail-display" : "inbox-display",
 		name: mailOnly ? "Mail" : "Inbox", resourceKind: "message" });
 	const presentation = resolvedView?.definition.presentation.renderers.find((renderer) => renderer.id === presentationId);
 	const presentationFeature = resolvedView?.features.presentation.find((renderer) => renderer.id === presentationId);
@@ -264,12 +264,12 @@ function MessagingCollection({ projection, resolvedView }: { projection: "inbox"
 		listFields={presentationFeature?.implementation === "collection.list" ? presentation?.fields : undefined}
 		gridFields={resolvedView ? presentation?.fields : undefined}
 		insightsActive={insightsActive} onInsightsChange={setInsightsActive}
-		metadataContent={insightsActive && state.value ? <section aria-label="Inbox metadata" className="border-b border-border p-3 text-xs">
+		metadataContent={<>{saveStatus}{insightsActive && state.value ? <section aria-label="Inbox metadata" className="border-b border-border p-3 text-xs">
 			{state.value.summaries.complete ? "Complete" : "Incomplete"} current query: {state.value.summaries.total ?? "unknown total"} items.
 			{messagingMetadata(state.value, resolvedView?.definition.insights?.panels.find((panel) => panel.id === insightsActive)?.fields ?? [])
 				.map((value) => <span key={value.field} className="ml-3">{value.label}: {value.value ?? "unknown"} ({value.scope})</span>)}
 			{resolvedView?.features.insights.find((feature) => feature.id === insightsActive)?.diagnostic}
-		</section> : null}
+		</section> : null}</>}
 		items={items.map(projectionItem)} facets={mailOnly ? FACETS.filter((facet) => facet.id === "messages") : FACETS}
 		activeFacet={query.facet} onFacetChange={(facet) => change("facet", facet)} display={display} onDisplayChange={updateDisplay}
 		toolbarScreenId={mailOnly ? "mail" : "inbox"} onOpen={openItem} renderCard={renderCard} onRefresh={() => void state.refresh()}

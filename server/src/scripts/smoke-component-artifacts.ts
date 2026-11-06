@@ -6,6 +6,9 @@ import type { ReleaseManifest } from './build-release-manifest';
 // Release gate: test actual archives and managed runtimes, with no ambient Bun/Python/uv.
 const assets = resolve(process.argv[2] ?? 'release-assets');
 const manifest = JSON.parse(await readFile(join(assets, 'coleo-release.json'), 'utf8')) as ReleaseManifest;
+if (process.argv.includes('--require-web') && !manifest.components.web) {
+  throw new Error('Release smoke requires the assembled web component');
+}
 const binary = join(assets, `coleo-installer-${process.platform}-${process.arch}`);
 const temp = await mkdtemp(join(tmpdir(), 'coleo-artifacts-'));
 const path = join(temp, 'path');
@@ -44,6 +47,12 @@ try {
     const install = [binary, 'install', component, '--prefix', prefix, '--version', manifest.version,
       '--manifest', `${origin}/coleo-release.json`];
     await run(install, home);
+    const installed = JSON.parse(await readFile(join(prefix, 'lib/coleo/current/receipt.json'), 'utf8')) as {
+      packages: Record<string, { path: string }>;
+    };
+    for (const name of ['operator', 'client', 'web']) {
+      if (installed.packages[name]) await access(join(installed.packages[name].path, 'payload/LICENSE.txt'));
+    }
     const executable = join(prefix, 'bin', component === 'tui' ? 'coleo-client' : `coleo-${component}`);
     await run([executable, '--version'], home);
     await run([executable, '--help'], home);

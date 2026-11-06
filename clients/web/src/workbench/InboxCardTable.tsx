@@ -1,5 +1,5 @@
-import { useEffect, useRef, type ReactNode } from "react";
-import { createRoot, type Root } from "react-dom/client";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { TabulatorFull as Tabulator } from "tabulator-tables";
 import { BoundaryContent, ScreenErrorBoundary } from "@/components/ScreenErrorBoundary";
 
@@ -33,14 +33,12 @@ interface InboxTableRow {
 interface MountedCard {
 	id: string;
 	host: HTMLDivElement;
-	root: Root;
 	resizeObserver: ResizeObserver;
 	normalizeFrame: number | null;
 }
 
 interface InboxCardTableRuntime {
 	itemsById: Map<string, InboxProjectionItem>;
-	renderCard: (item: InboxProjectionItem) => ReactNode;
 	onOpen: (item: InboxProjectionItem) => void;
 }
 
@@ -48,9 +46,6 @@ function disposeMountedCard(mounted: MountedCard): void {
 	mounted.resizeObserver.disconnect();
 	if (mounted.normalizeFrame !== null) window.cancelAnimationFrame(mounted.normalizeFrame);
 	mounted.host.remove();
-	// A card action can update the parent Inbox while its nested React root is
-	// still rendering. Deferring disposal avoids unmounting that root mid-commit.
-	queueMicrotask(() => mounted.root.unmount());
 }
 
 const RELATIVE_TIME = new Intl.RelativeTimeFormat(undefined, {
@@ -174,14 +169,13 @@ export function InboxCardTable({
 	const syncRef = useRef<(() => void) | null>(null);
 	const expandedIdsRef = useRef(new Set<string>());
 	const mountedCardsRef = useRef(new Map<HTMLElement, MountedCard>());
+	const [mountedCards, setMountedCards] = useState<MountedCard[]>([]);
 	const runtimeRef = useRef<InboxCardTableRuntime>({
 		itemsById: new Map(items.map((item) => [item.id, item])),
-		renderCard,
 		onOpen,
 	});
 	runtimeRef.current = {
 		itemsById: new Map(items.map((item) => [item.id, item])),
-		renderCard,
 		onOpen,
 	};
 
@@ -198,6 +192,7 @@ export function InboxCardTable({
 			const mounted = mountedCards.get(element);
 			if (!mounted) return;
 			mountedCards.delete(element);
+			setMountedCards([...mountedCards.values()]);
 			element.classList.remove("coleo-inbox-row-expanded");
 			disposeMountedCard(mounted);
 		};
@@ -228,13 +223,8 @@ export function InboxCardTable({
 			if (!item) return;
 			const existing = mountedCards.get(element);
 			if (existing?.id === data.id) {
-				// Tabulator may rebuild a row during a virtual redraw; retain its React root.
+				// Tabulator may rebuild a row during a virtual redraw; retain its portal host.
 				if (existing.host.parentElement !== element) element.append(existing.host);
-				existing.root.render(
-					<ScreenErrorBoundary name="this card" resetKey={data.id}>
-						<BoundaryContent render={() => runtimeRef.current.renderCard(item)} />
-					</ScreenErrorBoundary>,
-				);
 				updateExpander(row, true);
 				queueMicrotask(() => row.normalizeHeight());
 				return;
@@ -246,11 +236,9 @@ export function InboxCardTable({
 			host.setAttribute("aria-label", `${data.title} card`);
 			element.classList.add("coleo-inbox-row-expanded");
 			element.append(host);
-			const root = createRoot(host);
 			const mounted: MountedCard = {
 				id: data.id,
 				host,
-				root,
 				resizeObserver: new ResizeObserver(() => {
 					if (mounted.normalizeFrame !== null || !host.isConnected) return;
 					mounted.normalizeFrame = window.requestAnimationFrame(() => {
@@ -261,12 +249,8 @@ export function InboxCardTable({
 				normalizeFrame: null,
 			};
 			mountedCards.set(element, mounted);
+			setMountedCards([...mountedCards.values()]);
 			mounted.resizeObserver.observe(host);
-			root.render(
-				<ScreenErrorBoundary name="this card" resetKey={data.id}>
-					<BoundaryContent render={() => runtimeRef.current.renderCard(item)} />
-				</ScreenErrorBoundary>,
-			);
 			updateExpander(row, true);
 			queueMicrotask(() => row.normalizeHeight());
 		};
@@ -492,15 +476,27 @@ export function InboxCardTable({
 	}, [serverSort]);
 
 	return (
-		<div
-			ref={containerRef}
-			className={cn(
-				"coleo-inbox-card-table h-full min-h-0 overflow-hidden",
-				density === "comfortable" && "coleo-inbox-card-table-comfortable",
-				className,
-			)}
-			role="region"
-			aria-label="Inbox cards"
-		/>
+		<>
+			<div
+				ref={containerRef}
+				className={cn(
+					"coleo-inbox-card-table h-full min-h-0 overflow-hidden",
+					density === "comfortable" && "coleo-inbox-card-table-comfortable",
+					className,
+				)}
+				role="region"
+				aria-label="Inbox cards"
+			/>
+			{/* Keep controlled card inputs in the collection's React tree: a separate
+			    root updated by an effect can restore stale checkbox state after a click. */}
+			{mountedCards.map((mounted) => {
+				const item = runtimeRef.current.itemsById.get(mounted.id);
+				return item ? createPortal(
+					<ScreenErrorBoundary name="this card" resetKey={mounted.id}>
+						<BoundaryContent render={() => renderCard(item)} />
+					</ScreenErrorBoundary>, mounted.host, mounted.id,
+				) : null;
+			})}
+		</>
 	);
 }

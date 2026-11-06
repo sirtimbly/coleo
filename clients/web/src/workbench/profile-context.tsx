@@ -28,6 +28,7 @@ import type {
 import type { JsonObject } from "@/lib/api";
 
 const PROFILE_STORAGE_KEY = "coleo:workbench-profile";
+type WorkbenchBootstrap = Awaited<ReturnType<typeof api.getWorkbenchBootstrap>>;
 
 interface WorkbenchProfileContextValue {
 	profileId: string;
@@ -64,30 +65,39 @@ export function WorkbenchProfileProvider({ children }: { children: ReactNode }) 
 		retry: (failureCount, error) => profileId !== "local" && failureCount < 1 && !error.message.includes("404"),
 	});
 
-	const saveMutation = useMutation({
-		mutationFn: async (view: ViewDefinition) => {
-			const existing = bootstrapQuery.data?.views.some((item) => item.id === view.id);
-			if (existing) {
-				return (await api.saveWorkbenchView(view.id, view)).view;
-			}
-			return (await api.createWorkbenchView({ ...view, id: view.id })).view;
-		},
-		onSuccess: (view) => {
+	const viewWrites = useRef(new Map<string, Promise<ViewDefinition>>());
+	const saveView = useCallback((view: ViewDefinition): Promise<ViewDefinition> => {
+		const key = JSON.stringify([view.profileId, view.id]);
+		const previous = viewWrites.current.get(key);
+		const write = async () => {
+			const cached = queryClient.getQueryData<WorkbenchBootstrap>(["workbench", "bootstrap", view.profileId]);
+			const existing = cached?.views.some((item) => item.id === view.id);
+			const saved = existing
+				? (await api.saveWorkbenchView(view.id, view)).view
+				: (await api.createWorkbenchView({ ...view, id: view.id })).view;
 			queryClient.setQueryData(
-				["workbench", "bootstrap", profileId],
-				(current: typeof bootstrapQuery.data | undefined) => {
+				["workbench", "bootstrap", view.profileId],
+				(current: WorkbenchBootstrap | undefined) => {
 					if (!current) return current;
 					const exists = current.views.some((item) => item.id === view.id);
 					return {
 						...current,
 						views: exists
-							? current.views.map((item) => item.id === view.id ? view : item)
-							: [...current.views, view],
+							? current.views.map((item) => item.id === view.id ? saved : item)
+							: [...current.views, saved],
 					};
 				},
 			);
-		},
-	});
+			return saved;
+		};
+		const pending = previous ? previous.catch(() => undefined).then(write) : write();
+		viewWrites.current.set(key, pending);
+		const cleanup = () => {
+			if (viewWrites.current.get(key) === pending) viewWrites.current.delete(key);
+		};
+		void pending.then(cleanup, cleanup);
+		return pending;
+	}, [queryClient]);
 
 	const deleteMutation = useMutation({
 		mutationFn: (viewId: string) => api.deleteWorkbenchView(viewId),
@@ -138,7 +148,7 @@ export function WorkbenchProfileProvider({ children }: { children: ReactNode }) 
 		isLoading: bootstrapQuery.isLoading,
 		setActiveProfile,
 		updateProfilePreferences,
-		saveView: async (view) => saveMutation.mutateAsync(view),
+		saveView,
 		deleteView: async (viewId) => {
 			await deleteMutation.mutateAsync(viewId);
 		},
@@ -149,7 +159,7 @@ export function WorkbenchProfileProvider({ children }: { children: ReactNode }) 
 		bootstrapQuery.isLoading,
 		deleteMutation,
 		refresh,
-		saveMutation,
+		saveView,
 		setActiveProfile,
 		updateProfilePreferences,
 	]);
@@ -172,7 +182,7 @@ export function useSavedView(
 	defaults: Omit<ViewDefinition, "profileId" | "key" | "createdAt" | "updatedAt" | "version">,
 ) {
 	const context = useWorkbenchProfile();
-	const activeProfileId = context.profile?.id ?? "local";
+	const activeProfileId = context.profileId;
 	const ownSaved = context.views.find((view) =>
 		(view.key === viewId || view.id === viewId) && view.profileId === activeProfileId
 	);
@@ -180,12 +190,13 @@ export function useSavedView(
 		(view.key === viewId || view.id === viewId) && view.shared
 	);
 	const saved = ownSaved ?? sharedSaved;
-	const defaultsRef = useRef(defaults);
+	const defaultsRef = useRef({ viewId, defaults });
+	if (defaultsRef.current.viewId !== viewId) defaultsRef.current = { viewId, defaults };
 	const view = useMemo<ViewDefinition>(() => {
 		if (saved) return saved;
 		const now = new Date().toISOString();
 		return {
-			...defaultsRef.current,
+			...defaultsRef.current.defaults,
 			id: `view:${activeProfileId}:${viewId}`,
 			key: viewId,
 			profileId: activeProfileId,
@@ -211,6 +222,7 @@ export function useSavedView(
 
 	return {
 		view,
+		profileId: activeProfileId,
 		savePreferences,
 		saveDefinition,
 		isPersisted: Boolean(ownSaved),

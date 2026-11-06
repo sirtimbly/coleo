@@ -7,6 +7,7 @@ const REPOSITORY_ROOT = resolve(import.meta.dir, "../../..");
 const ENTRYPOINT = "server/src/agent/cloudflare-entry.ts";
 const IMAGE_INPUTS = [
   "Dockerfile.cloudflare-agent",
+  "LICENSE.txt",
   "docker/cloudflare-agent-entrypoint.sh",
   "docker/prepare-repository.sh",
   "node_modules/bun-pty/package.json",

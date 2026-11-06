@@ -41,9 +41,12 @@ const platforms = new Set(['any', 'linux-x64', 'linux-arm64', 'darwin-x64', 'dar
 
 /** Build only from local, already-tested release assets; never resolves latest or downloads. */
 export async function buildReleaseManifest(options: {
-  version: string; commit: string; assets: string; repository?: string;
+  version: string; commit: string; assets: string; repository?: string; platform?: string;
 }): Promise<ReleaseManifest> {
   const { commit, assets, repository = 'sirtimbly/coleo' } = options;
+  if (options.platform !== undefined && (options.platform === 'any' || !platforms.has(options.platform))) {
+    throw new Error(`Unsupported validation platform: ${options.platform}`);
+  }
   const version = normalizeReleaseVersion(options.version);
   if (!versionPattern.test(version) || !/^[a-f0-9]{40}$/.test(commit)) {
     throw new Error('Release requires a version and full git commit');
@@ -105,8 +108,11 @@ export async function buildReleaseManifest(options: {
   }
   for (const component of Object.values(manifest.components)) {
     if (!component.runtime) continue;
+    // A per-platform smoke can validate universal assets with only that host's
+    // dependencies. Final assembly omits the scope and requires every platform.
     const targets = Object.keys(component.artifacts).includes('any')
-      ? [...platforms].filter(platform => platform !== 'any') : Object.keys(component.artifacts);
+      ? (options.platform ? [options.platform] : [...platforms].filter(platform => platform !== 'any'))
+      : Object.keys(component.artifacts);
     for (const platform of targets) {
       if (!manifest.components[component.runtime]?.artifacts[platform]) {
         throw new Error(`Missing ${component.runtime} runtime for ${platform}`);
@@ -131,6 +137,7 @@ if (import.meta.main) {
   const assets = option('--assets');
   const manifest = await buildReleaseManifest({
     version: option('--version'), commit: option('--commit'), assets,
+    platform: args.includes('--platform') ? option('--platform') : undefined,
   });
   await writeFile(join(assets, 'coleo-release.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   const sums: string[] = [];

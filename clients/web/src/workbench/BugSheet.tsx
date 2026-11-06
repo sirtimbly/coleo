@@ -163,7 +163,7 @@ export function BugSheet({
 		)),
 		[tagOptions],
 	);
-	const { view, preferences: savedPreferences, updatePreferences: updateSavedPreferences, updateShared } = useViewPreferences("bugs-sheet", {
+	const { view, preferences: savedPreferences, updatePreferences: updateSavedPreferences, updateShared, saveStatus } = useViewPreferences("bugs-sheet", {
 		id: "bugs-sheet",
 		name: "Bugs",
 		kind: "sheet",
@@ -199,6 +199,7 @@ export function BugSheet({
 
 	return (
 		<div className="relative flex h-full min-h-0 flex-col">
+			{saveStatus}
 			{externallyConfigured ? null : <div className="flex h-9 shrink-0 items-center justify-between border-b border-border bg-surface-secondary/35 px-3">
 				{formattingBug ? (
 					<RowFormattingToolbar
