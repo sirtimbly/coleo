@@ -20,8 +20,8 @@ async function findColeoDir(startDir: string): Promise<string | null> {
 	}
 }
 
-export async function loadEnvFile(): Promise<void> {
-	const projectDir = process.env.COLEO_PROJECT_DIR || process.cwd();
+export async function loadEnvFile(projectDirectory?: string): Promise<string | undefined> {
+	const projectDir = process.env.COLEO_PROJECT_DIR || projectDirectory || process.cwd();
 	const explicitColeoDir = process.env.COLEO_DIR;
 	const discoveredColeoDir = explicitColeoDir ? null : await findColeoDir(projectDir);
 	const coleoDir = explicitColeoDir || discoveredColeoDir || join(projectDir, ".coleo");
@@ -56,7 +56,7 @@ export async function loadEnvFile(): Promise<void> {
 						process.env[key] = value;
 					}
 				}
-				break;
+				return envPath;
 			}
 		} catch {
 			// Ignore errors reading .env

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { OpencodeClient } from "@opencode-ai/sdk";
+import type { OpencodeClient } from "../opencode-v2-client";
 import { OpenCodeApiHarness } from "../opencode-api";
 import {
   isColeoSessionForArm,

@@ -37,7 +37,7 @@ async function run(cmd: string[], home: string): Promise<void> {
   if (await child.exited !== 0) throw new Error(`Installed-artifact smoke failed: ${cmd[0]}`);
 }
 try {
-  for (const component of ['server', 'agent', 'client', 'tui', ...(manifest.components.web ? ['web'] : [])]) {
+  for (const component of ['ops', 'server', 'agent', 'client', 'tui', ...(manifest.components.web ? ['web'] : [])]) {
     const home = join(temp, `home-${component}`);
     const prefix = join(home, "prefix with spaces and ' quotes");
     await mkdir(home);

@@ -1,441 +1,88 @@
 ---
-title: Security Considerations
-description: Explore the safeguards Coleo uses to protect secrets, stop destructive work, and keep the shared garden healthy.
+title: Security and trust boundaries
+description: Authentication, permission decisions, and the trust boundaries of the current Coleo runtime.
 banner:
   src: /coleo-architecture-security.png
-  alt: A vigilant orange octopus protects a thriving underwater garden beneath a luminous dome while locking secrets, stopping a dangerous tool, and catching a leaking message.
-  eyebrow: Guarding the Garden
+  alt: An orange octopus watches over an underwater garden.
+  eyebrow: Trust Boundaries
   position: center 50%
 ---
 
-# Security Considerations
+# Security and trust boundaries
 
-## Destructive Command Detection
+Coleo coordinates coding agents running with the access granted to their host
+processes and harnesses. Use it with trusted operators and workspaces. Its task
+coordination and permission decisions do not provide an operating-system sandbox.
 
-The brain monitors for dangerous commands and blocks them.
+## API authentication
 
-### Blocked Patterns
+Direct clients normally send the configured shared API key in `X-API-Key`.
+The API also accepts the proxy header `X-Coleo-API-Key` and the `api_key` query
+parameter. Prefer the header for direct HTTP requests so credentials do not
+appear in request URLs.
 
-```typescript
-const DESTRUCTIVE_PATTERNS = [
-  // Filesystem destruction
-  /rm\s+(-rf?|--recursive)\s+\//,
-  /rm\s+(-rf?|--recursive)\s+~\//,
-  /rm\s+(-rf?|--recursive)\s+\.\.\//,
-  /find\s+.*-delete/,
-  
-  // Git destruction
-  /git\s+push\s+.*--force\s+.*main/,
-  /git\s+push\s+.*--force\s+.*master/,
-  /git\s+reset\s+--hard\s+HEAD~[0-9]+/,
-  
-  // Database destruction
-  /DROP\s+(DATABASE|TABLE|SCHEMA)/i,
-  /TRUNCATE\s+TABLE/i,
-  /DELETE\s+FROM\s+\w+\s*(;|$)/i,  // DELETE without WHERE
-  
-  // System commands
-  /chmod\s+777/,
-  /chmod\s+-R\s+777/,
-  /:(){ :\|:& };:/,  // Fork bomb
-  
-  // Credential exposure
-  /curl\s+.*\$\{?[A-Z_]*KEY/,
-  /echo\s+\$\{?[A-Z_]*SECRET/,
-];
-```
+`GET /api/health` is unauthenticated. When the configured API key starts with
+`dev-`, the HTTP middleware bypasses key checking. Reaching the health endpoint
+therefore does not demonstrate that an authenticated client connection works.
 
-### Secret Leak Detection
+The shared key is not a per-user or per-arm authorization system. Workbench
+profiles organize preferences and attention state; they are not authentication
+principals or access-control boundaries.
 
-Arms must never leak secrets in commits, logs, or network requests.
+WebSocket clients authenticate using the socket protocol. The separate web host
+proxies browser traffic to the selected API. See [API access](./api) and
+[Server and clients](./client-server-separation).
 
-```typescript
-interface SecretLeakDetector {
-  patterns: SecretPattern[];
-  actions: ("block" | "warn" | "prompt")[];
-  allowlist: string[];           // Known-safe strings (e.g., example values)
-}
+## Permission decisions
 
-const SECRET_PATTERNS: SecretPattern[] = [
-  // API Keys
-  { name: "AWS Key", pattern: /AKIA[0-9A-Z]{16}/ },
-  { name: "GitHub Token", pattern: /ghp_[a-zA-Z0-9]{36}/ },
-  { name: "GitLab Token", pattern: /glpat-[a-zA-Z0-9\-]{20}/ },
-  { name: "Slack Token", pattern: /xox[baprs]-[a-zA-Z0-9\-]+/ },
-  { name: "OpenAI Key", pattern: /sk-[a-zA-Z0-9]{48}/ },
-  { name: "Anthropic Key", pattern: /sk-ant-[a-zA-Z0-9\-]+/ },
-  { name: "Stripe Key", pattern: /sk_live_[a-zA-Z0-9]+/ },
-  
-  // Generic secrets
-  { name: "Private Key", pattern: /-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----/ },
-  { name: "Password in URL", pattern: /:\/\/[^:]+:[^@]+@/ },
-  { name: "Base64 Secret", pattern: /(?:password|secret|token|key)\s*[:=]\s*["']?[A-Za-z0-9+/]{32,}={0,2}["']?/i },
-  
-  // Environment variable patterns
-  { name: "Env Secret", pattern: /^[A-Z_]*(SECRET|PASSWORD|TOKEN|KEY|CREDENTIAL)[A-Z_]*\s*=\s*.+/m },
-];
-```
+The Brain contains a rule-based permission decision engine. It evaluates the
+fields supplied in a permission request and returns `approve`, `deny`, or
+`escalate`. Rules are priority ordered; the first match wins. A matching action,
+tool, command pattern, or file pattern can trigger a rule independently.
 
-### Secret in Commit Detection
+Examples with the default automatic decisions enabled:
 
-Before any git commit, the brain scans for secrets:
+| Supplied request matching a rule | Decision |
+| --- | --- |
+| Selected recursive-delete, force-push-to-main/master, destructive SQL, or secret-exposure command patterns | Deny |
+| Selected `curl` destination patterns or `chmod 777` patterns | Deny |
+| `git reset --hard`, production-deployment patterns, or package-publish commands | Escalate |
+| Recognized read, build, or test operations | Approve |
+| No matching rule | Escalate |
 
-```typescript
-interface CommitSecretScan {
-  files: string[];
-  secretsFound: DetectedSecret[];
-  action: "block" | "prompt_user";
-}
+These are pattern matches on request data, not a shell parser or inspection of
+every operation an agent performs. A decision alone is not evidence that a
+command was intercepted or prevented.
 
-interface DetectedSecret {
-  file: string;
-  line: number;
-  pattern: string;
-  snippet: string;            // Redacted snippet for context
-  confidence: "high" | "medium" | "low";
-}
+### Current integration boundary
 
-// If secrets found:
-// 1. Block the commit
-// 2. Notify the arm: "Potential secret detected in {file}:{line}"
-// 3. Prompt human: "Allow this string to be committed? [y/N]"
-```
+The health monitor constructs requests from an arm's pending-permission activity.
+That path currently supplies action and context, but not the engine's command,
+tool, or file fields. Its reply callback sends an ordinary prompt such as
+“Yes, proceed.” or “No, do not proceed.”; it is not a universal tool-execution gate.
 
-### Data Exfiltration Monitoring
+Coleo does not currently provide repository-wide secret scanning, a pre-commit
+secret gate, network egress filtering, or automatic filesystem isolation for
+arms. Configure those controls in the execution environment when needed. The
+host account's permissions and the harness's own controls remain relevant.
 
-Monitor for attempts to send data outside the allowed network:
+## Credentials and deployment
 
-```typescript
-interface ExfiltrationDetector {
-  // Known exfiltration targets
-  blockedDomains: string[];
-  
-  // Behavioral patterns
-  rules: ExfiltrationRule[];
-}
+`coleo-server configure` and `coleo-agent configure` save local operator settings
+using a permission-restricted (`0600`) file. This is file access control, not
+encrypted credential storage. Keep runtime credentials out of tracked project
+files and share them only with the components that need them.
 
-const EXFILTRATION_RULES: ExfiltrationRule[] = [
-  {
-    name: "Pastebin upload",
-    pattern: /curl.*pastebin\.com/i,
-    action: "block",
-    severity: "critical",
-  },
-  {
-    name: "GitHub Gist creation",
-    pattern: /curl.*api\.github\.com\/gists/,
-    action: "prompt",
-    severity: "high",
-  },
-  {
-    name: "Large data to unknown domain",
-    condition: (req) => 
-      req.bodySize > 10000 && !ALLOWED_DOMAINS.includes(req.host),
-    action: "block",
-    severity: "critical",
-  },
-  {
-    name: "Source code in request body",
-    condition: (req) => 
-      containsSourceCode(req.body) && !ALLOWED_DOMAINS.includes(req.host),
-    action: "block",
-    severity: "critical",
-  },
-  {
-    name: "Encoded data transfer",
-    pattern: /curl.*--data.*base64/,
-    action: "prompt",
-    severity: "medium",
-  },
-];
+API and NATS credentials serve different transports. Configure NATS access on
+the broker and Arm Hosts; an HTTP API key does not authenticate NATS connections.
+For remote access, choose the network and TLS arrangement described in the
+[Docker guide](../guides/docker). Coleo does not install a firewall policy for
+agent processes.
 
-const EXFILTRATION_DOMAINS = [
-  // Pastebins
-  "pastebin.com",
-  "paste.ee",
-  "hastebin.com",
-  "dpaste.org",
-  "ghostbin.com",
-  
-  // File sharing
-  "transfer.sh",
-  "file.io",
-  "0x0.st",
-  
-  // Webhook services (could leak data)
-  "webhook.site",
-  "requestbin.com",
-  "pipedream.net",
-];
-```
+## Implementation references
 
-### Exfiltration Response
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                EXFILTRATION DETECTION FLOW                   │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  1. Arm attempts network request                             │
-│     │                                                        │
-│  2. Brain intercepts and scans:                              │
-│     ├── Is destination in blocked domains?                   │
-│     ├── Is payload suspiciously large?                       │
-│     ├── Does payload contain source code patterns?           │
-│     └── Does payload contain detected secrets?               │
-│                                                              │
-│  3. If suspicious:                                           │
-│     ├── BLOCK request immediately                            │
-│     ├── PAUSE arm                                            │
-│     ├── LOG full details (redacting actual secrets)          │
-│     ├── NOTIFY human with context                            │
-│     └── REPUTATION penalty (-25 for exfiltration attempt)    │
-│                                                              │
-│  4. Human reviews and decides:                               │
-│     ├── False positive → Resume arm, adjust rules            │
-│     ├── Suspicious → Investigate further                     │
-│     └── Malicious → Kill arm, review all its actions         │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Response to Detection
-
-| Severity | Detection | Response |
-|----------|-----------|----------|
-| Critical | Fork bomb, rm -rf /, exfiltration | KILL arm immediately |
-| High | Force push to main, secret in commit | PAUSE arm, notify human |
-| Medium | DELETE without WHERE, encoded transfer | WARN, require confirmation |
-| Low | chmod 777 | WARN, log |
-
-## Audit Logging
-
-All actions are logged for auditing.
-
-### Log Format
-
-```typescript
-interface AuditLog {
-  timestamp: Date;
-  actor: string;           // Arm ID, "brain", or "human"
-  action: string;          // What was done
-  target?: string;         // What was affected
-  details?: unknown;       // Additional context
-  result: "success" | "failure" | "blocked";
-  reason?: string;         // If blocked, why
-}
-```
-
-### Logged Events
-
-| Event | Actor | Details |
-|-------|-------|---------|
-| Arm spawned | human | Arm config |
-| Arm killed | brain/human | Reason |
-| File claimed | arm | Path |
-| File modified | arm | Path, diff summary |
-| Proposal created | arm | Proposal summary |
-| Deployment started | arm | Environment, ref |
-| Human approval | human | Decision, reason |
-| Misbehavior detected | brain | Pattern matched |
-
-### Log Retention
-
-```typescript
-interface AuditConfig {
-  retentionDays: number;       // How long to keep logs
-  sensitiveRetentionDays: number;  // Shorter for sensitive logs
-  externalSink?: string;       // Send to external logging system
-}
-```
-
-## Network Security
-
-### Allowed Domains
-
-Arms can only access whitelisted domains:
-
-```typescript
-const ALLOWED_DOMAINS = [
-  // Package registries
-  "registry.npmjs.org",
-  "pypi.org",
-  
-  // Documentation
-  "docs.github.com",
-  "developer.mozilla.org",
-  "react.dev",
-  
-  // Internal
-  "localhost",
-  "gitea",  // Docker network name
-  
-  // Custom (configured per project)
-  ...config.allowedDomains,
-];
-```
-
-### Network Policies (Kubernetes)
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: coleo-arm-policy
-spec:
-  podSelector:
-    matchLabels:
-      app: coleo-arm
-  policyTypes:
-    - Egress
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-      name: coleo
-      ports:
-        - port: 8080  # Brain API
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-      ports:
-        - port: 443   # HTTPS only
-```
-
-## Incident Response
-
-When security issues are detected:
-
-### Immediate Actions
-
-1. **Isolate**: Pause/kill affected arms
-2. **Preserve**: Capture logs and state
-3. **Notify**: Push notification to human
-4. **Prevent**: Block similar actions
-
-### Incident Report
-
-```typescript
-interface SecurityIncident {
-  id: string;
-  severity: "critical" | "high" | "medium" | "low";
-  type: string;
-  affectedArms: string[];
-  description: string;
-  detectedAt: Date;
-  resolvedAt?: Date;
-  actions: string[];           // What was done
-  preventionMeasures: string[]; // What will prevent recurrence
-}
-```
-
-## Container Orchestration (Homelab)
-
-For running Coleo on a homelab cluster, Docker Swarm provides a simpler alternative to Kubernetes.
-
-### Docker Swarm Setup
-
-```yaml
-# docker-compose.swarm.yml
-version: "3.8"
-
-services:
-  brain:
-    image: coleo/brain:latest
-    deploy:
-      replicas: 1
-      placement:
-        constraints:
-          - node.role == manager
-    networks:
-      - coleo-net
-
-  observatory:
-    image: coleo/observatory:latest
-    deploy:
-      replicas: 2
-      labels:
-        - "traefik.enable=true"
-        - "traefik.http.routers.observatory.rule=Host(`coleo.local`)"
-    networks:
-      - coleo-net
-
-  arm-pool:
-    image: coleo/arm:latest
-    deploy:
-      replicas: 4
-      resources:
-        limits:
-          cpus: '2'
-          memory: 4G
-    networks:
-      - coleo-net
-
-networks:
-  coleo-net:
-    driver: overlay
-```
-
-### Swarmpit for Management
-
-[Swarmpit](https://swarmpit.io) provides a web UI for Docker Swarm management:
-
-```bash
-# Deploy Swarmpit to your swarm
-docker stack deploy -c swarmpit.yml swarmpit
-```
-
-**Swarmpit provides:**
-- Visual service management
-- Real-time resource monitoring
-- Log aggregation
-- One-click scaling
-- Secret management UI
-
-### Homelab Deployment Notes
-
-| Consideration | Recommendation |
-|---------------|----------------|
-| Minimum nodes | 3 (1 manager, 2 workers) |
-| Storage | Shared NFS or GlusterFS for persistent data |
-| Networking | Overlay network with encryption |
-| Load balancer | Traefik (auto-configured with Swarm) |
-| Secrets | Docker Swarm secrets (encrypted at rest) |
-| Monitoring | Swarmpit + Prometheus stack |
-
-### Self-Configuration (Future)
-
-Arms could potentially manage the swarm:
-
-```typescript
-interface SwarmMCP {
-  "swarm.scale": (params: {
-    service: string;
-    replicas: number;
-  }) => void;
-  
-  "swarm.logs": (params: {
-    service: string;
-    since: string;
-  }) => LogEntry[];
-  
-  "swarm.health": () => SwarmHealth;
-}
-```
-
-**Note**: This is lower priority. Focus on core functionality first before self-orchestration.
-
-## Security Checklist
-
-Before deploying Coleo:
-
-- [ ] Generated strong API key
-- [ ] API key stored securely (not in git)
-- [ ] Arms running in containers with resource limits
-- [ ] Network egress restricted to allowed domains
-- [ ] Secrets stored in external secret manager
-- [ ] Audit logging enabled
-- [ ] Destructive command patterns reviewed
-- [ ] Push notifications configured for security alerts
-- [ ] Regular log review scheduled
-- [ ] Incident response plan documented
+- [HTTP authentication middleware](https://github.com/sirtimbly/coleo/blob/master/server/src/api/middleware/auth.ts)
+- [Permission decision engine](https://github.com/sirtimbly/coleo/blob/master/server/src/brain/permission-engine.ts)
+- [Health-monitor request handling](https://github.com/sirtimbly/coleo/blob/master/server/src/brain/health-monitor.ts)
+- [Brain callbacks](https://github.com/sirtimbly/coleo/blob/master/server/src/brain/brain.ts)
+- [Operator configuration persistence](https://github.com/sirtimbly/coleo/blob/master/server/src/cli/operator-config.ts)

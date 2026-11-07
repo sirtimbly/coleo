@@ -11,5 +11,4 @@ Coleo is released under the Business Source License 1.1 (BSL).
 - Individual Use: Free for individual developers, including commercial projects.
 - Organizational Use: Contact us for commercial licensing options.
 
-See the full license text in the repository root: [LICENSE.txt](/LICENSE.txt).
-
+See the full license text in the repository: [LICENSE.txt](https://github.com/sirtimbly/coleo/blob/master/LICENSE.txt).

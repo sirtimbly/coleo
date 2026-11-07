@@ -20,6 +20,7 @@ import {
   WorkbenchSurface,
 } from '@/design-system/WorkbenchSurface';
 import { WorkbenchProfileManager } from '@/workbench/WorkbenchProfileManager';
+import { WorkspaceRepositories } from '@/components/WorkspaceRepositories';
 
 const themeOptions = [
   { value: 'light', label: 'Light', icon: Sun },
@@ -170,6 +171,7 @@ export function SettingsPage() {
       />
 
       <div className="flex-1 space-y-6 overflow-auto px-4 py-4 lg:px-6">
+      <WorkspaceRepositories />
       <Card>
         <CardHeader>
           <CardTitle>Appearance</CardTitle>

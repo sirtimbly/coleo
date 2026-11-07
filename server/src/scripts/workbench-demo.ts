@@ -14,7 +14,7 @@ import type { WorkbenchReportData } from "./workbench-demo/types";
 
 const root = resolve(import.meta.dir, "../../..");
 const directory = resolve(import.meta.dir, "workbench-demo");
-const outputPath = resolve(root, "docs/public/workbench-report.html");
+const outputPath = resolve(root, "docs/research/workbench-report.html");
 
 const verification = verifyWorkbenchDemo(root);
 const paging = await collectPagingEvidence();

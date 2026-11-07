@@ -5,7 +5,7 @@ import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { basename, join } from "path";
 import { eventStore } from "../../nats/jetstream";
-import { getServiceStatus } from "../../daemon";
+import { getServiceStatus, readServiceInfo } from "../../daemon";
 import { getNatsManager } from "../../nats/server";
 import { Maildir } from "../../mail";
 import { getColeoDir } from "../../config";
@@ -13,6 +13,7 @@ import { VERSION, RUNTIME_VERSION } from "../../version";
 import { getArmClient } from "../arm-client-registry";
 import type { FleetVersions } from "../../shared/version-compatibility";
 import { getServerWorkspaceRoot } from "../workspace-access";
+import { readOperatorHealth } from "../operator-health";
 
 interface SystemContext {
   Variables: {
@@ -27,6 +28,38 @@ export function detectProjectName(cwd: string): string {
 
 export function createSystemRoutes() {
   const app = new Hono<SystemContext>();
+
+  // Authenticated, complete readiness inventory for operators (not the liveness probe).
+  app.get("/operator/health", async (c) => {
+    const since = c.req.query("since");
+    const boundary = since ? Date.parse(since) : 0;
+    if (!Number.isFinite(boundary)) return c.json({ error: "Invalid since timestamp" }, 400);
+    const result = readOperatorHealth(c.get("db"), c.get("startedAt"), boundary);
+    const now = Date.now();
+    const agents = getArmClient()?.getAgentHealth() ?? [];
+    const requested = c.req.query("agentId");
+    const visible = agents.filter(agent => !requested || requested === agent.agentId);
+    const healthyHost = visible.find(agent => now - Date.parse(agent.lastHeartbeat) < 90_000
+      && Date.parse(agent.lastHeartbeat) >= boundary);
+    result.checks.push({ name: requested ? `host:${requested}` : "arm_hosts",
+      status: healthyHost ? "pass" : "unknown",
+      checkedAt: (healthyHost ?? visible[0])?.lastHeartbeat ?? null,
+      detail: healthyHost ? "Arm Host heartbeat is fresh" : "Waiting for a fresh Arm Host heartbeat" });
+    // Integrations are enabled by explicit configuration, not by their optional flag.
+    if (process.env.COLEO_QDRANT_URL) {
+      let healthy = false;
+      try { healthy = (await fetch(`${process.env.COLEO_QDRANT_URL.replace(/\/$/, "")}/collections`,
+        { signal: AbortSignal.timeout(2000) })).ok; } catch { /* reported below */ }
+      result.checks.push({ name: "qdrant", status: healthy ? "pass" : "fail",
+        checkedAt: new Date().toISOString(), detail: healthy ? "Healthy" : "Configured Qdrant is unavailable" });
+    } else result.checks.push({ name: "qdrant", status: "skipped", checkedAt: null, detail: "COLEO_QDRANT_URL is not configured" });
+    const indexer = await getServiceStatus("indexer");
+    const expectedIndexer = await readServiceInfo("indexer");
+    result.checks.push({ name: "indexer", status: indexer.running ? "pass" : expectedIndexer ? "fail" : "skipped",
+      checkedAt: new Date().toISOString(), detail: indexer.running ? "Running" : expectedIndexer ? "Registered indexer process is not running" : "No indexer service is registered" });
+    result.ok = result.checks.every(check => check.status === "pass" || check.status === "skipped");
+    return c.json(result);
+  });
 
   /**
    * Health check - no auth required

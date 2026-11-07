@@ -4,9 +4,9 @@
  * Controls OpenCode AI agent via its HTTP API server.
  * This is more reliable than PTY-based control as it uses well-defined endpoints.
  * 
- * Uses @opencode-ai/sdk for type-safe API interactions.
+ * Uses the native @opencode/client V2 API through Coleo's message boundary.
  * 
- * See: https://opencode.ai/docs/server/
+ * See: https://opencode.ai/v2/docs/build/client
  */
 
 import { spawn, type Subprocess } from "bun";
@@ -17,7 +17,8 @@ import { getColeoDir } from "../config";
 import { getCliEntrypoint } from "../cli/entrypoint";
 import { OpenCodeEventStream, truncateLargeFields, shouldPersistEvent, type OpenCodeEvent } from "./event-stream";
 import { eventStore } from "../nats/jetstream";
-import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part, type Todo } from "@opencode-ai/sdk";
+import { createOpencodeClient, openCodeHeaders } from "./opencode-v2-client";
+import type { OpencodeClient, Message, Part } from "./opencode-v2-client";
 import { resolveModel } from "./model-resolver";
 import { stopFailedOpenCodeProcess, waitForOpenCodeServer, withStartupTimeout } from "./opencode-startup";
 import { buildHarnessPromptParts } from "./prompt-parts";
@@ -74,6 +75,7 @@ interface ApiHarnessSession extends HarnessSession {
   client: OpencodeClient;
   provider?: string;
   model?: string;
+  headers: Record<string, string>;
 }
 
 // Callback type for event forwarding
@@ -256,6 +258,9 @@ export class OpenCodeApiHarness implements AgentHarness {
     // Ensure MCP directory exists
     const { mkdir, writeFile } = await import("node:fs/promises");
     await mkdir(mcpDir, { recursive: true });
+    env.OPENCODE_PASSWORD = crypto.randomUUID();
+    const headers = openCodeHeaders(env);
+    await writeFile(join(mcpDir, `${armId}.auth.json`), JSON.stringify({ password: env.OPENCODE_PASSWORD, directory: config.workdir }), { mode: 0o600 });
     
     // Try to find bun in PATH first, fall back to ~/.bun/bin/bun
     const { execSync } = await import("child_process");
@@ -278,6 +283,7 @@ export class OpenCodeApiHarness implements AgentHarness {
       $schema: "https://opencode.ai/config.json",
       // Configure the Coleo MCP server for brain communication
       mcp: {
+        servers: {
         coleo: {
           type: "local",
           // IMPORTANT: The MCP command runs relative to CWD of the OpenCode process
@@ -294,7 +300,8 @@ export class OpenCodeApiHarness implements AgentHarness {
             HOME: process.env.HOME || "",
           },
           // DEBUG: Re-enable MCP with fix attempts
-          enabled: true, 
+          disabled: false,
+        },
         },
       },
     };
@@ -320,7 +327,7 @@ export class OpenCodeApiHarness implements AgentHarness {
     console.log(`[harness-api] Starting OpenCode server on port ${port} for arm ${armId}...`);
 
     // Start OpenCode server
-    const serverProcess = spawn(["opencode", "serve", "--port", String(port)], {
+    const serverProcess = spawn(["opencode", "serve", "--hostname", "127.0.0.1", "--port", String(port)], {
       cwd: config.workdir, // This is usually /tmp/...
       env: {
           ...env,
@@ -378,10 +385,10 @@ export class OpenCodeApiHarness implements AgentHarness {
       const serverUrl = `http://127.0.0.1:${port}`;
 
       // Wait for server to be ready
-      await this.waitForServer(serverUrl, 30000, serverProcess);
+      await this.waitForServer(serverUrl, 30000, serverProcess, headers);
 
       // Create SDK client for type-safe API calls
-      const client = createOpencodeClient({ baseUrl: serverUrl });
+      const client = createOpencodeClient({ baseUrl: serverUrl, directory: config.workdir, headers });
 
       console.log(`[harness-api] Creating OpenCode session for ${armId} on ${serverUrl}...`);
       // Create a new session using SDK (access .data to get the actual session)
@@ -421,6 +428,7 @@ export class OpenCodeApiHarness implements AgentHarness {
         sessionId: session.id,
         port,
         client,
+        headers,
         provider: resolvedProvider,
         model: resolvedModel,
       };
@@ -428,6 +436,8 @@ export class OpenCodeApiHarness implements AgentHarness {
       // Start event stream subscription
       if (this.eventCallbacks.size > 0) {
         const eventStream = new OpenCodeEventStream({
+          apiVersion: 2,
+          headers,
           serverUrl,
           armId,
           sessionId: session.id,
@@ -497,8 +507,8 @@ export class OpenCodeApiHarness implements AgentHarness {
   /**
    * Wait for the OpenCode server to be ready
    */
-  private async waitForServer(serverUrl: string, timeoutMs: number, serverProcess?: Subprocess): Promise<void> {
-    await waitForOpenCodeServer(serverUrl, timeoutMs, serverProcess);
+  private async waitForServer(serverUrl: string, timeoutMs: number, serverProcess?: Subprocess, headers?: Record<string, string>): Promise<void> {
+    await waitForOpenCodeServer(serverUrl, timeoutMs, serverProcess, 2, headers);
   }
 
   /**
@@ -507,16 +517,23 @@ export class OpenCodeApiHarness implements AgentHarness {
    */
   async recover(armId: string, port: number, pid: number): Promise<HarnessSession | null> {
     const serverUrl = `http://127.0.0.1:${port}`;
+    let headers: Record<string, string>;
+    let directory: string;
+    try {
+      const auth = await Bun.file(join(getColeoDir(), "mcp", `${armId}.auth.json`)).json() as { password: string; directory: string };
+      headers = openCodeHeaders({ OPENCODE_PASSWORD: auth.password });
+      directory = auth.directory;
+    } catch { return null; }
     
     // Check if server is healthy
     try {
-      const healthResponse = await fetch(`${serverUrl}/global/health`);
+      const healthResponse = await fetch(`${serverUrl}/api/info`, { headers, signal: AbortSignal.timeout(5000) });
       if (!healthResponse.ok) {
         console.log(`[harness-api] Server on port ${port} not healthy`);
         return null;
       }
-      const health = await healthResponse.json() as { healthy: boolean };
-      if (!health.healthy) {
+      const health = await healthResponse.json() as { version?: string };
+      if (!health.version) {
         console.log(`[harness-api] Server on port ${port} reports unhealthy`);
         return null;
       }
@@ -526,7 +543,7 @@ export class OpenCodeApiHarness implements AgentHarness {
     }
 
     // Create SDK client for recovered session
-    const client = createOpencodeClient({ baseUrl: serverUrl });
+    const client = createOpencodeClient({ baseUrl: serverUrl, directory, headers });
 
     try {
       const sessionsResponse = await client.session.list();
@@ -569,11 +586,14 @@ export class OpenCodeApiHarness implements AgentHarness {
         sessionId: recoveredSession.id,
         port,
         client,
+        headers,
       };
 
       // Start event stream subscription for recovered session
       if (this.eventCallbacks.size > 0) {
         const eventStream = new OpenCodeEventStream({
+          apiVersion: 2,
+          headers,
           serverUrl,
           armId,
           sessionId: recoveredSession.id,
@@ -623,23 +643,28 @@ export class OpenCodeApiHarness implements AgentHarness {
       apiSession.eventStream.stop();
     }
 
-    // Try to gracefully dispose via SDK first
+    // Interrupt and remove only the session owned by this arm.
     try {
-      const response = await apiSession.client.instance.dispose();
-      if (!response.error) {
-        console.log(`[harness-api] Disposed OpenCode instance via SDK`);
-      }
+      await apiSession.client.session.abort({ path: { id: apiSession.sessionId }, signal: AbortSignal.timeout(2000) });
+      await apiSession.client.session.delete({ path: { id: apiSession.sessionId }, signal: AbortSignal.timeout(2000) });
     } catch {
-      // API might not be available, continue with process kill
-      console.log(`[harness-api] Could not dispose via SDK, killing process directly`);
+      console.log(`[harness-api] Could not clean up session via API, stopping private server`);
     }
 
     // Kill the server process if we have a reference
     if (apiSession.serverProcess) {
       try {
-        apiSession.serverProcess.kill();
+        await stopFailedOpenCodeProcess(apiSession.serverProcess);
       } catch {
         // Process might already be dead
+      }
+    } else {
+      // Recovery has no Bun process handle. Authenticate before identifying its private process.
+      try {
+        const info = await apiSession.client.native.server.info({ signal: AbortSignal.timeout(2000) });
+        if (info.pid && info.pid !== process.pid) process.kill(info.pid, "SIGTERM");
+      } catch {
+        // The private server may already have exited.
       }
     }
 
@@ -690,6 +715,8 @@ export class OpenCodeApiHarness implements AgentHarness {
       // Restart event stream with new session ID
       if (this.eventCallbacks.size > 0) {
         const eventStream = new OpenCodeEventStream({
+          apiVersion: 2,
+          headers: apiSession.headers,
           serverUrl: apiSession.serverUrl,
           armId,
           sessionId: newSession.id,
@@ -888,7 +915,7 @@ export class OpenCodeApiHarness implements AgentHarness {
   /**
    * Get session todo list from OpenCode via SDK.
    */
-  async getTodos(session: HarnessSession): Promise<Todo[]> {
+  async getTodos(session: HarnessSession): Promise<unknown[]> {
     const apiSession = this.sessions.get(session.id);
     if (!apiSession) {
       throw new Error(`Session ${session.id} not found`);
@@ -1085,25 +1112,14 @@ export class OpenCodeApiHarness implements AgentHarness {
     }
 
     try {
-      const response = await apiSession.client.tui.control.next({
-        query: { directory: process.cwd() },
-      });
-
-      if (!response.data) {
-        return null;
-      }
-
-      // The response is { path: string, body: unknown }
-      // The path indicates the type (e.g., "/session/{id}/permissions/{permissionID}")
-      const { path, body } = response.data as { path: string; body: unknown };
-      
-      console.log(`[harness-api] Control request received: ${path}`);
-      
-      return {
-        type: path.includes("/permissions/") ? "permission" : "question",
-        path,
-        data: body,
-      };
+      const requests = await apiSession.client.native.permission.list({ sessionID: apiSession.sessionId },
+        { signal: AbortSignal.timeout(timeout) });
+      const request = requests[0];
+      if (request) return { type: "permission", path: `/api/session/${apiSession.sessionId}/permission/${request.id}/reply`, data: request };
+      const forms = await apiSession.client.native.session.form.list({ sessionID: apiSession.sessionId },
+        { signal: AbortSignal.timeout(timeout) });
+      const form = forms[0];
+      return form ? { type: "question", path: `/api/session/${apiSession.sessionId}/form/${form.id}/reply`, data: form } : null;
     } catch (err) {
       // Timeout or no pending request
       console.log(`[harness-api] No control request: ${err}`);
@@ -1120,19 +1136,11 @@ export class OpenCodeApiHarness implements AgentHarness {
       throw new Error(`Session ${session.id} not found`);
     }
 
-    // If response is a string, wrap it in the expected format
-    const body = typeof response === "string" ? { body: response } : response;
-
-    const res = await apiSession.client.tui.control.response({
-      body,
-      query: { directory: process.cwd() },
-    });
-
-    if (res.error) {
-      throw new Error(`Failed to respond to control: ${res.error}`);
+    if (typeof response === "string" || typeof response.formID !== "string" || !response.values || typeof response.values !== "object") {
+      throw new Error("OpenCode V2 form replies require formID and values. Use respondToPermission for permission requests.");
     }
-
-    console.log(`[harness-api] Control response sent`);
+    await apiSession.client.native.session.form.reply({ sessionID: apiSession.sessionId, formID: response.formID,
+      answer: response.values as Record<string, string> });
   }
 
   /**

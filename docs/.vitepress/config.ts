@@ -9,7 +9,30 @@ export default defineConfig({
 	sitemap: {
 		hostname: "https://coleo.dev",
 	},
-	ignoreDeadLinks: true,
+	// Repository notes are retained for contributors, but are not public pages.
+	// Keep this boundary in sync with docs/maintenance/docs-publishing.md.
+	srcExclude: [
+		"maintenance/**",
+		"research/**",
+		"workbench/**",
+		"diagrams/**",
+		"usage/**",
+		"THEME_SYSTEM.md",
+		"architecture/agent-context.md",
+		"architecture/context.md",
+		"architecture/data.md",
+		"architecture/deployment.md",
+		"architecture/distributed.md",
+		"architecture/governance.md",
+		"architecture/image-attachments.md",
+		"architecture/nats-agents.md",
+		"architecture/phases.md",
+		"architecture/project-management.md",
+		"architecture/questions.md",
+		"architecture/structure.md",
+		"architecture/task-deletion-workflow.md",
+	],
+	ignoreDeadLinks: false,
 	markdown: {
 		theme: {
 			light: "github-light",
@@ -26,6 +49,7 @@ export default defineConfig({
 					text: "Guides",
 					items: [
 						{ text: "Getting Started", link: "/guides/getting-started" },
+						{ text: "Setup Wizard", link: "/guides/setup" },
 						{ text: "Component Installation", link: "/guides/installation" },
 						{ text: "Task Workflow", link: "/guides/task-workflow" },
 						{ text: "Planning Gate", link: "/guides/planning-gate" },

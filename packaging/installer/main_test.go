@@ -129,6 +129,21 @@ func TestServerAndAgentSharedOwnership(t *testing.T) {
 		t.Fatal("package retained")
 	}
 }
+func TestOpsHasIndependentOwnership(t *testing.T) {
+	f := newFixture(t)
+	f.add(t, "operator", map[string]string{
+		"dist/index.js": "echo legacy\n", "dist/server.js": "echo server\n",
+		"dist/agent.js": "echo agent\n", "dist/ops.js": "echo ops\n",
+	}, "bun", "")
+	must(t, f.run("install", "ops"))
+	checkCommand(t, f, "coleo-ops", "ops")
+	if _, err := os.Stat(filepath.Join(f.prefix, "bin", "coleo-server")); !os.IsNotExist(err) {
+		t.Fatal("ops published server lifecycle commands")
+	}
+	must(t, f.run("install", "agent"))
+	must(t, f.run("uninstall", "ops"))
+	checkCommand(t, f, "coleo-agent", "agent")
+}
 func TestClientTUIAndManagedRuntime(t *testing.T) {
 	f := newFixture(t)
 	// No ambient Bun, Python, or uv. Only ldd is available for the Linux platform check.

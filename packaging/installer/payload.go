@@ -198,7 +198,15 @@ func prepare(m Manifest, fam, p, store string, roles []string) error {
 			if err = wrapper(filepath.Join(store, "coleo"), exe, filepath.Join(store, "payload", "dist", "index.js")); err != nil {
 				return err
 			}
-			for _, role := range []string{"server", "agent"} {
+			for _, role := range []string{"server", "agent", "ops"} {
+				if role == "ops" {
+					if _, e := os.Stat(filepath.Join(store, "payload", "dist", "ops.js")); e != nil {
+						if contains(roles, "ops") {
+							return errors.New("release does not include coleo-ops")
+						}
+						continue
+					}
+				}
 				if err = wrapper(filepath.Join(store, "coleo-"+role), exe, filepath.Join(store, "payload", "dist", role+".js")); err != nil {
 					return err
 				}
