@@ -1,5 +1,7 @@
 import type { EventCallback, OpenCodeEvent, EventStreamOptions } from "./event-stream-types";
 import { truncateLargeFields } from "./event-utils";
+import { openCodeHeaders } from "./opencode-v2-client";
+import { normalizeV2Event } from "./opencode-v2-events";
 
 export type { EventCallback, OpenCodeEvent, EventStreamOptions, PersistenceCheckResult } from "./event-stream-types";
 export { truncateLargeFields, MAX_TEXT_FIELD_LENGTH } from "./event-utils";
@@ -15,8 +17,13 @@ export class OpenCodeEventStream {
   private abortController: AbortController | null = null;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private isClosing = false;
+  private apiVersion: 1 | 2;
+  private headers: Record<string, string>;
+  private textParts = new Map<string, string>();
 
   constructor(options: EventStreamOptions) {
+    this.apiVersion = options.apiVersion ?? 1;
+    this.headers = options.headers ?? openCodeHeaders();
     this.serverUrl = options.serverUrl;
     this.armId = options.armId;
     this.sessionId = options.sessionId;
@@ -36,6 +43,7 @@ export class OpenCodeEventStream {
   }
 
   stop(): void {
+    this.textParts.clear();
     this.isClosing = true;
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
@@ -59,9 +67,10 @@ export class OpenCodeEventStream {
     while (retries > 0) {
       try {
         console.log(`[event-stream] Attempting to connect to ${this.serverUrl}/event (${4 - retries}/3)`);
-        response = await fetch(`${this.serverUrl}/event`, {
+        response = await fetch(`${this.serverUrl}${this.apiVersion === 2 ? "/api/event" : "/event"}`, {
           signal: this.abortController.signal,
           headers: {
+            ...this.headers,
             'Accept': 'text/event-stream',
             'Cache-Control': 'no-cache',
           },
@@ -171,7 +180,9 @@ export class OpenCodeEventStream {
 
     if (data) {
       try {
-        const parsed = JSON.parse(data) as OpenCodeEvent;
+        const raw = JSON.parse(data) as OpenCodeEvent & { data?: Record<string, unknown> };
+        if (this.apiVersion === 2 && raw.data?.sessionID && raw.data.sessionID !== this.sessionId) return;
+        const parsed: OpenCodeEvent = this.apiVersion === 2 ? normalizeV2Event(raw, this.textParts) : raw;
         const sourceSessionId = this.extractSessionId(parsed.properties);
 
         if (sourceSessionId && sourceSessionId !== this.sessionId) {

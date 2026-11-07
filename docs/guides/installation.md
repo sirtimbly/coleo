@@ -55,6 +55,12 @@ itself still downloads its verified executable to a temporary directory.
 
 ## Configure and connect
 
+Arm Hosts using the default `opencode-api` harness require OpenCode V2 on their
+`PATH` and working provider credentials. Coleo starts an authenticated private
+OpenCode server for each Arm. Before spawning, it verifies the selected model
+with a short generation request. Startup errors and provider errors are reported
+separately; an expired provider API key must be replaced before retrying.
+
 For guided setup in releases that include it, install `ops` and run
 `coleo-ops init`. See [Set up Coleo](./setup) for the three setup paths and central
 health checks. The commands below remain available for manual component setup.
