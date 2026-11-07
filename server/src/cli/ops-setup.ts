@@ -101,6 +101,23 @@ async function saveJson(path: string, value: unknown): Promise<void> {
   await writeFile(temp, JSON.stringify(value, null, 2) + "\n", { mode: 0o600 });
   await rename(temp, path);
 }
+/** Ops commands resolve credentials through COLEO_DIR/.env; client stores are not read. */
+export async function saveEnvCredential(directory: string, name: string, value: string): Promise<void> {
+  const path = join(directory, ".env");
+  const kept: string[] = [];
+  try {
+    for (const line of (await readFile(path, "utf8")).split("\n")) {
+      if (!line.trim()) continue;
+      const normalized = line.trim().startsWith("export ") ? line.trim().slice(7).trim() : line.trim();
+      const separator = normalized.indexOf("=");
+      if (separator > 0 && normalized.slice(0, separator).trim() === name) continue;
+      kept.push(line);
+    }
+  } catch { /* no existing file */ }
+  const temp = `${path}.${crypto.randomUUID()}.tmp`;
+  await writeFile(temp, [...kept, `${name}=${value}`].join("\n") + "\n", { mode: 0o600 });
+  await rename(temp, path);
+}
 export function opsDirectory(options: OpsOptions): string {
   return discoverOpsWorkspace(options).directory;
 }
@@ -237,7 +254,7 @@ export async function setup(options: OpsOptions, signal: AbortSignal): Promise<S
   if (options.dryRun) return { schemaVersion: 1, ok: true, checks: [{ name: "plan", status: "pass", checkedAt: null,
     detail: `${role}; clients=${clients.join(",")}; runtime=${directory}; workspace=${input.workspace}; API=${input.server}; NATS=${input.natsUrl || `nats://${localPorts.natsHost || resolved.values.natsHost}:${localPorts.natsPort || resolved.values.natsPort}`}; NATS monitor=${localPorts.natsHttpPort || resolved.values.natsHttpPort}` }], nextCommands, preview: true };
   let key = resolved.values.apiKey;
-  if (role !== "local" && resolved.sources.apiKey === "saved"
+  if (role !== "local" && ["saved", "env-file"].includes(resolved.sources.apiKey)
     && resolved.values.apiUrl.replace(/\/$/, "") !== input.server.replace(/\/$/, "")) key = "";
   if (!key && role !== "local" && interactive) key = await question("API key", "", true);
   if (!key && role === "local") key = crypto.randomUUID() + crypto.randomUUID();
@@ -354,6 +371,10 @@ export async function setup(options: OpsOptions, signal: AbortSignal): Promise<S
         throw new Error(`Connection ${input.connection} points at another server; choose --connection with a new name`);
       }
       await runBounded([cli, "connect", input.server!, "--name", input.connection, "--key-stdin"], signal, key + "\n");
+      if (role === "client") {
+        // Later doctor/status calls authenticate through this runtime credential.
+        await saveEnvCredential(directory, "COLEO_API_KEY", key);
+      }
     });
     for (const client of clients.filter(client => client === "web" || client === "macos")) await step(`${client}_handoff`, async () => {
       const webPort = client === "web" ? await nextAvailablePort(3000, "127.0.0.1") : 3000;

@@ -24,8 +24,16 @@ export async function planLocalPorts(config: ResolvedOperatorConfig, explicitSer
     const clientHost = host === "0.0.0.0" ? "127.0.0.1" : host === "::" ? "[::1]" : host.includes(":") ? `[${host}]` : host;
     result.apiUrl = `http://${clientHost}:${result.port}`;
     result.host = host;
+  } else {
+    // Reserve fixed API endpoints before allocating anything else, so broker
+    // scanning cannot hand out the API's port while the API is still stopped.
+    const explicitPort = explicitServer ? new URL(explicitServer).port : sources.port !== "default" ? values.port : "";
+    if (Number(explicitPort)) reserved.add(Number(explicitPort));
   }
   if (!externalNats && ["default", "derived"].includes(sources.natsUrl)) {
+    for (const key of ["natsPort", "natsHttpPort"] as const) {
+      if (sources[key] !== "default") reserved.add(Number(values[key]));
+    }
     for (const key of ["natsPort", "natsHttpPort"] as const) {
       if (sources[key] === "default") {
         result[key] = String(await nextAvailablePort(Number(values[key]), values.natsHost, reserved, available));

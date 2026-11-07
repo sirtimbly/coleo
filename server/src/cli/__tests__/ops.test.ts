@@ -209,6 +209,56 @@ esac
   } finally { await server.stop(true); }
 }, 15_000);
 
+const scrubbedEnvironment = (): Record<string, string> => {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined && !key.startsWith("COLEO_") && !key.startsWith("OPENAI_")) env[key] = value;
+  }
+  return env;
+};
+
+test("client-only setup persists the connection key for later ops commands", async () => {
+  const root = await temporary();
+  const directory = join(root, "runtime");
+  const prefix = join(root, "prefix");
+  const bin = join(prefix, "bin");
+  await mkdir(bin, { recursive: true });
+  await writeFile(join(bin, "coleo-client"), `#!/bin/sh
+case "$1" in
+connect) read -r key; printf "$key" > ${JSON.stringify(join(root, "cli-key"))}; printf '{"ok":true}' ;;
+*) printf '{"connections":[]}' ;;
+esac
+`, { mode: 0o755 });
+  let authorizedRequests = 0;
+  const server = Bun.serve({ port: 0, async fetch(request) {
+    if (request.headers.get("X-API-Key") !== "fixture-api-key") return new Response("unauthorized", { status: 401 });
+    authorizedRequests++;
+    return Response.json({ schemaVersion: 1, ok: true, generation: "fixture",
+      checks: [{ name: "database", status: "pass", checkedAt: new Date().toISOString(), detail: "Healthy" }] });
+  } });
+  const run = (args: string[], extra: Record<string, string> = {}) => {
+    const child = Bun.spawn([process.execPath, resolve(import.meta.dir, "../ops.ts"), "--dir", directory, ...args],
+      { env: { ...scrubbedEnvironment(), ...extra }, stdout: "pipe", stderr: "pipe" });
+    return Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
+      .then(([stdout, stderr, code]) => ({ stdout, stderr, code }));
+  };
+  try {
+    const setup = await run(["init", "--non-interactive", "--json", "--clients", "cli", "--role", "client",
+      "--workspace", root, "--server", server.url.origin, "--connection", "local", "--prefix", prefix, "--timeout", "8"],
+      { COLEO_API_KEY: "fixture-api-key" });
+    expect(setup.code).toBe(0);
+    expect(JSON.parse(setup.stdout).ok).toBe(true);
+    expect((await readFile(join(root, "cli-key"), "utf8")).trim()).toBe("fixture-api-key");
+    const envPath = join(directory, ".env");
+    expect((await stat(envPath)).mode & 0o777).toBe(0o600);
+    // Without the persisted credential, a fresh shell received HTTP 401. It must now authenticate.
+    const doctor = await run(["doctor", "--json", "--timeout", "8"]);
+    expect(doctor.code).toBe(0);
+    expect(JSON.parse(doctor.stdout).ok).toBe(true);
+    expect(authorizedRequests).toBeGreaterThanOrEqual(3);
+  } finally { await server.stop(true); }
+}, 15_000);
+
 test("CLI is required and optional client choices are additive and deduplicated", () => {
   expect(normalizeSetupClients([])).toEqual(["cli"]);
   expect(normalizeSetupClients(["web", "tui", "web"])).toEqual(["cli", "tui", "web"]);

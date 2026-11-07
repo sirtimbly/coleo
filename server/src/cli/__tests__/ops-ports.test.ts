@@ -31,6 +31,35 @@ test("explicit endpoints are not replaced", async () => {
     async () => { throw new Error("Must not scan explicit endpoints"); })).toEqual({});
 });
 
+test("a saved API port is reserved before broker allocation", async () => {
+  const config = defaults();
+  config.values.port = "4222";
+  config.sources.port = "saved";
+  config.sources.apiUrl = "saved";
+  config.values.apiUrl = "http://127.0.0.1:4222";
+  // 4222 is free at planning time; the allocator must still not select it for NATS.
+  const plan = await planLocalPorts(config, undefined, undefined, async() => true);
+  expect(plan.port).toBeUndefined();
+  expect(plan.natsPort).toBe("4223");
+  expect(plan.natsHttpPort).toBe("8222");
+});
+
+test("an explicit server URL port is reserved before broker allocation", async () => {
+  const plan = await planLocalPorts(defaults(), "http://127.0.0.1:4222", undefined, async() => true);
+  expect(plan.natsPort).toBe("4223");
+  expect(plan.natsHttpPort).toBe("8222");
+});
+
+test("an explicit monitor port is reserved before NATS allocation", async () => {
+  const config = defaults();
+  config.values.natsHttpPort = "8223";
+  config.sources.natsHttpPort = "saved";
+  // Free ports below 8223 are busy; NATS must skip the monitor's fixed port.
+  const plan = await planLocalPorts(config, undefined, undefined, async port => port >= 8223);
+  expect(plan.natsPort).toBe("8224");
+  expect(plan.natsHttpPort).toBeUndefined();
+});
+
 test("real socket occupancy is detected and exhausted range fails", async () => {
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("occupied") });
   try { expect(await nextAvailablePort(server.port!, "127.0.0.1")).toBeGreaterThan(server.port!); }
