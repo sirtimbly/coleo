@@ -393,8 +393,8 @@ The older `mail inbox` listing below reads raw Maildir messages; use
 `inbox --facet messages` for workbench conversations, `--limit` for page size,
 and full stable IDs instead of raw-mail prefixes.
 
-See [the named Inbox CLI contract](../workbench/review/inbox-cli.md) for output,
-paging, selection, fallback, and migration details.
+See [Workspace CLI and TUI](./workspace-client) for the supported client commands
+and [Workbench across clients](../architecture/workbench-clients) for snapshot and action behavior.
 
 ---
 

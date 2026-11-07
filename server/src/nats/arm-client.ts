@@ -121,6 +121,12 @@ export class ArmClient {
   /**
    * Get all connected agents
    */
+  getAgentHealth(): Array<{ agentId: string; lastHeartbeat: string }> {
+    return [...this.agents.values()].map(agent => ({
+      agentId: agent.info.agentId, lastHeartbeat: agent.lastHeartbeat.toISOString(),
+    }));
+  }
+
   getAgents(): AgentInfo[] {
     return Array.from(this.agents.values()).map(a => a.info);
   }

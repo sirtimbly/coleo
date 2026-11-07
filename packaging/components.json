@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "ops": { "distribution": "operator", "commands": ["coleo-ops"], "runtime": "bun" },
   "server": { "distribution": "operator", "commands": ["coleo-server", "coleo"], "runtime": "bun" },
   "agent": { "distribution": "operator", "commands": ["coleo-agent"], "runtime": "bun" },
   "client": { "distribution": "client", "commands": ["coleo-client", "coleo-inbox"], "runtime": "uv" },

@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
-import { chmod, mkdir, readdir, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { chmod, mkdir, readdir, rm, readFile, writeFile, rename, lstat } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { discoverRepositories } from "./discover";
 
 import {
   isGitRef,
@@ -39,13 +40,16 @@ async function defaultRunCommand(
     stdout: "pipe",
     stderr: "pipe",
   });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    processHandle.exited,
-    new Response(processHandle.stdout).text(),
-    new Response(processHandle.stderr).text(),
-  ]);
+  const timer = setTimeout(() => processHandle.kill("SIGKILL"), command[0] === "ssh-add" ? 3000 : 120_000);
+  try {
+    const [exitCode, stdout, stderr] = await Promise.all([
+      processHandle.exited,
+      new Response(processHandle.stdout).text(),
+      new Response(processHandle.stderr).text(),
+    ]);
 
-  return { exitCode, stdout: stdout.trim(), stderr: stderr.trim() };
+    return { exitCode, stdout: stdout.trim(), stderr: stderr.trim() };
+  } finally { clearTimeout(timer); }
 }
 
 function shellQuote(value: string): string {
@@ -63,6 +67,7 @@ export class LocalRepositoryOnboarding implements RepositoryOnboardingService {
   private readonly privateKeyPath: string;
   private readonly publicKeyPath: string;
   private readonly knownHostsPath: string;
+  private readonly workspaceStatePath: string;
   private readonly runCommand: NonNullable<LocalRepositoryOnboardingOptions["runCommand"]>;
   private cloneInProgress = false;
 
@@ -72,6 +77,7 @@ export class LocalRepositoryOnboarding implements RepositoryOnboardingService {
     this.privateKeyPath = join(this.sshDir, "id_ed25519");
     this.publicKeyPath = `${this.privateKeyPath}.pub`;
     this.knownHostsPath = join(this.sshDir, "known_hosts");
+    this.workspaceStatePath = join(options.coleoDir, "workspace-onboarding.json");
     this.runCommand = options.runCommand || defaultRunCommand;
   }
 
@@ -82,13 +88,38 @@ export class LocalRepositoryOnboarding implements RepositoryOnboardingService {
       case "generate_ssh_key":
         await this.generateSshKey();
         return this.getStatus();
+      case "use_workspace": {
+        await mkdir(this.projectDir, { recursive: true });
+        await mkdir(dirname(this.workspaceStatePath), { recursive: true });
+        const temporary = `${this.workspaceStatePath}.${crypto.randomUUID()}.tmp`;
+        await writeFile(temporary, JSON.stringify({ projectDir: this.projectDir, accepted: true }), { mode: 0o600 });
+        await rename(temporary, this.workspaceStatePath);
+        return this.getStatus();
+      }
       case "clone":
-        await this.clone(operation.repositoryUrl, operation.branch);
+        await this.clone(operation.repositoryUrl, operation.branch, operation.authentication, operation.destination);
         return this.getStatus();
     }
   }
 
   private async getStatus(): Promise<RepositoryOnboardingStatus> {
+    const discovery = await discoverRepositories(this.projectDir);
+    const entries = await readdir(this.projectDir, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return [];
+      throw error;
+    });
+    const directories = entries.filter(entry => entry.isDirectory()).map(entry => entry.name)
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    let accepted = false;
+    try {
+      const saved = JSON.parse(await readFile(this.workspaceStatePath, "utf8"));
+      accepted = saved.projectDir === this.projectDir && saved.accepted === true;
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    let agentAvailable = false;
+    if (process.env.SSH_AUTH_SOCK) {
+      try { agentAvailable = (await this.runCommand(["ssh-add", "-l"])).exitCode === 0; }
+      catch { /* An unavailable agent never blocks local workspace use. */ }
+    }
     const checkedOut = existsSync(join(this.projectDir, ".git"));
     const configured = existsSync(this.privateKeyPath) && existsSync(this.publicKeyPath);
     let publicKey: string | null = null;
@@ -140,10 +171,11 @@ export class LocalRepositoryOnboarding implements RepositoryOnboardingService {
     }
 
     return {
-      ready: checkedOut,
+      ready: checkedOut || accepted,
       projectDir: this.projectDir,
+      workspace: { accepted, ...discovery, directories: directories.slice(0, 200), directoryCount: directories.length },
       repository: { checkedOut, remoteUrl, branch, commit, trackedFileCount, dirtyFileCount, topLevelEntries },
-      ssh: { configured, publicKey },
+      ssh: { configured, publicKey, agentAvailable },
     };
   }
 
@@ -174,7 +206,12 @@ export class LocalRepositoryOnboarding implements RepositoryOnboardingService {
     await chmod(this.publicKeyPath, 0o644);
   }
 
-  private async clone(repositoryUrl: string, branch?: string): Promise<void> {
+  private async clone(repositoryUrl: string, branch?: string, authentication?: "existing" | "managed", destination?: string): Promise<void> {
+    if (destination !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(destination)) {
+      throw new Error("Destination must be a single folder name inside the workspace");
+    }
+    const target = destination ? join(this.projectDir, destination) : this.projectDir;
+    const managed = authentication === "managed" || (authentication === undefined && existsSync(this.privateKeyPath));
     const normalizedUrl = repositoryUrl.trim();
     const normalizedBranch = branch?.trim() || "";
     if (!isRepositoryUrl(normalizedUrl)) {
@@ -189,24 +226,25 @@ export class LocalRepositoryOnboarding implements RepositoryOnboardingService {
 
     this.cloneInProgress = true;
     try {
-      if (existsSync(join(this.projectDir, ".git"))) {
+      if ((await lstat(target).catch(() => undefined))?.isSymbolicLink()) throw new Error("Clone destination must not be a symbolic link");
+      if (existsSync(join(target, ".git"))) {
         throw new Error("A Git repository is already checked out in the project directory");
       }
-      if (isSshRepositoryUrl(normalizedUrl) && !existsSync(this.privateKeyPath)) {
+      if (managed && isSshRepositoryUrl(normalizedUrl) && !existsSync(this.privateKeyPath)) {
         throw new Error("Generate an SSH key before cloning an SSH repository");
       }
-      if (await directoryHasContents(this.projectDir)) {
-        throw new Error(`Project directory is not empty: ${this.projectDir}`);
+      if (await directoryHasContents(target)) {
+        throw new Error(`Project directory is not empty: ${target}. Choose a new destination folder.`);
       }
 
-      await mkdir(this.projectDir, { recursive: true });
+      await mkdir(target, { recursive: true });
       const sshCommand = this.getSshCommand();
       const result = await this.runCommand(
-        ["git", "clone", "--", normalizedUrl, this.projectDir],
-        { GIT_SSH_COMMAND: sshCommand },
+        ["git", "clone", "--", normalizedUrl, target],
+        managed ? { GIT_SSH_COMMAND: sshCommand, GIT_TERMINAL_PROMPT: "0" } : { GIT_TERMINAL_PROMPT: "0" },
       );
       if (result.exitCode !== 0) {
-        await this.resetProjectDirectory();
+        await this.resetProjectDirectory(target);
         throw new Error(`Git clone failed: ${result.stderr || "unknown Git error"}`);
       }
 
@@ -214,27 +252,27 @@ export class LocalRepositoryOnboarding implements RepositoryOnboardingService {
         const checkoutResult = await this.runCommand([
           "git",
           "-C",
-          this.projectDir,
+          target,
           "checkout",
           normalizedBranch,
         ]);
         if (checkoutResult.exitCode !== 0) {
-          await this.resetProjectDirectory();
+          await this.resetProjectDirectory(target);
           throw new Error(`Git checkout failed: ${checkoutResult.stderr || "unknown Git error"}`);
         }
       }
 
-      if (existsSync(this.privateKeyPath)) {
+      if (managed && existsSync(this.privateKeyPath)) {
         const configResult = await this.runCommand([
           "git",
           "-C",
-          this.projectDir,
+          target,
           "config",
           "core.sshCommand",
           sshCommand,
         ]);
         if (configResult.exitCode !== 0) {
-          await this.resetProjectDirectory();
+          await this.resetProjectDirectory(target);
           throw new Error(`Repository cloned, but SSH configuration failed: ${configResult.stderr}`);
         }
       }
@@ -257,11 +295,11 @@ export class LocalRepositoryOnboarding implements RepositoryOnboardingService {
     ].join(" ");
   }
 
-  private async resetProjectDirectory(): Promise<void> {
-    await mkdir(this.projectDir, { recursive: true });
-    const entries = await readdir(this.projectDir);
+  private async resetProjectDirectory(target: string): Promise<void> {
+    await mkdir(target, { recursive: true });
+    const entries = await readdir(target);
     await Promise.all(entries.map((entry) => (
-      rm(join(this.projectDir, entry), { recursive: true, force: true })
+      rm(join(target, entry), { recursive: true, force: true })
     )));
   }
 }

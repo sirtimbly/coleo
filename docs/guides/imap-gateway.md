@@ -12,7 +12,7 @@ banner:
 
 > Legacy/local workflow only: production email flows now require an email gateway integration (Postmark recommended) with a fixed sender and receiver address pair.
 >
-> For the required gateway setup, see [`/guides/communicate-with-brain#required-email-gateway-postmark-example`](/guides/communicate-with-brain#required-email-gateway-postmark-example).
+> For the required gateway setup, see [Required email gateway](/guides/communicate-with-brain#required-email-gateway).
 
 This guide configures Coleo as a **local IMAP gateway** for Maildir-backed project mailboxes.
 

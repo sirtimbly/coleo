@@ -4,6 +4,7 @@ Choose the tools for the machine you are installing on:
 
 | Component | Installed interface | Prerequisite provisioned privately |
 | --- | --- | --- |
+| `ops` | `coleo-ops` setup and diagnostics | Pinned Bun |
 | `server` | `coleo-server`, transitional `coleo` | Pinned Bun |
 | `agent` | `coleo-agent` Arm Host | Pinned Bun |
 | `client` (alias `cli`) | `coleo-client`, transitional `coleo-inbox` | Pinned uv and managed Python |
@@ -53,6 +54,10 @@ does not create the installation prefix or provision runtimes. The bootstrap
 itself still downloads its verified executable to a temporary directory.
 
 ## Configure and connect
+
+For guided setup in releases that include it, install `ops` and run
+`coleo-ops init`. See [Set up Coleo](./setup) for the three setup paths and central
+health checks. The commands below remain available for manual component setup.
 
 ```sh
 # API service and optional brain, on the server host

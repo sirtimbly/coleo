@@ -8,6 +8,7 @@ import { getColeoDir } from "../config";
 import { startService, stopService, restartService, getServiceStatus, getServiceLogs, getLogFilePath, getPidFilePath } from "../daemon";
 import { resolveOperatorConfig, redactedConfig, readOperatorConfig, saveOperatorConfig, ensureAgentId, applyOperatorEnvironment } from "./operator-config";
 import { operatorDoctor } from "./operator-doctor";
+import { initializeSetupRuntime } from "./setup-runtime";
 import type { Setting, ResolvedOperatorConfig, OperatorValues } from "./operator-config";
 
 const fields = {
@@ -43,7 +44,7 @@ function emit(command: Command, value: object): void {
   }
 }
 function launchArgs(service: "server" | "agent" | "brain", config: ResolvedOperatorConfig): string[] {
-  return fields[service].filter(key => !(service === "server" && key === "natsUrl" && config.sources[key] === "default"))
+  return fields[service].filter(key => !(service === "server" && key === "natsUrl" && ["default", "derived"].includes(config.sources[key])))
     .flatMap(key => key === "verbose"
     ? config.values.verbose === "true" ? ["--verbose"] : []
     : [`--${flagName(key)}`, config.values[key]]);
@@ -77,7 +78,7 @@ async function configure(component: "server" | "agent", command: Command): Promi
   const config = await resolveOperatorConfig(flags);
   if (component === "agent") await ensureAgentId(config);
   const saved = { ...await readOperatorConfig(), ...config.values };
-  if (component === "server" && config.sources.natsUrl === "default") delete (saved as Partial<OperatorValues>).natsUrl;
+  if (component === "server" && ["default", "derived"].includes(config.sources.natsUrl)) delete (saved as Partial<OperatorValues>).natsUrl;
   await saveOperatorConfig(saved);
   emit(command, { schemaVersion: 1, kind: "configuration", component, ok: true, ...redactedConfig(config) });
 }
@@ -170,6 +171,11 @@ function createOperatorProgram(component: "server" | "agent"): Command {
     process.env.COLEO_DIR = resolve(dir || getColeoDir());
   });
   registerLifecycle(program, component);
+  const initialize = program.command("initialize").description("Create missing runtime assets without replacing existing configuration or templates");
+  initialize.action(async () => {
+    await initializeSetupRuntime(getColeoDir());
+    emit(initialize, { schemaVersion: 1, kind: "initialize", component, ok: true, runtimeDirectory: getColeoDir() });
+  });
   if (component === "server") registerLifecycle(program.command("brain").description("Local brain lifecycle; starts separately from API"), "brain");
   const config = addSettings(program.command("configure").description("Save validated operator.json (0600), scoped to the runtime directory"), component)
     .option("--interactive", "Prompt for settings and hidden credentials")

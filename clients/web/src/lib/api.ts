@@ -98,6 +98,7 @@ interface ApiError {
 export interface OnboardingStatus {
   ready: boolean;
   projectDir: string;
+  workspace?: { accepted: boolean; repositories: string[]; scanLimited: boolean; directories?: string[]; directoryCount?: number };
   repository: {
     checkedOut: boolean;
     remoteUrl: string | null;
@@ -116,6 +117,7 @@ export interface OnboardingStatus {
   ssh: {
     configured: boolean;
     publicKey: string | null;
+    agentAvailable?: boolean;
   };
 }
 
@@ -247,7 +249,11 @@ class ApiClient {
     });
   }
 
-  async cloneOnboardingRepository(data: { repositoryUrl: string; branch?: string }) {
+  async acceptOnboardingWorkspace() {
+    return this.request<OnboardingStatus>('/onboarding/workspace', { method: 'POST' });
+  }
+
+  async cloneOnboardingRepository(data: { repositoryUrl: string; branch?: string; authentication?: 'existing' | 'managed'; destination?: string }) {
     return this.request<OnboardingStatus>('/onboarding/clone', {
       method: 'POST',
       body: JSON.stringify(data),

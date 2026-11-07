@@ -4,6 +4,7 @@ import { ArrowRight, Check, Clipboard, FolderGit2, GitBranch, KeyRound, LoaderCi
 import { api } from '@/lib/api';
 import { isWorkspaceStarting, WORKSPACE_STARTUP_TIMEOUT_MS } from '@/lib/workspace-startup';
 import { WorkspaceStartup } from './WorkspaceStartup';
+import { WorkspaceRepositories } from './WorkspaceRepositories';
 
 import type { FormEvent, ReactNode } from 'react';
 import type { OnboardingStatus } from '@/lib/api';
@@ -114,6 +115,8 @@ function CloneSummary({ status, onContinue }: { status: OnboardingStatus; onCont
 function ProjectOnboarding({ status, onStatusChange }: ProjectOnboardingProps) {
   const [repositoryUrl, setRepositoryUrl] = useState('');
   const [branch, setBranch] = useState('');
+  const [authentication, setAuthentication] = useState<'existing' | 'managed'>('existing');
+  const [destination, setDestination] = useState('');
   const [isGeneratingKey, setIsGeneratingKey] = useState(false);
   const [isCloning, setIsCloning] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -148,10 +151,14 @@ function ProjectOnboarding({ status, onStatusChange }: ProjectOnboardingProps) {
     setIsCloning(true);
     setError(null);
     try {
-      setClonedStatus(await api.cloneOnboardingRepository({
+      const result = await api.cloneOnboardingRepository({
         repositoryUrl: repositoryUrl.trim(),
         branch: branch.trim() || undefined,
-      }));
+        authentication,
+        destination: destination.trim() || undefined,
+      });
+      if (destination.trim()) onStatusChange(await api.acceptOnboardingWorkspace());
+      else setClonedStatus(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to clone repository');
     } finally {
@@ -169,18 +176,31 @@ function ProjectOnboarding({ status, onStatusChange }: ProjectOnboardingProps) {
     <main className="min-h-screen bg-background px-4 py-8 text-foreground sm:px-6 lg:py-12">
       <div className="mx-auto max-w-3xl">
         <div className="mb-8">
-          <div className="mb-3 inline-flex rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
-            Project setup
-          </div>
-          <h1 className="text-3xl font-semibold tracking-tight">Connect your Git repository</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">Set up your workspace</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Coleo needs a project checkout before its arms can work. Generate an SSH key, add the public key to
-            your Git provider, then clone the repository into the workspace.
+            Use the files and repositories already on this machine, add a repository, or continue now and add repositories later.
           </p>
         </div>
 
         <div className="space-y-4">
-          <section className="rounded-xl border border-border bg-surface p-5 shadow-sm">
+          <WorkspaceRepositories status={status} onStatusChange={onStatusChange} onboarding />
+          <details className="rounded-xl border border-border bg-surface p-5">
+            <summary className="cursor-pointer font-semibold focus-visible:outline-2 focus-visible:outline-accent">Clone a repository (optional)</summary>
+            <div className="mt-5 space-y-4">
+              <fieldset className="space-y-3 text-sm">
+                <legend className="mb-2 font-semibold">Git authentication</legend>
+                <label className="flex items-start gap-3">
+                  <input type="radio" name="git-authentication" value="existing" checked={authentication === 'existing'} onChange={() => setAuthentication('existing')} disabled={isCloning} className="mt-1 accent-accent" />
+                  <span>Use existing credentials<span className="mt-1 block text-muted-foreground">Uses the Coleo host’s SSH agent, SSH configuration, or HTTPS credential helper. No new key is created.</span></span>
+                </label>
+                <label className="flex items-start gap-3">
+                  <input type="radio" name="git-authentication" value="managed" checked={authentication === 'managed'} onChange={() => setAuthentication('managed')} disabled={isCloning} className="mt-1 accent-accent" />
+                  <span>Use a dedicated Coleo SSH key</span>
+                </label>
+                <p className="text-muted-foreground">{status.ssh.agentAvailable ? 'An SSH agent with identities is available to Coleo.' : 'No loaded SSH agent was detected by Coleo. Existing SSH configuration or HTTPS credentials may still work.'} Credentials must be accessible to the running Coleo process.</p>
+              </fieldset>
+          {authentication === 'managed' ? <>
+          <section className="border-t border-border pt-5">
             <div className="flex items-start gap-4">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-secondary text-sm font-semibold">
                 {status.ssh.configured ? <Check className="h-4 w-4 text-success" /> : '1'}
@@ -234,7 +254,7 @@ function ProjectOnboarding({ status, onStatusChange }: ProjectOnboardingProps) {
             </div>
           </section>
 
-          <section className="rounded-xl border border-border bg-surface p-5 shadow-sm">
+          <section className="border-t border-border pt-5">
             <div className="flex items-start gap-4">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-secondary text-sm font-semibold">
                 2
@@ -249,15 +269,16 @@ function ProjectOnboarding({ status, onStatusChange }: ProjectOnboardingProps) {
             </div>
           </section>
 
-          <section className="rounded-xl border border-border bg-surface p-5 shadow-sm">
+          </> : null}
+          <section className="border-t border-border pt-5">
             <div className="flex items-start gap-4">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-secondary text-sm font-semibold">
-                3
+                <GitBranch className="h-4 w-4" aria-hidden="true" />
               </div>
               <div className="min-w-0 flex-1">
                 <h2 className="font-semibold">Clone the project</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  The checkout will be created at <code className="text-foreground">{status.projectDir}</code>.
+                  Clone into <code className="break-all text-foreground">{status.projectDir}</code> or a new subfolder below it.
                 </p>
 
                 <form className="mt-4 space-y-4" onSubmit={cloneRepository}>
@@ -271,7 +292,7 @@ function ProjectOnboarding({ status, onStatusChange }: ProjectOnboardingProps) {
                       value={repositoryUrl}
                       onChange={(event) => setRepositoryUrl(event.target.value)}
                       placeholder="git@github.com:your-org/your-project.git"
-                      disabled={!status.ssh.configured || isCloning}
+                      disabled={isCloning}
                       className="w-full rounded-md border border-border bg-surface-secondary px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
                       required
                     />
@@ -286,13 +307,20 @@ function ProjectOnboarding({ status, onStatusChange }: ProjectOnboardingProps) {
                       value={branch}
                       onChange={(event) => setBranch(event.target.value)}
                       placeholder="main"
-                      disabled={!status.ssh.configured || isCloning}
+                      disabled={isCloning}
                       className="w-full rounded-md border border-border bg-surface-secondary px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
                     />
                   </div>
+                  <div>
+                    <label htmlFor="onboarding-destination" className="mb-1.5 block text-sm font-medium">Destination folder (optional)</label>
+                    <input id="onboarding-destination" value={destination} onChange={event => setDestination(event.target.value)} disabled={isCloning}
+                      placeholder="my-repository" pattern="[A-Za-z0-9][A-Za-z0-9._-]*"
+                      className="w-full rounded-md border border-border bg-surface-secondary px-3 py-2 text-sm focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent" />
+                    <p className="mt-1 text-xs text-muted-foreground">Use a new subfolder for multiple repositories. Leave blank only if the workspace is empty.</p>
+                  </div>
                   <button
                     type="submit"
-                    disabled={!status.ssh.configured || !repositoryUrl.trim() || isCloning}
+                    disabled={(authentication === 'managed' && !status.ssh.configured) || !repositoryUrl.trim() || isCloning}
                     className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {isCloning ? (
@@ -306,10 +334,12 @@ function ProjectOnboarding({ status, onStatusChange }: ProjectOnboardingProps) {
               </div>
             </div>
           </section>
+            </div>
+          </details>
         </div>
 
         {error ? (
-          <div className="mt-4 rounded-lg border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
+            <div role="alert" className="mt-4 rounded-lg border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
             {error}
           </div>
         ) : null}

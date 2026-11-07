@@ -10,7 +10,7 @@ banner:
 
 # Harness Contract
 
-Coleo is the self-hosted control plane for coding agents: run on your hardware, plug in any CLI agent, and coordinate long-running work with full local visibility.
+Coleo is a self-hosted control plane for coding agents. Harness adapters connect supported agent runtimes to its coordination and observation interfaces.
 
 The harness contract defines the integration boundary between the Brain and each agent adapter.
 
@@ -31,11 +31,8 @@ In practical terms, a harness must:
 
 ## Current Status
 
-Registered harnesses in `src/harness/registry.ts`:
-
-- `opencode`
-- `opencode-api`
-- `opencode-tui`
+The registered harness in `server/src/harness/registry.ts` is `opencode-api`.
+Additional CLI agents require an implemented and validated adapter.
 
 The type system already leaves room for additional harness types, and the extension point is the registry plus the shared contract.
 

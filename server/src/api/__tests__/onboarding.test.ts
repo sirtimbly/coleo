@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile, symlink, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -54,6 +54,108 @@ describe("onboarding routes", () => {
     expect(body.projectDir).toBe(projectDir);
     expect(body.repository.checkedOut).toBe(false);
     expect(body.ssh.configured).toBe(false);
+  });
+
+  it("accepts an empty local workspace persistently without creating a Git repository or SSH key", async () => {
+    const app = new Hono();
+    app.route("/api/onboarding", createOnboardingRoutes({ projectDir, coleoDir }));
+    const response = await app.request("http://localhost/api/onboarding/workspace", { method: "POST" });
+    const body = await response.json() as OnboardingStatus;
+    expect(body.ready).toBe(true);
+    expect(body.repository.checkedOut).toBe(false);
+    expect(body.ssh.configured).toBe(false);
+    expect(await readdir(projectDir)).toEqual([]);
+    const restarted = new Hono();
+    restarted.route("/api/onboarding", createOnboardingRoutes({ projectDir, coleoDir }));
+    expect((await (await restarted.request("http://localhost/api/onboarding")).json()).ready).toBe(true);
+    const otherWorkspace = new Hono();
+    otherWorkspace.route("/api/onboarding", createOnboardingRoutes({ projectDir: join(rootDir, "other"), coleoDir }));
+    expect((await (await otherWorkspace.request("http://localhost/api/onboarding")).json()).ready).toBe(false);
+  });
+
+  it("discovers multiple nested repositories, worktrees, and later additions without following symlinks", async () => {
+    await mkdir(join(projectDir, "apps", "frontend", ".git"), { recursive: true });
+    await mkdir(join(projectDir, "backend"), { recursive: true });
+    await mkdir(join(projectDir, "notes"));
+    await writeFile(join(projectDir, "README.md"), "workspace notes");
+    await writeFile(join(projectDir, "backend", ".git"), "gitdir: /worktrees/backend");
+    await mkdir(join(projectDir, "node_modules", "ignored", ".git"), { recursive: true });
+    await symlink(join(projectDir, "apps"), join(projectDir, "linked-apps"));
+    const app = new Hono();
+    app.route("/api/onboarding", createOnboardingRoutes({ projectDir, coleoDir }));
+    const status = async () => await (await app.request("http://localhost/api/onboarding")).json() as OnboardingStatus;
+    expect((await status()).workspace?.repositories.sort()).toEqual(["apps/frontend", "backend"]);
+    expect((await status()).workspace?.directories).toEqual(["apps", "backend", "node_modules", "notes"]);
+    expect((await status()).workspace?.directoryCount).toBe(4);
+    await mkdir(join(projectDir, "new-repo", ".git"), { recursive: true });
+    expect((await status()).workspace?.repositories).toContain("new-repo");
+    expect((await status()).repository.checkedOut).toBe(false);
+  });
+
+  it("uses existing SSH credentials and clones into a subfolder without changing sibling files", async () => {
+    await mkdir(join(coleoDir, "ssh"), { recursive: true });
+    await writeFile(join(coleoDir, "ssh", "id_ed25519"), "unused-managed-key");
+    await mkdir(projectDir, { recursive: true });
+    await writeFile(join(projectDir, "notes.txt"), "keep me");
+    const calls: Array<{ command: string[]; env?: Record<string, string> }> = [];
+    const app = new Hono();
+    app.onError((error, c) => formatErrorResponse(c, error));
+    app.route("/api/onboarding", createOnboardingRoutes({ projectDir, coleoDir, runCommand: async (command, env) => {
+      calls.push({ command, env });
+      if (command[1] === "clone") await mkdir(join(command.at(-1)!, ".git"), { recursive: true });
+      return { exitCode: 0, stdout: "", stderr: "" };
+    } }));
+    const response = await app.request("http://localhost/api/onboarding/clone", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ repositoryUrl: "git@example.com:team/backend.git", authentication: "existing", destination: "backend" }) });
+    expect(response.status).toBe(200);
+    expect((await response.json() as OnboardingStatus).workspace?.repositories).toEqual(["backend"]);
+    expect(calls.find(call => call.command[1] === "clone")?.env?.GIT_SSH_COMMAND).toBeUndefined();
+    expect(calls.some(call => call.command.includes("core.sshCommand"))).toBe(false);
+    expect(await readFile(join(projectDir, "notes.txt"), "utf8")).toBe("keep me");
+    for (const destination of ["../outside", "/outside", ".", "nested/repo"]) {
+      const invalid = await app.request("http://localhost/api/onboarding/clone", { method: "POST",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ repositoryUrl: "https://example.com/repo.git", destination }) });
+      expect(invalid.status).toBe(400);
+    }
+  });
+
+  it("cleans only the failed clone subfolder and rejects symlink destinations", async () => {
+    await mkdir(projectDir, { recursive: true });
+    await writeFile(join(projectDir, "notes.txt"), "keep me");
+    const outside = join(rootDir, "outside");
+    await mkdir(outside);
+    await symlink(outside, join(projectDir, "linked"));
+    const app = new Hono();
+    app.onError((error, c) => formatErrorResponse(c, error));
+    app.route("/api/onboarding", createOnboardingRoutes({ projectDir, coleoDir, runCommand: async (command) => {
+      if (command[1] === "clone") await writeFile(join(command.at(-1)!, "partial"), "partial");
+      return { exitCode: 1, stdout: "", stderr: "network interrupted" };
+    } }));
+    for (const destination of ["new-repo", "linked"]) {
+      const response = await app.request("http://localhost/api/onboarding/clone", { method: "POST",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ repositoryUrl: "https://example.com/repo.git", destination }) });
+      expect(response.status).toBe(400);
+    }
+    expect(await readdir(join(projectDir, "new-repo"))).toEqual([]);
+    expect(await readdir(outside)).toEqual([]);
+    expect(await readFile(join(projectDir, "notes.txt"), "utf8")).toBe("keep me");
+  });
+
+  it("reports SSH identities visible to the Coleo process without generating a key", async () => {
+    const original = process.env.SSH_AUTH_SOCK;
+    process.env.SSH_AUTH_SOCK = "/fixture/agent.sock";
+    const commands: string[][] = [];
+    try {
+      const app = new Hono();
+      app.route("/api/onboarding", createOnboardingRoutes({ projectDir, coleoDir, runCommand: async command => {
+        commands.push(command);
+        return { exitCode: 0, stdout: "256 SHA256:fixture developer", stderr: "" };
+      } }));
+      const result = await (await app.request("http://localhost/api/onboarding")).json() as OnboardingStatus;
+      expect(result.ssh.agentAvailable).toBe(true);
+      expect(result.ssh.configured).toBe(false);
+      expect(commands).toEqual([["ssh-add", "-l"]]);
+    } finally { restoreEnv("SSH_AUTH_SOCK", original); }
   });
 
   it("reports repository metadata for an existing checkout", async () => {

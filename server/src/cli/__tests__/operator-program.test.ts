@@ -17,9 +17,9 @@ beforeEach(async () => {
 });
 afterEach(async () => { process.env = environment; await rm(directory, { recursive: true, force: true }); });
 test("import-safe programs expose only host operations", () => {
-  const expected = ["run", "start", "restart", "stop", "status", "logs", "configure", "doctor"];
+  const expected = ["run", "start", "restart", "stop", "status", "logs", "initialize", "configure", "doctor"];
   expect(createAgentProgram().commands.map(command => command.name())).toEqual(expected);
-  expect(createServerProgram().commands.map(command => command.name())).toEqual([...expected.slice(0, 6), "brain", ...expected.slice(6)]);
+  expect(createServerProgram().commands.map(command => command.name())).toEqual([...expected.slice(0, 7), "brain", ...expected.slice(7)]);
   expect(getCliEntrypoint("agent")).toBe(resolve(import.meta.dir, "../agent.ts"));
   expect(getCliEntrypoint("server")).toBe(resolve(import.meta.dir, "../server.ts"));
 });

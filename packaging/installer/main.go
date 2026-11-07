@@ -133,7 +133,7 @@ func parse(args []string) (Options, error) {
 	if o.Component == "cli" {
 		o.Component = "client"
 	}
-	if !contains([]string{"server", "agent", "client", "tui", "web", "macos"}, o.Component) {
+	if !contains([]string{"ops", "server", "agent", "client", "tui", "web", "macos"}, o.Component) {
 		return o, errors.New("unknown component")
 	}
 	if o.Version != "latest" && !versionPattern.MatchString(o.Version) {
@@ -163,7 +163,7 @@ func contains(xs []string, s string) bool {
 }
 func family(c string) string {
 	switch c {
-	case "server", "agent":
+	case "server", "agent", "ops":
 		return "operator"
 	case "client", "tui":
 		return "client"
@@ -310,7 +310,7 @@ func receipt(root string) (Receipt, error) {
 			return r, errors.New("receipt has no owners")
 		}
 		for _, role := range p.Roles {
-			if !contains([]string{"server", "agent", "client", "tui", "web", "macos"}, role) || (family(role) != name && !(name == "client" && role == "web")) {
+			if !contains([]string{"ops", "server", "agent", "client", "tui", "web", "macos"}, role) || (family(role) != name && !(name == "client" && role == "web")) {
 				return r, errors.New("unsafe receipt owner")
 			}
 		}
@@ -445,7 +445,7 @@ func publish(root, prefix string, old, next Receipt) error {
 }
 func run(args []string) error {
 	if contains(args, "--help") {
-		fmt.Println("installer [install|upgrade|uninstall] [server|agent|client|tui|web|macos] [--version VERSION] [--prefix PATH] [--manifest URL] [--api-url URL] [--dry-run]")
+		fmt.Println("installer [install|upgrade|uninstall] [ops|server|agent|client|tui|web|macos] [--version VERSION] [--prefix PATH] [--manifest URL] [--api-url URL] [--dry-run]")
 		return nil
 	}
 	o, err := parse(args)
@@ -577,6 +577,8 @@ func run(args []string) error {
 	}
 	fmt.Printf("PATH: export PATH=%s:\"$PATH\"\n", shellQuote(filepath.Join(o.Prefix, "bin")))
 	switch o.Component {
+	case "ops":
+		fmt.Println("Next: coleo-ops init (or coleo-ops doctor --wait)")
 	case "server":
 		fmt.Println("Next: coleo-server configure; coleo-server start (API only); coleo-server brain start")
 	case "agent":

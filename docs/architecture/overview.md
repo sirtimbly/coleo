@@ -121,6 +121,5 @@ The design does not forbid more advanced flows (temporary branches, stashes, or 
 ## Next Steps
 
 - [Components](./components) - Deep dive into Brain, Arms, Garden, Observatory
-- [Governance](./governance) - How arms will make decisions together (Phase 3)
-- [Distributed Architecture](./distributed) - Running gardens across multiple machines
-- [Implementation Phases](./phases) - Roadmap for building this system
+- [Server and clients](./client-server-separation) - Connecting clients and Arm Hosts
+- [Security and trust boundaries](./security) - Current authentication and execution boundaries

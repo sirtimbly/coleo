@@ -2,7 +2,7 @@
 
 This extends the [Messaging contract](./messaging-contract.md) and the
 [implementation plan](./implementation-plan.md) with the relationship semantics
-demonstrated in the [HTML report](/workbench-report.html).
+demonstrated in the repository-only [HTML report](../../research/workbench-report.html).
 
 ## Three independent pieces of state
 
