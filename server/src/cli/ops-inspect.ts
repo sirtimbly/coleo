@@ -18,17 +18,21 @@ export interface OpsSelection {
   role: "local" | "server" | "agent" | "client";
   roleOrigin: string;
   initialized: boolean;
+  connection?: string;
+  webExecutable?: string;
 }
 /** Shared effective target for status, doctor, and config inspection. No client stores are read. */
 export async function resolveOpsSelection(options: OpsOptions): Promise<OpsSelection> {
   const workspace = discoverOpsWorkspace(options);
   process.env.COLEO_DIR = workspace.directory;
   const path = join(workspace.directory, "target.json");
-  let target: { server?: string; role?: string } = {};
+  let target: { server?: string; role?: string; connection?: string; webExecutable?: string } = {};
   try {
     const data = JSON.parse(await readFile(path, "utf8"));
     if (!data || data.schemaVersion !== 1 || (data.server !== undefined && typeof data.server !== "string")
-      || (data.role !== undefined && !["local", "server", "agent", "client"].includes(data.role))) throw new Error();
+      || (data.role !== undefined && !["local", "server", "agent", "client"].includes(data.role))
+      || (data.connection !== undefined && typeof data.connection !== "string")
+      || (data.webExecutable !== undefined && typeof data.webExecutable !== "string")) throw new Error();
     target = data;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw new Error(`Invalid operations target: ${path}`);
@@ -55,6 +59,7 @@ export async function resolveOpsSelection(options: OpsOptions): Promise<OpsSelec
   const role = options.role || target.role || "local";
   if (!["local", "server", "agent", "client"].includes(role)) throw new Error("Choose role local, server, agent, or client");
   return { workspace, config, server: config.values.apiUrl, serverOrigin: config.origins.apiUrl,
+    connection: target.connection, webExecutable: target.webExecutable,
     role: role as OpsSelection["role"], roleOrigin: options.role ? "flag:--role" : target.role ? `${path}:role` : "default",
     initialized: ["operator.json", "config.toml", "target.json"].some(name => existsSync(join(workspace.directory, name))) };
 }

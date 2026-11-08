@@ -20,7 +20,7 @@ API-only operations target the selected server.
   --profile ID              Named-view query profile, not a server connection
   --catalog PATH            Module catalog for domain commands
   --help | --version         Available offline
-Precedence: flags > environment > saved connection > defaults.
+Precedence: flags > environment > project .env > saved connection > defaults.
 """
 
 

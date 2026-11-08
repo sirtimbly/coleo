@@ -3,7 +3,8 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createAgentProgram, createServerProgram } from "../operator-program";
-import { SETTINGS, ensureAgentId, resolveOperatorConfig, saveOperatorConfig } from "../operator-config";
+import { SETTINGS, applyOperatorEnvironment, ensureAgentId, resolveOperatorConfig, saveOperatorConfig } from "../operator-config";
+import { getServerWorkspaceRoot } from "../../api/workspace-access";
 import { getCliEntrypoint } from "../entrypoint";
 
 let directory: string;
@@ -49,6 +50,19 @@ test("flags > environment > env-file > saved > defaults, with provenance", async
   config = await resolveOperatorConfig();
   expect(config.values.port).toBe("8125"); expect(config.sources.port).toBe("environment");
   expect((await stat(join(directory, "operator.json"))).mode & 0o777).toBe(0o600);
+});
+test("server workspace uses saved operator configuration and explicit project environment", async () => {
+  delete process.env.COLEO_PROJECT_DIR;
+  delete process.env.COLEO_REMOTE_WORKDIR;
+  const workspace = join(directory, "ge");
+  await saveOperatorConfig({ workspace });
+  applyOperatorEnvironment(await resolveOperatorConfig());
+  expect(getServerWorkspaceRoot()).toBe(workspace);
+  process.env.COLEO_PROJECT_DIR = join(directory, "project-override");
+  expect(getServerWorkspaceRoot()).toBe(process.env.COLEO_PROJECT_DIR!);
+  delete process.env.COLEO_PROJECT_DIR;
+  process.env.COLEO_REMOTE_WORKDIR = "/remote/ge";
+  expect(getServerWorkspaceRoot()).toBe("/remote/ge");
 });
 test("invalid save preserves configuration and generated agent identity is stable", async () => {
   const first = await resolveOperatorConfig(); await ensureAgentId(first);

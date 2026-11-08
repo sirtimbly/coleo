@@ -68,6 +68,7 @@ class ArmHostWorkspaceAccess implements WorkspaceAccess {
 export function getServerWorkspaceRoot(): string {
 	return process.env.COLEO_PROJECT_DIR
 		|| process.env.COLEO_REMOTE_WORKDIR
+		|| process.env.COLEO_AGENT_WORKDIR
 		|| process.cwd();
 }
 

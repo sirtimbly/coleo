@@ -8,6 +8,7 @@ from tempfile import NamedTemporaryFile
 from urllib.parse import urlsplit
 
 from .module_catalog import config_directory
+from .project_env import project_environment
 
 DEFAULT_SERVER = "http://127.0.0.1:8080"
 CONNECTION_COMMANDS = {"connect", "connections", "use", "doctor"}
@@ -100,15 +101,19 @@ class Connections:
 
     def resolve(self, connection=None, server=None, environ=None):
         env = os.environ if environ is None else environ
-        name = connection if connection is not None else env.get("COLEO_CONNECTION", self.data["active"])
+        project = project_environment() if environ is None else {}
+        # An explicit target must never inherit another project's endpoint/key.
+        if connection is not None or server is not None or env.get("COLEO_CONNECTION") or env.get("COLEO_API_URL"):
+            project = {}
+        name = connection if connection is not None else env.get("COLEO_CONNECTION", project.get("COLEO_CONNECTION", self.data["active"]))
         if name is not None and name not in self.data["connections"]:
             raise ValueError("Unknown connection; run coleo-client connections or connect URL --name NAME")
         saved = self.data["connections"].get(name, {})
-        url = server if server is not None else env.get("COLEO_API_URL", saved.get("url", DEFAULT_SERVER))
-        key = env.get("COLEO_API_KEY", saved.get("key", ""))
-        sources = dict(connection="flag" if connection is not None else "environment" if "COLEO_CONNECTION" in env else "saved" if name else "default",
-                       server="flag" if server is not None else "environment" if "COLEO_API_URL" in env else "saved" if "url" in saved else "default",
-                       credential="environment" if "COLEO_API_KEY" in env else "saved" if "key" in saved else "default")
+        url = server if server is not None else env.get("COLEO_API_URL", project.get("COLEO_API_URL", saved.get("url", DEFAULT_SERVER)))
+        key = env.get("COLEO_API_KEY", project.get("COLEO_API_KEY", saved.get("key", "")))
+        sources = dict(connection="flag" if connection is not None else "environment" if "COLEO_CONNECTION" in env else "env-file" if "COLEO_CONNECTION" in project else "saved" if name else "default",
+                       server="flag" if server is not None else "environment" if "COLEO_API_URL" in env else "env-file" if "COLEO_API_URL" in project else "saved" if "url" in saved else "default",
+                       credential="environment" if "COLEO_API_KEY" in env else "env-file" if "COLEO_API_KEY" in project else "saved" if "key" in saved else "default")
         return Connection(validate_url(url), key, name, sources)
 
 

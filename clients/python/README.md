@@ -97,7 +97,7 @@ coleo-client status-reports list
 coleo-client web  # Requires the separately installed web component
 ```
 
-Connection values resolve as flags → exported environment → saved connection →
+Connection values resolve as flags → exported environment → project `.env` → saved connection →
 defaults. `--server URL` overrides the URL; `COLEO_CONNECTION` selects a saved
 connection and `COLEO_API_URL`/`COLEO_API_KEY` override its fields. `--profile`
 continues to mean an Inbox query profile. Saved keys are stored in owner-only

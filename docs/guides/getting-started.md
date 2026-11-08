@@ -76,7 +76,7 @@ source without exposing credentials.
 
 ## Give Coleo its first task
 
-Open your selected client, review your project's direction and plan, and follow
+Open your selected client (I strongly recommend starting with the Web UI), review your project's direction and plan, and follow
 the [Task workflow](./task-workflow). The [Planning gate](./planning-gate) explains
 why agent work waits until project planning succeeds.
 

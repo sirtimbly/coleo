@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { hostname } from "node:os";
 import { getColeoDir } from "../config";
-import { loadEnvFile } from "../config/env";
+import { getEnvFileOrigin, loadEnvFile } from "../config/env";
 
 export const SETTINGS = {
   dbPath: ["COLEO_DB_PATH", ""],
@@ -85,13 +85,13 @@ export async function resolveOperatorConfig(flags: Record<string, unknown> = {},
     const envName = key === "apiKey" && !(source === "environment" ? exported[env] : process.env[env]) ? "COLEO_API_TOKEN" : env;
     origins[key] = source === "flag" ? `flag:--${key.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)}`
       : source === "environment" ? `environment:${envName}`
-      : source === "env-file" ? `${envPath}:${envName}`
+      : source === "env-file" ? `${getEnvFileOrigin(envName) ?? envPath}:${envName}`
       : source === "saved" ? `${operatorConfigPath()}:values.${key}` : "default";
   }
   values.workspace = resolve(values.workspace || process.env.COLEO_PROJECT_DIR || process.cwd());
   if (sources.workspace === "default" && process.env.COLEO_PROJECT_DIR) {
     sources.workspace = exported.COLEO_PROJECT_DIR ? "environment" : "env-file";
-    origins.workspace = exported.COLEO_PROJECT_DIR ? "environment:COLEO_PROJECT_DIR" : `${envPath}:COLEO_PROJECT_DIR`;
+    origins.workspace = exported.COLEO_PROJECT_DIR ? "environment:COLEO_PROJECT_DIR" : `${getEnvFileOrigin("COLEO_PROJECT_DIR") ?? envPath}:COLEO_PROJECT_DIR`;
   }
   // Preserve the existing host/port environment shorthand for NATS.
   if (sources.natsUrl === "default") {

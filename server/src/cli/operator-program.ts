@@ -9,6 +9,7 @@ import { startService, stopService, restartService, getServiceStatus, getService
 import { resolveOperatorConfig, redactedConfig, readOperatorConfig, saveOperatorConfig, ensureAgentId, applyOperatorEnvironment } from "./operator-config";
 import { operatorDoctor } from "./operator-doctor";
 import { initializeSetupRuntime } from "./setup-runtime";
+import { discoverOpsWorkspace } from "./ops-workspace";
 import type { Setting, ResolvedOperatorConfig, OperatorValues } from "./operator-config";
 
 const fields = {
@@ -168,7 +169,7 @@ function createOperatorProgram(component: "server" | "agent"): Command {
     .option("--json", "One JSON object for bounded operations");
   program.hook("preAction", (_root, command) => {
     const dir = command.optsWithGlobals().dir;
-    process.env.COLEO_DIR = resolve(dir || getColeoDir());
+    process.env.COLEO_DIR = discoverOpsWorkspace({ dir }).directory;
   });
   registerLifecycle(program, component);
   const initialize = program.command("initialize").description("Create missing runtime assets without replacing existing configuration or templates");

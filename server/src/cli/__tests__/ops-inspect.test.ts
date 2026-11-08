@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, mkdir, writeFile, rm, readdir, realpath } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm, readdir, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { discoverOpsWorkspace } from "../ops-workspace";
@@ -33,6 +33,14 @@ test("discovery chooses the nearest workspace and honors explicit selections", a
   expect(discoverOpsWorkspace({}, nested, { COLEO_DIR: runtime }).origin).toBe("environment:COLEO_DIR");
   expect(discoverOpsWorkspace({ workspace: nested }, nested, {}).directory).toBe(join(nested, ".coleo"));
 });
+test("root env points nested commands to a runtime outside the repository", async () => {
+  const { root, nested } = await fixture();
+  const external = join(root, "separate runtime");
+  await mkdir(external);
+  await writeFile(join(root, ".env"), `COLEO_DIR="${external}"\n`);
+  expect(discoverOpsWorkspace({}, nested, {}).directory).toBe(external);
+  expect(discoverOpsWorkspace({}, nested, {}).workspace).toBe(root);
+});
 test("init from a nested directory reuses its enclosing workspace", async () => {
   const { root, runtime, nested } = await fixture();
   const result = await run(nested, ["init", "--dry-run", "--json", "--clients", "cli"]);
@@ -40,6 +48,29 @@ test("init from a nested directory reuses its enclosing workspace", async () => 
   expect(JSON.parse(result.output).checks[0].detail).toContain(`workspace=${root};`);
   expect(JSON.parse(result.output).checks[0].detail).toContain(`runtime=${runtime};`);
   expect(await readdir(runtime)).toEqual([]);
+});
+test("doctor repairs an existing project's launch defaults and operators discover them from subdirectories", async () => {
+  const { root, runtime, nested } = await fixture();
+  const server = Bun.serve({ port: 0, fetch() {
+    return Response.json({ schemaVersion: 1, generation: "fixture", ok: true,
+      checks: [{ name: "database", status: "pass", checkedAt: new Date().toISOString(), detail: "Healthy" }] });
+  } });
+  try {
+    await writeFile(join(runtime, "target.json"), JSON.stringify({ schemaVersion: 1, role: "client",
+      server: server.url.origin, connection: "ge", webExecutable: join(runtime, "bin/coleo-web") }));
+    const result = await run(nested, ["doctor", "--json"]);
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.output).checks.find((check: { name: string }) => check.name === "project-defaults").detail).toContain("Repaired");
+    expect(await readFile(join(root, ".env"), "utf8")).toContain('COLEO_CONNECTION="ge"');
+    expect(await readFile(join(runtime, ".env"), "utf8")).toContain(`COLEO_PROJECT_DIR="${root}"`);
+    const child = Bun.spawn([process.execPath, resolve(import.meta.dir, "../server.ts"), "status", "--json"], {
+      cwd: nested, env: { PATH: process.env.PATH }, stdout: "pipe", stderr: "pipe",
+    });
+    expect(await child.exited).toBe(0);
+    expect(JSON.parse(await new Response(child.stdout).text()).runtimeDirectory).toBe(runtime);
+    const second = await run(nested, ["doctor", "--json"]);
+    expect(JSON.parse(second.output).checks.find((check: { name: string }) => check.name === "project-defaults").detail).toBe("Project launch defaults are configured");
+  } finally { await server.stop(true); }
 });
 test("init retains all client selections from an existing setup journal", async () => {
   const { root, runtime, nested } = await fixture();
@@ -49,6 +80,23 @@ test("init retains all client selections from an existing setup journal", async 
   const result = await run(nested, ["init", "--dry-run", "--json"]);
   expect(result.code).toBe(0);
   expect(JSON.parse(result.output).checks[0].detail).toContain("clients=cli,tui,web;");
+});
+test("init persists launch defaults before completing client setup", async () => {
+  const { root, runtime, nested } = await fixture();
+  const bin = join(root, "bin");
+  await mkdir(bin);
+  await writeFile(join(bin, "coleo-client"), '#!/bin/sh\nif [ "$1" = connections ]; then echo \'{"connections":[]}\'; fi\nexit 0\n', { mode: 0o755 });
+  const server = Bun.serve({ port: 0, fetch() {
+    return Response.json({ schemaVersion: 1, generation: "fixture", ok: true,
+      checks: [{ name: "database", status: "pass", checkedAt: new Date().toISOString(), detail: "Healthy" }] });
+  } });
+  try {
+    const result = await run(nested, ["init", "--non-interactive", "--role", "client", "--server", server.url.origin,
+      "--connection", "ge", "--clients", "cli", "--json"], { PATH: `${bin}:${process.env.PATH}`, COLEO_API_KEY: "fixture-key" });
+    expect(result.code).toBe(0);
+    expect(await readFile(join(root, ".env"), "utf8")).toContain(`COLEO_DIR="${runtime}"`);
+    expect(await readFile(join(runtime, ".env"), "utf8")).toContain('COLEO_CONNECTION="ge"');
+  } finally { await server.stop(true); }
 });
 test("config shows provenance for flags, exported env, env files, saved values and defaults without credentials", async () => {
   const { root, runtime, nested } = await fixture();

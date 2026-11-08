@@ -8,6 +8,7 @@ import { setup, reportHealth, SetupFailure } from "./ops-setup";
 import { choose } from "./ops-prompts";
 import { formatSetupFailure, formatSetupSuccess, reportHealthProgress } from "./ops-output";
 import { resolveOpsSelection, inspectOpsConfig, inspectOpsStatus, formatOpsStatus } from "./ops-inspect";
+import { ensureProjectDefaults } from "./project-defaults";
 import type { OpsOptions, SetupResult } from "./ops-setup";
 import type { OpsHealth } from "./ops-health";
 
@@ -20,6 +21,14 @@ async function doctor(options: OpsOptions, signal: AbortSignal): Promise<OpsHeal
   const { role, config } = selection;
   if (!options.json) console.error(`Workspace: ${selection.workspace.workspace}\nRuntime: ${selection.workspace.directory}\nServer: ${selection.server} (${selection.serverOrigin})`);
   const localChecks: OpsHealth["checks"] = [];
+  if (selection.initialized) {
+    const result = await ensureProjectDefaults({ workspace: selection.workspace.workspace,
+      directory: selection.workspace.directory, connection: selection.connection, webExecutable: selection.webExecutable });
+    localChecks.push({ name: "project-defaults", status: result.conflicts.length ? "fail" : "pass",
+      checkedAt: new Date().toISOString(), detail: result.conflicts.length ? result.conflicts.join("; ")
+        : result.changed.length ? `Repaired ${result.changed.join(", ")}. Restart the API server to apply project paths.`
+          : "Project launch defaults are configured" });
+  }
   for (const component of (role === "local" ? ["server", "agent"] : role === "server" || role === "agent" ? [role] : []) as Array<"server" | "agent">) {
     const result = await operatorDoctor(component, { apiUrl: selection.server, workspace: selection.workspace.workspace }) as { checks: Array<{ name: string; ok: boolean; detail: string }> };
     process.exitCode = 0;
@@ -48,7 +57,7 @@ export function createOpsProgram(signal: AbortSignal): Command {
     process.exitCode = result.ok ? 0 : 1;
   };
   const runDoctor = async (options: OpsOptions) => emit(options, await doctor(options, signal));
-  program.command("doctor").description("Read-only component and central API readiness diagnostics").action(async (_options, command) => {
+  program.command("doctor").description("Repair missing project launch defaults and diagnose service health").action(async (_options, command) => {
     if (program.opts().doctor) throw new Error("Use doctor or --doctor, not both");
     await runDoctor(command.optsWithGlobals());
   });

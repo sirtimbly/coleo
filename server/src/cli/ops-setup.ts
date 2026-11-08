@@ -12,6 +12,7 @@ import { prepareCheckoutWeb, shellQuote } from "./ops-web";
 import { planLocalPorts, nextAvailablePort } from "./ops-ports";
 import { instructionPanel, instructionCommands, setupStep } from "./ops-style";
 import { reportHealthProgress } from "./ops-output";
+import { ensureProjectDefaults } from "./project-defaults";
 import type { OpsHealth } from "./ops-health";
 
 export { ask } from "./ops-prompts";
@@ -330,6 +331,10 @@ export async function setup(options: OpsOptions, signal: AbortSignal): Promise<S
     await step("connection", async () => {
       await saveJson(join(directory, "target.json"), { schemaVersion: 1, server: input.server, role, clients, connection: input.connection, webExecutable });
     });
+    await step("project_defaults", async () => {
+      const result = await ensureProjectDefaults({ workspace: input.workspace, directory, connection: input.connection, webExecutable });
+      if (result.conflicts.length) throw new Error(result.conflicts.join("; "));
+    });
     if (role === "local") {
       await step("api", async () => {
         if (!(await getServiceStatus("server")).running) { await operator("server", ["start"]); startedServices.push("API"); }
@@ -386,7 +391,7 @@ export async function setup(options: OpsOptions, signal: AbortSignal): Promise<S
         "", "Return here to confirm when the workspace has loaded.",
       ]) + "\n");
       if (client === "web") process.stderr.write(instructionCommands("Run in another terminal:", [
-        `${webExecutable ? `COLEO_WEB_EXECUTABLE=${shellQuote(webExecutable)} ` : ""}coleo-client --connection ${shellQuote(input.connection)} web --port ${webPort}`,
+        `cd ${shellQuote(input.workspace)} && coleo-client web --port ${webPort}`,
       ]));
       if (!interactive || !await confirmAction(`Have you connected and loaded the workspace in the ${client} client?`, false, signal)) {
         throw new Error(`${client} handoff pending. Complete its connection, then resume interactively.`);
