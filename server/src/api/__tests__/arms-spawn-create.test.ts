@@ -586,6 +586,35 @@ describe("arms spawn route auto-creation", () => {
     expect(JSON.parse(deferredConfig.config).deferredInitialPrompt).toContain("Review the deployment constraints.");
   });
 
+  it("restarts a stopped arm after Stop cleared its previous host mapping", async () => {
+    const now = new Date().toISOString();
+    db.run(`INSERT INTO arms (id, name, domain, harness, status, context_budget, current_context_used,
+      created_at, updated_at, provider, model, workdir, config)
+      VALUES (?, ?, 'development', 'opencode-api', 'stopped', 100000, 0, ?, ?, 'opencode', 'gpt-5.1-codex-mini', ?, '{}')`,
+      ["stopped-arm", "Stopped Arm", now, now, tempDir]);
+    const host = { agentId: "available-host", hostname: "test-host", capabilities: ["opencode-api"], maxArms: 10 };
+    let spawned = 0;
+    const mockArmClient = {
+      getAgent: (id: string) => id === host.agentId ? host : undefined,
+      getAgentForArm: () => undefined,
+      getAgents: () => [host],
+      findBestAgent: () => host,
+      spawnArm: async (agentId: string, armId: string) => {
+        expect(agentId).toBe(host.agentId); expect(armId).toBe("stopped-arm"); spawned++;
+        return { success: true, data: { pid: 6161, port: 19311, sessionId: "ses_restarted" } };
+      },
+    };
+    serverModule.setArmClient(mockArmClient as never);
+    const response = await app.request("http://coleo.test/api/arms/stopped-arm/recover", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ allowLocalFallback: false }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ recoveryMode: "restarted", distributed: true, agentId: host.agentId });
+    expect(spawned).toBe(1);
+    expect(db.query("SELECT status, agent_id FROM arms WHERE id = ?").get("stopped-arm"))
+      .toEqual({ status: "idle", agent_id: host.agentId });
+  });
+
   it("reattaches to an existing distributed runtime when recover is requested", async () => {
     const now = new Date().toISOString();
     db.run(

@@ -515,6 +515,12 @@ class ApiClient {
   }
 
   // Arms
+  async stopAllArms() {
+    return this.request<{ stopped: number; releasedClaims: number; failed: Array<{ id: string; error: string }> }>(
+      '/arms/stop-all', { method: 'POST', body: '{}' },
+    );
+  }
+
   async listArms() {
     return this.request<{ arms: Arm[] }>('/arms');
   }

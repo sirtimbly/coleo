@@ -20,6 +20,7 @@ import { getArmClient } from "../arm-client-registry";
 import { generateSystemPrompt } from "../../arm/prompts";
 import { eventStore } from "../../nats/jetstream";
 import { releaseClaimsForArm } from "../claim-cleanup";
+import { stopArm } from "../stop-arm";
 import { refreshOpenCodeProvidersCache } from "./opencode";
 import { getCliEntrypoint } from "../../cli/entrypoint";
 import { hostname } from "os";
@@ -1009,6 +1010,23 @@ export async function listArmTemplateSummaries(): Promise<ArmTemplateSummary[]> 
 
 export function createArmsRoutes() {
   const app = new Hono<ArmsContext>();
+
+  // Concurrent stops: one unreachable host must not prevent other arms stopping.
+  app.post("/stop-all", async (c) => {
+    const db = c.get("db");
+    const arms = db.query("SELECT id FROM arms").all() as Array<{ id: string }>;
+    const results = await Promise.all(arms.map(async ({ id }) => {
+      try {
+        const result = await stopArm(db, id);
+        logActivity(db, id, "killed", undefined, { ...result, source: "stop-all" });
+        return { ...result, stopped: true as const };
+      }
+      catch (error) { return { id, stopped: false as const, error: error instanceof Error ? error.message : String(error) }; }
+    }));
+    const failed = results.filter(result => !result.stopped);
+    return c.json({ stopped: results.length - failed.length, failed, results,
+      releasedClaims: results.reduce((count, result) => count + (result.stopped ? result.releasedClaims : 0), 0) });
+  });
 
   function normalizeArmMessage(message: unknown): unknown {
     if (!message || typeof message !== "object") {
@@ -2242,9 +2260,8 @@ export function createArmsRoutes() {
 
     if (daemonManagedHarness && !localFallbackEnabled) {
       if (!armClient) {
-        throw HttpError.internal(
-          `Harness '${row.harness}' requires the arm agent daemon. Distributed arm management is unavailable.`,
-        );
+        throw new HttpError(503,
+          `The arm-host connection is unavailable for '${row.harness}'. Reconnect the arm agent daemon and retry.`);
       }
       throw HttpError.badRequest(
         `No agent available for harness '${row.harness}'. Start an arm agent daemon with 'coleo agent start'.`,
@@ -2484,7 +2501,10 @@ export function createArmsRoutes() {
         if (runtimeSummary.state === "hung") {
           await armClient.killArm(id).catch(() => undefined);
         }
+      }
 
+        // A normal stop clears the old host mapping. Restart must still select
+        // an available agent even when there is no previous runtime to reattach.
         const restartAgentId = findReachableAgentForHarness(row.harness, {
           preferredAgentId: body.agentId || distributedAgentId,
           preferredHost: row.host,
@@ -2549,13 +2569,11 @@ export function createArmsRoutes() {
             model,
           });
         }
-      }
+    }
 
-      if (!localFallbackEnabled) {
-        throw HttpError.internal(
-          `Harness '${row.harness}' requires the arm agent daemon. Distributed arm management is unavailable.`,
-        );
-      }
+    if (daemonManagedHarness && !localFallbackEnabled) {
+      throw new HttpError(503,
+        `No available arm host supports '${row.harness}'. Start or reconnect an arm agent daemon, then retry Restart.`);
     }
 
     const manager = getGlobalHarnessManager();
@@ -2707,66 +2725,9 @@ export function createArmsRoutes() {
       throw new HttpError(409, "Arm changed since evaluation");
     }
 
-    // Check if arm exists and get agent info
-    const row = db.query("SELECT id, agent_id FROM arms WHERE id = ?").get(id) as { id: string; agent_id: string | null } | null;
-    if (!row) {
-      throw HttpError.notFound(`Arm not found: ${id}`);
-    }
-
-    // If arm is on an agent, kill via ArmClient
-    if (row.agent_id) {
-      const armClient = getArmClient();
-      if (armClient) {
-        try {
-          const response = await armClient.killArm(id);
-          if (!response.success) {
-            throw new Error(response.error || "Agent kill failed");
-          }
-          
-          // Update database
-          const now = new Date().toISOString();
-          db.run("UPDATE arms SET status = 'stopped', planning_blocked = 0, pid = NULL, port = NULL, session_id = NULL, agent_id = NULL, host = NULL, updated_at = ? WHERE id = ?", [now, id]);
-          const releasedClaims = releaseClaimsForArm(db, id, now);
-
-          // Log activity
-          logActivity(db, id, "killed", undefined, { distributed: true, agentId: row.agent_id, releasedClaims });
-
-          // Broadcast arm killed
-          broadcast("arms", "arm.killed", { id, status: "stopped", distributed: true });
-
-          return c.json({ killed: true, distributed: true });
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          // Still try to clean up DB state even if agent kill fails
-          const now = new Date().toISOString();
-          db.run("UPDATE arms SET status = 'stopped', planning_blocked = 0, pid = NULL, port = NULL, session_id = NULL, agent_id = NULL, host = NULL, updated_at = ? WHERE id = ?", [now, id]);
-          releaseClaimsForArm(db, id, now);
-          console.log(`[kill] Agent kill failed, cleaned up DB state: ${message}`);
-        }
-      }
-    }
-
-    // Kill via local harness manager
-    const manager = getGlobalHarnessManager();
-    if (!manager) {
-      throw HttpError.internal("Harness manager not initialized");
-    }
-
-    // Kill the session
-    await manager.kill(id);
-
-    // Update database
-    const now = new Date().toISOString();
-    db.run("UPDATE arms SET status = 'stopped', planning_blocked = 0, pid = NULL, port = NULL, updated_at = ? WHERE id = ?", [now, id]);
-    const releasedClaims = releaseClaimsForArm(db, id, now);
-
-    // Log activity
-    logActivity(db, id, "killed", undefined, { releasedClaims });
-
-    // Broadcast arm killed
-    broadcast("arms", "arm.killed", { id, status: "stopped" });
-
-    return c.json({ killed: true });
+    const result = await stopArm(db, id);
+    logActivity(db, id, "killed", undefined, { ...result });
+    return c.json(result);
   });
 
   /**

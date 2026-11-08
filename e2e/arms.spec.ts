@@ -32,6 +32,64 @@ const activeArm = {
 	updatedAt: "2026-08-02T12:00:00.000Z",
 };
 
+test("stops an individual arm without deleting its profile", async ({ page }) => {
+  await installMockApi(page, { arms: [activeArm] });
+  let stopped = false;
+  await page.route("**/api/arms/arm-octavia/kill", async route => {
+    expect(route.request().method()).toBe("POST");
+    stopped = true;
+    await route.fulfill({ json: { killed: true, releasedClaims: 2 } });
+  });
+  await page.goto("/arms");
+  page.once("dialog", dialog => dialog.accept());
+  await page.getByRole("button", { name: "Stop Octavia", exact: true }).click();
+  await expect.poll(() => stopped).toBe(true);
+  await expect(page.getByText("Octavia stopped. File claims released; profile kept.")).toBeVisible();
+});
+
+test("global stop sits next to Spawn and reports unconfirmed stops", async ({ page }) => {
+  await installMockApi(page, { arms: [activeArm], layoutMode: "golden" });
+  let requests = 0;
+  await page.route("**/api/arms/stop-all", async route => {
+    requests++;
+    await route.fulfill({ json: { stopped: 1, releasedClaims: 2, failed: [{ id: "offline-arm", error: "Host unavailable" }] } });
+  });
+  await page.goto("/arms");
+  const toolbar = page.getByRole("toolbar", { name: "Workspace actions" });
+  await expect(toolbar.getByRole("button", { name: "Spawn", exact: true })).toBeVisible();
+  const stop = toolbar.getByRole("button", { name: "Stop all arms", exact: true });
+  await expect(stop).toBeVisible();
+  page.once("dialog", dialog => dialog.dismiss());
+  await stop.click();
+  expect(requests).toBe(0);
+  page.once("dialog", dialog => dialog.accept());
+  await stop.click();
+  await expect.poll(() => requests).toBe(1);
+  await expect(page.getByText("Some arms could not stop")).toBeVisible();
+  await expect(page.getByText(/Claims for unconfirmed arms are retained/)).toBeVisible();
+});
+
+test("global stop counts running arms and disables after the last arm stops", async ({ page }) => {
+  await installMockApi(page, { arms: [activeArm], layoutMode: "golden" });
+  let stopped = false;
+  await page.route("**/api/arms", route => route.fulfill({ json: {
+    arms: [{ ...activeArm, status: stopped ? "stopped" : "busy" }],
+  } }));
+  await page.route("**/api/arms/stop-all", async route => {
+    stopped = true;
+    await route.fulfill({ json: { stopped: 1, releasedClaims: 0, failed: [] } });
+  });
+  await page.goto("/arms");
+  const stop = page.getByRole("toolbar", { name: "Workspace actions" })
+    .getByRole("button", { name: "Stop all arms", exact: true });
+  await expect(stop).toContainText("1 running");
+  await expect(stop).toBeEnabled();
+  page.once("dialog", dialog => dialog.accept());
+  await stop.click();
+  await expect(stop).toContainText("0 running");
+  await expect(stop).toBeDisabled();
+});
+
 test("Settings only offers the supported harness when old defaults select a legacy harness", async ({ page }) => {
 	await installMockApi(page);
 	await page.route("**/api/workbench/profiles", (route) => route.fulfill({ json: { profiles: [] } }));

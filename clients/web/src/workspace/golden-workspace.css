@@ -314,6 +314,15 @@
   white-space: nowrap;
 }
 
+.golden-dock-button--stop {
+  color: var(--danger);
+}
+
+.golden-dock-button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 .golden-dock-button--primary {
   background: var(--accent);
   border-color: color-mix(in oklch, var(--accent) 72%, var(--border) 28%);
