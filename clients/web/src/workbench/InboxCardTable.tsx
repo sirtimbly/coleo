@@ -168,6 +168,7 @@ export function InboxCardTable({
 	fields?: readonly string[];
 }) {
 	const containerRef = useRef<HTMLDivElement>(null);
+	const openedAt = useRef(Date.now());
 	const initialServerSort = useRef(serverSort);
 	const initialFields = useRef(fields);
 	const tableRef = useRef<Tabulator | null>(null);
@@ -397,7 +398,31 @@ export function InboxCardTable({
 			let ready = false;
 			let syncing = false;
 			let pending = false;
+			let hasSynced = false;
 			let applied = new Map([...runtimeRef.current.itemsById.values()].map((item) => [item.id, projectRow(item)]));
+			const animateRows = async (ids: string[], phase: "added" | "removed") => {
+				if (document.hidden || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+				// Tabulator resolves addData before its virtual rows are attached.
+				if (phase === "added") await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+				if (disposed) return;
+				await Promise.all(ids.map(async id => {
+					const row = instance.getRow(id);
+					if (!row) return;
+					const element = row.getElement();
+					const bounds = element.getBoundingClientRect();
+					if (!element.isConnected || bounds.bottom <= 0 || bounds.top >= window.innerHeight) return;
+					element.classList.remove("coleo-inbox-row-added", "coleo-inbox-row-removed");
+					const className = `coleo-inbox-row-${phase}`;
+					element.classList.add(className);
+					try {
+						// Virtual-row redraws can cancel an entrance before its first paint.
+						// Keep its class for the bounded feedback window across those redraws.
+						if (phase === "added") await new Promise(resolve => setTimeout(resolve, 650));
+						else await Promise.allSettled(element.getAnimations().map(animation => animation.finished));
+					}
+					finally { element.classList.remove(className); }
+				}));
+			};
 			const sync = async () => {
 				if (!ready || disposed) return;
 				if (syncing) { pending = true; return; }
@@ -407,6 +432,8 @@ export function InboxCardTable({
 						pending = false;
 						const next = new Map([...runtimeRef.current.itemsById.values()].map((item) => [item.id, projectRow(item)]));
 						const removed = [...applied.keys()].filter((id) => !next.has(id));
+						if (hasSynced && removed.length) await animateRows(removed, "removed");
+						if (disposed) return;
 						for (const [element, mounted] of mountedCards) {
 							if (!next.has(mounted.id)) unmountCard(element);
 						}
@@ -431,7 +458,12 @@ export function InboxCardTable({
 						if (disposed) return;
 						if (added.length) await instance.addData(added);
 						if (disposed) return;
+						// Initial fetches and paging can introduce old rows after mount.
+						// Only genuinely new arrivals get the live-update highlight.
+						const arrivals = added.filter(row => row.timestampValue >= openedAt.current);
+						if (hasSynced && arrivals.length) void animateRows(arrivals.map(row => row.id), "added");
 						applied = next;
+						hasSynced = true;
 						for (const id of expandedIdsRef.current) {
 							const row = instance.getRow(id);
 							if (row) renderExpandedCard(row);

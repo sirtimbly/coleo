@@ -1,7 +1,7 @@
 .coleo-inbox-card-table {
 	--inbox-row-height: 54px;
 	--inbox-header-background: color-mix(in srgb, var(--color-surface-secondary) 76%, var(--color-background));
-	--inbox-header-background-hover: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-secondary));
+	--inbox-header-background-hover: color-mix(in srgb, #333 8%, var(--inbox-header-background));
 	--inbox-header-border: var(--color-border);
 	--inbox-header-foreground: var(--color-foreground);
 	--inbox-header-muted: var(--color-muted-foreground);
@@ -224,4 +224,39 @@
 	.coleo-inbox-expand-icon {
 		transition: transform 120ms ease;
 	}
+}
+/* Explain live collection changes; initial rows do not animate. */
+@keyframes coleo-inbox-row-added {
+  from { background-color: color-mix(in srgb, var(--color-accent) 12%, var(--color-background)); }
+  to { background-color: var(--color-background); }
+}
+
+@keyframes coleo-inbox-row-removed {
+  from { background-color: var(--color-background); }
+  to { background-color: var(--color-background); }
+}
+
+@keyframes coleo-inbox-row-content-removed {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.coleo-inbox-card-table .tabulator-row.coleo-inbox-row-added {
+  animation: coleo-inbox-row-added 600ms ease-out;
+}
+
+.coleo-inbox-card-table .tabulator-row.coleo-inbox-row-removed {
+  animation: coleo-inbox-row-removed 160ms ease-in forwards;
+  pointer-events: none;
+}
+
+/* Keep the row surface opaque: fading it exposes Tabulator's backing layer. */
+.coleo-inbox-card-table .tabulator-row.coleo-inbox-row-removed > * {
+  animation: coleo-inbox-row-content-removed 160ms ease-in forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coleo-inbox-card-table .tabulator-row.coleo-inbox-row-added,
+  .coleo-inbox-card-table .tabulator-row.coleo-inbox-row-removed,
+  .coleo-inbox-card-table .tabulator-row.coleo-inbox-row-removed > * { animation: none; }
 }

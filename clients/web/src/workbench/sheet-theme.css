@@ -35,10 +35,16 @@
 	font-weight: 600;
 }
 
-.coleo-tabulator-resource-sheet .tabulator-header .tabulator-col,
-.coleo-tabulator-resource-sheet .tabulator-header .tabulator-col.tabulator-sortable:hover {
+.coleo-tabulator-resource-sheet .tabulator-header .tabulator-col {
 	border-color: var(--tabulator-border-color);
 	background: var(--tabulator-header);
+}
+
+@media (hover: hover) and (pointer: fine) {
+	.coleo-tabulator-resource-sheet .tabulator-header .tabulator-col.tabulator-sortable.tabulator-col-sorter-element:hover {
+		background: color-mix(in srgb, #333 8%, var(--tabulator-header));
+		color: var(--foreground);
+	}
 }
 
 .coleo-tabulator-resource-sheet .tabulator-header .tabulator-col-content {
