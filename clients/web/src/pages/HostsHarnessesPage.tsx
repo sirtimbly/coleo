@@ -472,7 +472,7 @@ export function HostsHarnessesPage(): React.JSX.Element {
                                 isDisabled={busy}
                                 onPress={() =>
                                   setConfirmation({
-                                    label: `Stop ${arm.name}? This interrupts its current work.`,
+                                    label: `Stop ${arm.name}? This interrupts current work and releases file claims. The arm profile is kept.`,
                                     run: () => api.controlHarness(arm.id, 'kill'),
                                   })
                                 }

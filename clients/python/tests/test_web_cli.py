@@ -11,6 +11,31 @@ from coleo_inbox.connections import Connections
 from coleo_inbox import web_cli
 
 
+async def test_project_defaults_select_connection_and_web_host_from_nested_directory(tmp_path, monkeypatch):
+    root = tmp_path / "ge project"
+    runtime = root / ".coleo"
+    nested = root / "src"
+    runtime.mkdir(parents=True)
+    nested.mkdir()
+    for key in ("COLEO_DIR", "COLEO_PROJECT_DIR", "COLEO_CONNECTION", "COLEO_API_URL", "COLEO_API_KEY", "COLEO_WEB_EXECUTABLE"):
+        monkeypatch.delenv(key, raising=False)
+    (root / ".env").write_text(f'COLEO_DIR="{runtime}"\n')
+    (runtime / ".env").write_text('COLEO_CONNECTION="ge"\nCOLEO_WEB_EXECUTABLE="/ge/bin/coleo-web"\n')
+    monkeypatch.chdir(nested)
+    Connections().save("ge", "http://127.0.0.1:8081", "ge-key")
+    Connections().save("other", "http://other", "other-key")
+    monkeypatch.setattr(web_cli.shutil, "which", lambda name: name)
+    launch = AsyncMock(return_value=SimpleNamespace(wait=AsyncMock(return_value=0)))
+    monkeypatch.setattr(web_cli.asyncio, "create_subprocess_exec", launch)
+    assert await run(["web"]) == 0
+    assert launch.call_args.args[0] == "/ge/bin/coleo-web"
+    assert launch.call_args.kwargs["env"]["COLEO_API_URL"] == "http://127.0.0.1:8081"
+    assert launch.call_args.kwargs["env"]["COLEO_API_KEY"] == "ge-key"
+    assert await run(["--connection", "other", "web"]) == 0
+    assert launch.call_args.kwargs["env"]["COLEO_API_URL"] == "http://other"
+    assert launch.call_args.kwargs["env"]["COLEO_API_KEY"] == "other-key"
+
+
 @pytest.mark.parametrize("exported_key", [None, "exported-key"])
 async def test_selected_connection_passed_to_installed_host(monkeypatch, exported_key):
     monkeypatch.delenv("COLEO_API_KEY", raising=False)

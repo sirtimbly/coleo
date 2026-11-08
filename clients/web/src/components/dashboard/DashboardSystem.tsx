@@ -22,12 +22,12 @@ export function DashboardSystem({ status, indexer, queue, loading, stale, indexe
       </dl>
     </details>
     {([{ name: 'Transcript indexing', value: indexer, stale: indexerStale }, { name: 'Command queue', value: queue, stale: queueStale }]).map(({ name, value, stale: reportStale }) => <details key={name} className="py-2">
-      <summary className="cursor-pointer text-sm">{name}<span className={`ml-2 text-xs ${reportStale || !value ? 'text-muted-foreground' : value.status === 'error' || value.status === 'stale' || value.status === 'lagging' ? 'text-warning' : 'text-muted-foreground'}`}>{reportStale ? 'Report unavailable or stale' : value ? `${value.status === 'healthy' && !value.lastActive ? 'Activity unverified' : value.status} · ${value.lagMessages ?? 'unknown'} behind` : 'Not reported'}</span></summary>
+      <summary className="cursor-pointer text-sm">{name}<span className={`ml-2 text-xs ${reportStale || !value ? 'text-muted-foreground' : value.status === 'error' || value.status === 'stale' || value.status === 'lagging' ? 'text-warning' : 'text-muted-foreground'}`}>{reportStale ? 'Report unavailable or stale' : value ? name === 'Command queue' && value.status === 'healthy' && value.lagMessages === 0 && value.ackPending === 0 ? 'Idle / caught up' : `${value.status === 'healthy' && !value.lastActive ? 'Activity unverified' : value.status} · ${value.lagMessages ?? 'unknown'} behind` : 'Not reported'}</span></summary>
       <div className="text-xs text-muted-foreground space-y-1 py-2 pl-4 break-words">
         {name === 'Transcript indexing' ? <p>Local process: {stale ? 'Unverified' : status?.infrastructure.indexer.running ? 'Running' : 'Not running'} · Consumer scope: {value?.durable ?? 'Not reported'}</p> : null}
         {name === 'Command queue' && queue ? <p>{queue.enabled ? 'Enabled' : 'Disabled'}</p> : null}
         <p>{value?.message}</p>
-        <p>Last active: {formatDashboardAge(value?.lastActive, now)} · Pending acknowledgements: {value?.ackPending ?? 'Unknown'}</p>
+        <p>{name === 'Command queue' ? 'Last command delivered' : 'Last active'}: {formatDashboardAge(value?.lastActive, now)} · Pending acknowledgements: {value?.ackPending ?? 'Unknown'}</p>
         <p>Report updated: {formatDashboardAge(value?.updatedAt, now)}</p>
         <p className="font-mono break-all">Stream: {value?.stream ?? 'Unknown'} · Consumer: {value?.durable ?? 'Unknown'} · Sequence: {value?.consumerSeq ?? 'Unknown'}</p>
       </div>

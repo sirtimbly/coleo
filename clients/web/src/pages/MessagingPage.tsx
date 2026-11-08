@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@heroui/react";
-import { ArrowUpRight, History, MessageSquarePlus, XCircle } from "lucide-react";
+import { ArrowUpRight, History, MessageSquarePlus, Sparkles, XCircle } from "lucide-react";
 
 import { DeferredAdaptiveCardView } from "@/adaptive-cards/AdaptiveCardView";
 import { BRAIN_CARD_CREATOR } from "@/adaptive-cards/card-creators";
@@ -26,6 +26,7 @@ import { messagingMetadata } from "../../../../server/src/workbench/messaging-me
 import { InboxItemPage } from "./InboxItemPage";
 import { inboxItemQueryKey } from "./load-inbox-item";
 import { MessagingThreadDetail } from "./MessagingThreadDetail";
+import { InboxCatchupPanel } from "@/components/InboxCatchupPanel";
 
 import type { InboxFacet, InboxProjectionItem } from "@/workbench/ProjectionInbox";
 import type { CardPresentationMode } from "@/adaptive-cards/card-presentation";
@@ -103,6 +104,7 @@ function MessagingCollection({ projection, resolvedView }: { projection: "inbox"
 	const [settledSearch, setSettledSearch] = useState(defaults.search);
 	const [actionError, setActionError] = useState<string | null>(null);
 	const [acting, setActing] = useState(false);
+	const [catchupOpen, setCatchupOpen] = useState(false);
 	const [sortDirection, setSortDirection] = useState<"asc" | "desc">(defaults.sort.direction);
 	const [presentationId, setPresentationId] = useState(resolvedView?.definition.presentation.active ?? "grid");
 	const [insightsActive, setInsightsActive] = useState(resolvedView?.definition.insights?.active ?? null);
@@ -225,6 +227,9 @@ function MessagingCollection({ projection, resolvedView }: { projection: "inbox"
 	}, [byId, routePath, mailOnly, openItem, mutate, openRoute, state, selectedIds, setSelectedIds, resolvedView]);
 
 	const feedback = <>
+		{catchupOpen && <InboxCatchupPanel onClose={() => setCatchupOpen(false)} onApplied={async () => {
+			setSelection({ scope: "", ids: new Set() }); await state.refresh();
+		}} />}
 		{(state.error || actionError) && <p role="alert" className="border-b border-danger/30 bg-danger/10 p-3 text-sm text-danger">{actionError ?? state.error?.message}</p>}
 		{partial.length > 0 && <div role="status" className="border-b border-warning/30 bg-warning/10 p-3 text-xs text-warning">Incomplete Inbox: {partial.map((source) => `${source.id} ${source.status === "fresh" ? "incomplete" : source.status}`).join(", ")}. Previously loaded source sections are retained; counts are incomplete.</div>}
 	</>;
@@ -243,6 +248,9 @@ function MessagingCollection({ projection, resolvedView }: { projection: "inbox"
 	const clearSelection = <Button size="sm" variant="ghost" aria-label="Clear selection" isDisabled={acting} onPress={() => setSelectedIds(new Set())}>
 		<XCircle className="h-3.5 w-3.5" aria-hidden="true" /><span data-toolbar-label>Clear selection</span>
 	</Button>;
+	const catchupButton = query.mailbox === "inbox" ? <button type="button" aria-label="Catch me up" onClick={() => setCatchupOpen(true)}
+		className="inline-flex min-h-8 items-center gap-2 px-2 text-sm font-medium text-accent hover:bg-surface-secondary focus-visible:outline-2 focus-visible:outline-accent">
+		<Sparkles className="h-3.5 w-3.5" /><span data-toolbar-label>Catch me up</span></button> : null;
 	const extraControls: ResourceToolbarExtra[] = query.facet === "messages" ? [
 		{ id: "mailbox", slot: "toolbar.primary.context", label: "Mailbox", layout: { kind: "choice", priority: 85, collapse: "value", overflow: true },
 			content: <ProjectionFilterMenu {...mailboxProps} />, overflowContent: <ProjectionFilterMenu {...mailboxProps} inline /> },
@@ -255,6 +263,9 @@ function MessagingCollection({ projection, resolvedView }: { projection: "inbox"
 			content: <ProjectionFilterMenu {...categoryProps} />, overflowContent: <ProjectionFilterMenu {...categoryProps} inline /> },
 		{ id: "brain-history", slot: "toolbar.primary.actions", label: "History", layout: { kind: "action", priority: 20, collapse: "icon", overflow: true }, content: historyButton },
 	] : [];
+	if (query.mailbox === "inbox") extraControls.push({ id: "catch-up", slot: "toolbar.primary.actions", label: "Catch me up",
+		layout: { kind: "action", priority: 85, collapse: "icon", overflow: true },
+		content: catchupButton });
 	if (selectedIds.size) extraControls.push({ id: "clear-selection", slot: "toolbar.secondary.selection", label: "Clear selection",
 		layout: { kind: "action", priority: 80, collapse: "icon", overflow: true }, content: clearSelection });
 	return <ProjectionInbox title={resolvedView?.definition.slots["toolbar.primary.identity"]?.[0]?.label ?? (mailOnly ? "Mail" : "Inbox")} description={mailOnly ? "Project messages across Inbox, Sent, and Archived mailboxes" : "Messages, Brain decisions, Arm events, and operational history"}
@@ -275,7 +286,10 @@ function MessagingCollection({ projection, resolvedView }: { projection: "inbox"
 		toolbarScreenId={mailOnly ? "mail" : "inbox"} onOpen={openItem} renderCard={renderCard} onRefresh={() => void state.refresh()}
 		serverProjected searchText={search} onSearchChange={setSearch} resultCount={!state.pendingQuery && state.value?.summaries.complete ? state.value.summaries.total : null}
 		queryControlsDisabled={acting}
-		serverSort={sortDirection} secondaryContent={<ProjectionFilterMenu label="Sort" value={sortDirection} isDisabled={acting} options={sortOptions} onChange={changeSort} />}
+		serverSort={sortDirection} secondaryContent={<div className="flex flex-wrap items-center gap-2">
+			<ProjectionFilterMenu label="Sort" value={sortDirection} isDisabled={acting} options={sortOptions} onChange={changeSort} />
+			{!resolvedView && catchupButton}
+		</div>}
 		overflowSecondaryContent={<ProjectionFilterMenu inline label="Sort" value={sortDirection} isDisabled={acting} options={sortOptions} onChange={changeSort} />}
 		feedback={feedback} loading={loading}
 		loadError={state.error?.message ?? (partial.length ? "A requested source is unavailable. Refresh to retry; this is not an authoritative empty result." : null)}

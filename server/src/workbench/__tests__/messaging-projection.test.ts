@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { projectMessagingItems } from "../messaging-collection";
+import { messagingSourcesForQuery, projectMessagingItems } from "../messaging-collection";
 import { normalizeMessagingQuery } from "../messaging-query";
 
 import type { MessagingItem } from "../messaging-collection";
@@ -22,6 +22,27 @@ const items: MessagingItem[] = [
 ];
 
 describe("renderer-independent Messaging projection", () => {
+	it("Needs attention shows actionable mail, not historical task, Brain or arm events", () => {
+		const snapshot: MessagingItem[] = [items[2]!, items[1]!,
+			{ ...base, id: "event:blocked", sourceId: "events", representation: "event",
+				detail: { kind: "event", itemKey: "event:blocked", sequence: 1 } },
+			{ ...base, id: "task:blocked", resource: { kind: "task", id: "blocked" } },
+			{ ...base, id: "bug:open", resource: { kind: "bug", id: "open" } },
+		];
+		expect(projectMessagingItems(snapshot, normalizeMessagingQuery()).map(item => item.id)).toEqual(["thread:inbox:one"]);
+		expect(messagingSourcesForQuery(normalizeMessagingQuery())).toEqual(["records", "mail"]);
+		expect(projectMessagingItems(snapshot, normalizeMessagingQuery({ facet: "all" }))).toHaveLength(5);
+	});
+	it("keeps task and bug resources out of Needs attention without hiding operator requests", () => {
+		const records: MessagingItem[] = [
+			{ ...base, id: "task:one", resource: { kind: "task", id: "one" } },
+			{ ...base, id: "bug:one", resource: { kind: "bug", id: "one" } },
+			base, items[2]!,
+		];
+		expect(projectMessagingItems(records, normalizeMessagingQuery()).map(item => item.id))
+			.toEqual(["thread:inbox:one", "status:one"]);
+		expect(projectMessagingItems(records, normalizeMessagingQuery({ facet: "all" }))).toHaveLength(4);
+	});
 	it("preserves mailbox scopes, Brain categories, and operational facets", () => {
 		const ids = (input: unknown) => projectMessagingItems(items, normalizeMessagingQuery(input)).map((item) => item.id);
 		expect(ids({ scope: "mail" })).toEqual(["thread:inbox:one"]);

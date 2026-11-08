@@ -1,5 +1,11 @@
 import { file } from "bun";
-import { dirname, join } from "path";
+import { basename, dirname, join } from "path";
+
+const loadedOrigins = new Map<string, string>();
+
+export function getEnvFileOrigin(name: string): string | undefined {
+	return loadedOrigins.get(name);
+}
 
 async function findColeoDir(startDir: string): Promise<string | null> {
 	let current = startDir;
@@ -21,20 +27,25 @@ async function findColeoDir(startDir: string): Promise<string | null> {
 }
 
 export async function loadEnvFile(projectDirectory?: string): Promise<string | undefined> {
+	loadedOrigins.clear();
 	const projectDir = process.env.COLEO_PROJECT_DIR || projectDirectory || process.cwd();
 	const explicitColeoDir = process.env.COLEO_DIR;
 	const discoveredColeoDir = explicitColeoDir ? null : await findColeoDir(projectDir);
 	const coleoDir = explicitColeoDir || discoveredColeoDir || join(projectDir, ".coleo");
 	const envPaths = [
-		join(coleoDir, ".env"),
-		join(projectDir, ".env"),
-		join(process.cwd(), ".env"),
+		() => join(coleoDir, ".env"),
+		() => join(process.env.COLEO_PROJECT_DIR || projectDirectory
+			|| (basename(coleoDir) === ".coleo" ? dirname(coleoDir) : projectDir), ".env"),
 	];
 
-	for (const envPath of envPaths) {
+	let loadedPath: string | undefined;
+	for (const getEnvPath of envPaths) {
+		const envPath = getEnvPath();
+		if (envPath === loadedPath) continue;
 		try {
 			const envFile = file(envPath);
 			if (await envFile.exists()) {
+				loadedPath ??= envPath;
 				const content = await envFile.text();
 				for (const line of content.split("\n")) {
 					const trimmed = line.trim();
@@ -54,12 +65,13 @@ export async function loadEnvFile(projectDirectory?: string): Promise<string | u
 					}
 					if (!process.env[key]) {
 						process.env[key] = value;
+						loadedOrigins.set(key, envPath);
 					}
 				}
-				return envPath;
 			}
 		} catch {
 			// Ignore errors reading .env
 		}
 	}
+	return loadedPath;
 }

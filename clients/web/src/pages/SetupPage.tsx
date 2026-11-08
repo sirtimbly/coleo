@@ -5,16 +5,15 @@
  * preserve content hashes, Brain reconciliation, task identities, and explicit
  * task-regeneration workflows.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Check, FilePlus2, Info, LoaderCircle, RefreshCw, TriangleAlert, X } from 'lucide-react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Check, Info, LoaderCircle, RefreshCw, TriangleAlert, X } from 'lucide-react';
 
-import { SetupFileTree } from '@/components/SetupFileTree';
+import { SetupFileSidebar } from '@/components/SetupFileSidebar';
 import { PrepareTasksModal } from '@/components/PrepareTasksModal';
 import { RegenerateTasksModal } from '@/components/RegenerateTasksModal';
 import { SetupWorkspaceToolbar } from '@/components/SetupWorkspaceToolbar';
 import {
   WorkbenchEmptyState,
-  WorkbenchHeader,
   WorkbenchSurface,
 } from '@/design-system/WorkbenchSurface';
 import { usePageTitle } from '@/hooks/usePageTitle';
@@ -25,6 +24,8 @@ import { useWorkspaceOpenRoute, useWorkspaceSearchParams } from '@/workspace/rou
 import { filterSetupFilePaths, setupPathMatchesScope, type SetupFileScope } from './setup-file-scope';
 import type { FileTreeRowDecoration } from '@pierre/trees';
 import './setup-page.css';
+
+const MarkdownPreview = lazy(() => import('@/components/SetupMarkdownPreview'));
 
 const EDITABLE_FILE = /\.(md|markdown|txt|toml|jinja)$/i;
 const TOOLBAR_SNAPSHOT_FILE = /^\.coleo\/state\/workbench\/toolbar-templates\/[^/]+\/[^/]+\.json$/i;
@@ -90,41 +91,6 @@ function decorateSetupPath(path: string): FileTreeRowDecoration | null {
   return null;
 }
 
-function MarkdownPreview({ content }: { content: string }) {
-  const blocks: ReactNode[] = [];
-  const lines = content.split(/\r?\n/);
-  let paragraph: string[] = [];
-  const flushParagraph = () => {
-    if (paragraph.length > 0) {
-      blocks.push(<p key={`p-${blocks.length}`} className="setup-markdown-paragraph">{paragraph.join(' ')}</p>);
-      paragraph = [];
-    }
-  };
-
-  for (const line of lines) {
-    const heading = line.match(/^(#{1,3})\s+(.+)$/);
-    const task = line.match(/^\s*-\s+\[([ xX])\]\s+(.+)$/);
-    const listItem = line.match(/^\s*[-*+]\s+(.+)$/);
-    if (heading) {
-      flushParagraph();
-      const Tag = `h${heading[1].length}` as 'h1' | 'h2' | 'h3';
-      blocks.push(<Tag key={`h-${blocks.length}`} className="setup-markdown-heading">{heading[2]}</Tag>);
-    } else if (task) {
-      flushParagraph();
-      blocks.push(<div key={`t-${blocks.length}`} className="setup-markdown-task"><Check className={`h-3.5 w-3.5 ${task[1].trim() ? 'text-success' : 'text-muted-foreground'}`} />{task[2]}</div>);
-    } else if (listItem) {
-      flushParagraph();
-      blocks.push(<div key={`l-${blocks.length}`} className="setup-markdown-list">{listItem[1]}</div>);
-    } else if (!line.trim()) {
-      flushParagraph();
-    } else {
-      paragraph.push(line.trim());
-    }
-  }
-  flushParagraph();
-  return <div className="setup-markdown-preview">{blocks.length ? blocks : <p className="text-muted-foreground">No content yet.</p>}</div>;
-}
-
 export function SetupPage() {
   usePageTitle('Coleo Observatory - Project Setup');
   const openWorkspaceRoute = useWorkspaceOpenRoute();
@@ -144,6 +110,7 @@ export function SetupPage() {
   const [regenerateOpen, setRegenerateOpen] = useState(false);
   const [showRegeneratedTasksBanner, setShowRegeneratedTasksBanner] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewExpanded, setPreviewExpanded] = useState(false);
   const [fileScope, setFileScope] = useState<SetupFileScope>('all');
   const [helpOpen, setHelpOpen] = useState(() => !hasDismissedProjectSetupHelp());
   const [editorError, setEditorError] = useState<{ message: string; linkedFile: string | null } | null>(null);
@@ -475,10 +442,6 @@ export function SetupPage() {
 
   return (
     <div className="setup-page-shell flex h-full min-h-0 flex-col bg-background">
-      <WorkbenchHeader
-        title="Project documents"
-        description="Edit the canonical plan and the project files that inform Brain and Arm work."
-      />
       <SetupWorkspaceToolbar
         fileScope={fileScope}
         visibleFileCount={scopedTreePaths.length}
@@ -495,7 +458,7 @@ export function SetupPage() {
         onHelp={() => setHelpOpen(true)}
         onSave={() => void save()}
         onPrepare={() => { setError(null); setResult(null); setPrepareOpen(true); }}
-        onPreviewChange={() => setPreviewOpen((current) => !current)}
+        onPreviewChange={() => { setPreviewOpen((current) => !current); setPreviewExpanded(false); }}
       />
 
       {helpOpen ? (
@@ -521,76 +484,34 @@ export function SetupPage() {
       ) : null}
 
       <div className="setup-file-workspace">
-        <aside className="setup-file-sidebar">
-          <section className="setup-file-browser">
-            <div>
-              {scopedTreePaths.length === 0 ? (
-                <p className="rounded-md bg-surface-secondary p-2.5 text-xs leading-5 text-muted-foreground">
-                  {fileScope === 'coleo'
-                    ? 'No files were found in the .coleo directory.'
-                    : 'The project directory is empty. Clone a repository or start a new plan to get going.'}
-                </p>
-              ) : (
-                <div className="setup-file-tree-container">
-                  <SetupFileTree
-                    ariaLabel="Project checkout files"
-                    paths={scopedTreePaths}
-                    selectedPath={editor.path}
-                    onSelect={selectPath}
-                    expandedPaths={EXPANDED_DIRECTORIES}
-                    decoratePath={decorateSetupPath}
-                  />
-                </div>
-              )}
-            </div>
-            {hint ? (
-              <p className="mt-2 rounded-md border border-border bg-surface-secondary p-2.5 text-xs leading-5 text-muted-foreground" role="status">
-                {hint}
-              </p>
-            ) : null}
-            {recentProjectDocuments.length > 0 ? (
-              <div className="setup-recent-documents" aria-label="Recently changed project documents">
-                <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Recently changed</p>
-                {recentProjectDocuments.map((document) => (
-                  <button key={document.path} type="button" onClick={() => selectDocument(document.path)} className="block w-full truncate rounded px-2 py-1 text-left text-xs text-accent hover:bg-accent/10">
-                    {document.path.replace('.project/', '')}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            <button
-              type="button"
-              onClick={createPlan}
-              disabled={saving || preparing}
-              className="mt-1 inline-flex h-8 w-full items-center justify-start gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:bg-surface-secondary hover:text-foreground"
-            >
-              <FilePlus2 className="h-3.5 w-3.5" /> New plan
-            </button>
-          </section>
-
-        </aside>
-        <section className="setup-file-editor min-w-0 rounded-md border border-border bg-surface p-3">
-          <div className="min-w-0">
-            <p className="truncate font-mono text-xs text-muted-foreground">{editor.path}</p>
-            <p className="mt-1 text-[11px] text-muted-foreground">Last Updated: {formatLastUpdated(modifiedAtByPath.get(editor.path))}</p>
+        <SetupFileSidebar paths={scopedTreePaths} selectedPath={editor.path} recentDocuments={recentProjectDocuments}
+          expandedPaths={EXPANDED_DIRECTORIES} decoratePath={decorateSetupPath} onSelect={selectPath}
+          onSelectRecent={selectDocument} onCreate={createPlan} busy={saving || preparing} hint={hint} />
+        <section className="setup-file-editor">
+          <div className="setup-editor-heading">
+            <p className="truncate font-mono text-xs" title={editor.path}>{editor.path}</p>
+            <p className="setup-editor-updated">Updated {formatLastUpdated(modifiedAtByPath.get(editor.path))}</p>
           </div>
 
-          <div className={`setup-document-panes mt-2 ${previewOpen && isMarkdown ? '' : 'setup-document-panes--single'}`}>
+          <div className={`setup-document-panes ${previewOpen && isMarkdown && !previewExpanded ? '' : 'setup-document-panes--single'}`}>
           {editorLoading ? (
             <div className="flex min-h-[16rem] items-center justify-center text-sm text-muted-foreground">
               <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> Opening file…
             </div>
           ) : (
           <textarea
+            hidden={previewOpen && isMarkdown && previewExpanded}
             aria-label={isMarkdown ? 'Markdown file content' : isToml ? 'TOML file content' : isJinja ? 'Jinja file content' : isJson ? 'Toolbar JSON snapshot' : 'Text file content'}
             value={editor.content}
             onChange={(event) => setEditor((current) => current ? { ...current, content: event.target.value } : current)}
             readOnly={editor.readOnly}
-            className="setup-file-textarea mt-2 w-full resize-y rounded-md border border-border bg-surface-secondary p-3 font-mono text-sm leading-5 text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent read-only:cursor-default read-only:text-muted-foreground"
+            className="setup-file-textarea w-full font-mono text-sm leading-6 text-foreground read-only:cursor-default read-only:text-muted-foreground"
             spellCheck={!isToml && !isJinja && !isJson}
           />
           )}
-          {previewOpen && isMarkdown && !editorLoading ? <MarkdownPreview content={editor.content} /> : null}
+          {previewOpen && isMarkdown && !editorLoading ? <Suspense fallback={<p role="status" className="p-4 text-sm text-muted-foreground">Loading preview…</p>}>
+            <MarkdownPreview content={editor.content} expanded={previewExpanded} onToggleExpanded={() => setPreviewExpanded(current => !current)} />
+          </Suspense> : null}
           </div>
 
           {error ? (

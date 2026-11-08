@@ -883,16 +883,13 @@ export function createActivityRoutes(transcriptStore: IEventStore = eventStore) 
       const lastActive = toIsoTimestamp(consumerInfo.delivered?.last_active || null);
 
       let status: QueueHealthResponse["status"] = "healthy";
+      // Delivery activity is not a heartbeat. An empty queue can stay idle
+      // indefinitely; only outstanding work can become stale.
       if ((lagMessages ?? 0) > 0 || (ackPending ?? 0) > 0) {
         status = "lagging";
-      }
-      if (lastActive) {
-        const ageMs = Date.now() - new Date(lastActive).getTime();
-        if (ageMs > staleThresholdMs) {
+        if (!lastActive || Date.now() - new Date(lastActive).getTime() > staleThresholdMs) {
           status = "stale";
         }
-      } else if ((lagMessages ?? 0) > 0) {
-        status = "stale";
       }
 
       return c.json({

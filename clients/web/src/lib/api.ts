@@ -515,6 +515,22 @@ class ApiClient {
   }
 
   // Arms
+  async stopAllArms() {
+    return this.request<{ stopped: number; releasedClaims: number; failed: Array<{ id: string; error: string }> }>(
+      '/arms/stop-all', { method: 'POST', body: '{}' },
+    );
+  }
+
+  async getInboxCatchup() {
+    return this.request<{ job: import('../../../../server/src/workbench/inbox-catchup').CatchupJob | null }>('/workbench/inbox/catch-up');
+  }
+  async startInboxCatchup() {
+    return this.request<{ job: import('../../../../server/src/workbench/inbox-catchup').CatchupJob }>('/workbench/inbox/catch-up', { method: 'POST', body: '{}' });
+  }
+  async applyInboxCatchup(id: string) {
+    return this.request<{ job: import('../../../../server/src/workbench/inbox-catchup').CatchupJob }>(`/workbench/inbox/catch-up/${encodeURIComponent(id)}/apply`, { method: 'POST', body: '{}' });
+  }
+
   async listArms() {
     return this.request<{ arms: Arm[] }>('/arms');
   }

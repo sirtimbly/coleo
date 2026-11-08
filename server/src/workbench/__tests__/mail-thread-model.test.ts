@@ -5,6 +5,16 @@ import { buildMailThreadDefinitions } from "../mail-thread-model";
 import { indexResourceHierarchy } from "../resource-hierarchy";
 
 describe("mail reply relationships", () => {
+  it("implicitly groups health notices without inventing reply ancestry", () => {
+    const notices = Array.from({ length: 3 }, (_, index) => ({ ...THREADED_MAIL_FIXTURE[0]!, id: `health-${index}`,
+      subject: index === 1 ? "Re: INFRASTRUCTURE HEALTH ISSUES DETECTED" : "[coleo] Infrastructure health issues detected",
+      headers: { "Message-ID": `<health-${index}>`, "X-Coleo-Thread-ID": `old-thread-${index}` } }));
+    const threads = buildMailThreadDefinitions(notices, "inbox");
+    expect(threads).toHaveLength(1);
+    expect(threads[0]!.id).toBe("coleo:infrastructure-health");
+    expect(threads[0]!.messageCount).toBe(3);
+    expect(buildMailThreadDefinitions([...notices].reverse(), "inbox")).toEqual(threads);
+  });
 	it("builds branching replies from headers independently of enumeration order, keeping sent context", () => {
 		const threads = buildMailThreadDefinitions(THREADED_MAIL_FIXTURE, "inbox");
 		expect(buildMailThreadDefinitions([...THREADED_MAIL_FIXTURE].reverse(), "inbox")).toEqual(threads);

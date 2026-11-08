@@ -8,7 +8,8 @@ export type MessagingSourceId = "records" | "mail" | "activity" | "events";
 /** Select only the backing sources needed to answer the requested query scope and facet. */
 export function messagingSourcesForQuery(query: MessagingQuery): readonly MessagingSourceId[] {
 	if (query.scope === "mail" || query.facet === "messages") return ["mail"];
-	if (query.facet === "attention" || query.facet === "all") return ["records", "mail", "activity", "events"];
+	if (query.facet === "attention") return ["records", "mail"];
+	if (query.facet === "all") return ["records", "mail", "activity", "events"];
 	return ["records", "activity", "events"];
 }
 
@@ -46,6 +47,11 @@ export function projectMessagingItems(items: readonly MessagingItem[], query: Me
 	const planningBlocked = query.facet === "attention" && items.some((item) =>
 		item.id === "brain:planning-gate" && item.requiresAction);
 	return items.filter((item) => {
+		// Activity and event streams are historical telemetry, not operator requests.
+		if (query.facet === "attention" && (item.sourceId === "activity" || item.sourceId === "events")) return false;
+		// Task and bug resources have dedicated work queues; they are not inbox requests.
+		if (query.facet === "attention" && item.sourceId === "records" &&
+			(item.resource?.kind === "task" || item.resource?.kind === "bug")) return false;
 		if (item.detail.kind === "thread" && item.detail.mailbox !== query.mailbox) return false;
 		if (query.facet === "attention" && (planningBlocked ? item.id !== "brain:planning-gate" : !item.requiresAction)) {
 			return false;

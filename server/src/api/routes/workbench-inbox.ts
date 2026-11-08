@@ -8,6 +8,7 @@ import { listWorkbenchInboxPage, mapInboxAttention } from "../workbench-inbox-pa
 import { sanitizeEventData } from "./events";
 import { getInboxEventRecord } from "./inbox-event-record";
 import { getWorkbenchInboxRecord } from "./workbench-inbox-record";
+import { createInboxCatchupRoutes } from "./inbox-catchup";
 
 import type { Database } from "bun:sqlite";
 import type { InboxAttentionRow } from "../workbench-inbox-page";
@@ -19,6 +20,7 @@ interface InboxContext {
 
 export function createWorkbenchInboxRoutes(options: { coleoDir?: string; referenceDependencies?: MessagingReferenceDependencies } = {}) {
 	const app = new Hono<InboxContext>();
+	app.route("/", createInboxCatchupRoutes(options));
 	app.get("/references/:reference", async (c) => c.json(await resolveMessagingReference(c.get("db"), options.coleoDir ?? getColeoDir(),
 		c.req.param("reference"), c.req.query("profileId") ?? "local", options.referenceDependencies)));
 

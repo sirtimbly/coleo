@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { splitRootStack } from "./split-root-stack";
 import { WorkspaceRoutePanel } from "./WorkspaceRoutePanel";
+import { StopAllArmsButton } from "./StopAllArmsButton";
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -1289,6 +1290,7 @@ export function GoldenWorkspace() {
 								<Bot className="h-4 w-4" />
 								<span className="golden-dock-button-label">Spawn</span>
 							</button>
+							<StopAllArmsButton />
 							<button
 								type="button"
 								className="golden-dock-button"

@@ -270,8 +270,10 @@ export class ArmClient {
   /**
    * Kill an arm
    */
-  async killArm(armId: string, timeoutMs = 30000): Promise<CommandResponse> {
-    const agentId = this.armToAgent.get(armId);
+  async killArm(armId: string, timeoutMs = 30000, owningAgentId?: string): Promise<CommandResponse> {
+    // The API persists ownership across restarts; in-memory discovery may not
+    // have received a heartbeat yet. Route directly to that known owner.
+    const agentId = owningAgentId || this.armToAgent.get(armId);
     if (!agentId) {
       return {
         requestId: generateRequestId(),

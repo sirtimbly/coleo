@@ -186,10 +186,19 @@ coleo-ops doctor --wait --timeout 180
 coleo-ops doctor --role client --server https://coleo.example.com --json
 ```
 
-`doctor` and `--doctor` are equivalent. Doctor is read-only: it does not install,
-restart, change settings, or send model prompts. Without `--wait`, it reports a
+`doctor` and `--doctor` are equivalent. For an initialized project, doctor repairs
+missing launch defaults in the project root `.env` and runtime `.env`, using the
+saved workspace, connection name, and web executable. Existing values and
+credentials are preserved; conflicting values are reported for correction.
+Restart the API server after repairing its project paths. Without `--wait`, doctor reports a
 single snapshot. A client can connect successfully while central readiness is
 still incomplete; setup reports that distinction rather than declaring success.
+
+`init` writes these defaults for new projects too. From the project root or a
+subdirectory, `coleo-server start` discovers the runtime, and `coleo-client web`
+selects the project's saved connection and web executable. Explicit flags and
+exported environment variables override project defaults. An explicit client
+connection bypasses the project's endpoint and credential defaults.
 
 ## See what is selected and what needs attention
 
@@ -221,7 +230,7 @@ or modifying configuration. `--show-origin` identifies the flag, environment
 variable, file and field, or default supplying each value. JSON always includes
 origins. API keys and NATS tokens are always redacted, including in JSON.
 
-Runtime selection is `--dir` → `COLEO_DIR` → nearest enclosing `.coleo` →
+Runtime selection is `--dir` → `COLEO_DIR` → `COLEO_PROJECT_DIR/.coleo` → nearest enclosing `.coleo` →
 current-directory `.coleo`. An explicit `init --workspace PATH` uses that
 workspace's `.coleo` instead of upward discovery unless the runtime is overridden.
 
@@ -229,8 +238,8 @@ For the server origin, status, doctor, and config inspection use the same order:
 `--server` → exported environment → loaded env file → ops `target.json` →
 `operator.json` → loopback with the resolved port. Other operator values retain
 their normal flag/environment/env-file/saved/default precedence. The env loader
-uses the first existing file among runtime `.env`, workspace `.env`, and current
-directory `.env`; it does not merge all three.
+loads runtime `.env`, then fills missing values from the selected workspace's
+`.env`. Exported variables take precedence over both files.
 
 This inspection covers operations settings, not Brain model configuration or
 the private settings of your CLI, Python/Textual, Swift, or browser clients.

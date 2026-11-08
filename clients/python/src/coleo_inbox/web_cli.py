@@ -3,6 +3,7 @@ import asyncio
 import os
 import shutil
 import signal
+from .project_env import project_environment
 
 HELP = """Usage: coleo-client [--connection NAME] web [--host 127.0.0.1] [--port 3000]
 Run the installed web client in the foreground. Press Ctrl+C to stop.
@@ -32,7 +33,8 @@ async def run_web(args, api, stdout):
             if not value or value.startswith("-"):
                 raise ValueError("--host requires a hostname or IP address")
             host = value
-    executable = shutil.which(os.environ.get("COLEO_WEB_EXECUTABLE") or "coleo-web")
+    defaults = project_environment()
+    executable = shutil.which(os.environ.get("COLEO_WEB_EXECUTABLE") or defaults.get("COLEO_WEB_EXECUTABLE") or "coleo-web")
     if not executable:
         raise ValueError("Web component not installed. Run: coleo-install install web")
     env = dict(os.environ, COLEO_API_URL=api.url, COLEO_API_KEY=api.key)

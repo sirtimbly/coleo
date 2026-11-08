@@ -25,6 +25,7 @@ import {
 } from "@/lib";
 import { AllArmsTelemetryOverview } from "@/components/AllArmsTelemetryOverview";
 import { StatusBadge } from "@/components/StatusBadge";
+import { StopArmButton } from "@/components/StopArmButton";
 import { ToolbarToggleButton } from '@/design-system/toolbar-toggle-button';
 import { NavigationButton } from '@/design-system/navigation-button';
 import { usePageTitle } from '@/hooks/usePageTitle';
@@ -233,6 +234,7 @@ function ArmActionControls({
 					</Button>
 				</span>
 			)}
+			{arm.status !== "stopped" ? <StopArmButton id={arm.id} name={arm.name} /> : null}
 			<Dropdown>
 				<Dropdown.Trigger
 					aria-label={`Actions for ${arm.name}`}

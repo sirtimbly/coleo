@@ -146,7 +146,8 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 			const messages = thread.hierarchy.nodes.filter((node) => node.selectable).map((node) => {
 				const location = node.data.locations[0]!;
 				const message = allMessages.find((candidate) => candidate.id === location.messageId)!;
-				return { id: node.id, from: message.from, to: message.to, subject: message.subject, timestamp: message.date, body: message.body };
+				return { id: node.id, from: message.from, to: message.to, subject: message.subject, timestamp: message.date, body: message.body,
+					...(message.headers?.["x-coleo-catchup-id"] ? { catchupId: message.headers["x-coleo-catchup-id"] } : {}) };
 			});
 			return json(route, { schemaVersion: 1, thread, messages });
 		}

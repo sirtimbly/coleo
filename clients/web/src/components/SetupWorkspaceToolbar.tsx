@@ -1,14 +1,12 @@
-import { Button, ToggleButton, ToggleButtonGroup } from '@heroui/react';
+import { Button } from '@heroui/react';
 import { CircleHelp, Eye, LoaderCircle, RefreshCw, Save, Sparkles } from 'lucide-react';
 
-import { ToolbarTemplateRows } from '@/design-system/toolbar-template';
+import { ToolbarTemplateRow } from '@/design-system/toolbar-template';
 import { ToolbarToggleButton } from '@/design-system/toolbar-toggle-button';
 import { isSetupFileScope, type SetupFileScope } from '@/pages/setup-file-scope';
 import { useToolbarTemplate } from '@/workbench/toolbar-template-context';
 
 import type { ToolbarWidgetRegistry } from '@/design-system/toolbar-template';
-
-const SCOPE_TOGGLE_CLASS = 'inline-flex h-7 min-h-7 items-center justify-center px-2 text-xs font-medium text-muted-foreground outline-none hover:bg-default data-[selected=true]:bg-accent/20 data-[selected=true]:text-accent';
 
 export function SetupWorkspaceToolbar({
   fileScope,
@@ -48,30 +46,23 @@ export function SetupWorkspaceToolbar({
   const template = useToolbarTemplate('plan-documents');
   const widgets: ToolbarWidgetRegistry = {
     'plan-documents.file-count': (
-      <span className="inline-flex shrink-0 self-center text-xs tabular-nums text-muted-foreground">
-        {visibleFileCount} {visibleFileCount === 1 ? 'file' : 'files'} shown
-      </span>
+      <h1 className="setup-toolbar-title" title={`${visibleFileCount} files shown`}>Project documents</h1>
     ),
     'plan-documents.scope': (
-      <ToggleButtonGroup
+      <select
         aria-label="Files shown"
-        selectionMode="single"
-        disallowEmptySelection
-        selectedKeys={[fileScope]}
-        onSelectionChange={(keys) => {
-          const nextScope = [...keys][0];
+        value={fileScope}
+        onChange={(event) => {
+          const nextScope = event.target.value;
           if (isSetupFileScope(nextScope)) onFileScopeChange(nextScope);
         }}
-        size="sm"
-        isDisabled={saving || preparing}
-        className="inline-flex items-center"
+        disabled={saving || preparing}
+        className="setup-scope-select"
       >
-        <ToggleButton id="plan" variant="ghost" className={SCOPE_TOGGLE_CLASS}>Plan</ToggleButton>
-        <ToggleButton id="coleo" variant="ghost" className={SCOPE_TOGGLE_CLASS}>
-          Coleo dir
-        </ToggleButton>
-        <ToggleButton id="all" variant="ghost" className={SCOPE_TOGGLE_CLASS}>All files</ToggleButton>
-      </ToggleButtonGroup>
+        <option value="plan">Plan</option>
+        <option value="coleo">Coleo directory</option>
+        <option value="all">All files</option>
+      </select>
     ),
     'plan-documents.regenerate-tasks': isCanonicalPlan ? (
       <Button
@@ -79,9 +70,10 @@ export function SetupWorkspaceToolbar({
         size="sm"
         onPress={onRegenerate}
         isDisabled={saving || preparing}
-        className="h-8 border-warning/50 px-2.5 text-xs font-normal text-warning hover:bg-warning/10"
+        className="h-8 px-2.5 text-xs font-normal"
+        aria-label="Regenerate All Tasks"
       >
-        <RefreshCw className="h-4 w-4" /> Regenerate All Tasks
+        <RefreshCw className="h-4 w-4" /> Regenerate
       </Button>
     ) : null,
     'plan-documents.help': (
@@ -116,12 +108,14 @@ export function SetupWorkspaceToolbar({
     'plan-documents.document-status': (
       <span
         role="status"
-        className={`inline-flex shrink-0 self-center px-2 py-0.5 text-[11px] ${readOnly ? 'bg-accent/10 text-accent' : dirty ? 'bg-warning/15 text-warning' : 'bg-success/15 text-success'}`}
+        className={`inline-flex shrink-0 self-center text-xs ${readOnly ? 'text-accent' : dirty ? 'text-warning' : 'text-muted-foreground'}`}
       >
         {readOnly ? 'Read-only snapshot' : dirty ? 'Unsaved changes' : 'Saved'}
       </span>
     ),
   };
 
-  return <ToolbarTemplateRows template={template} widgets={widgets} />;
+  return <div className="setup-workspace-toolbar">{template.rows.filter(row => row.items.some(item =>
+    !item.hidden && (item.kind === 'label' || (item.kind === 'widget' && widgets[item.widget]))
+  )).map(row => <ToolbarTemplateRow key={row.id} row={row} widgets={widgets} />)}</div>;
 }

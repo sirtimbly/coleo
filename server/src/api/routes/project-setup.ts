@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Hono } from "hono";
+import fg from "fast-glob";
 
 import { parsePlanFile } from "../../brain/plan-parser";
 import { regenerateTasksFromPlan } from "../../brain/task-regenerator";
@@ -28,6 +29,7 @@ import {
 	type PlanFormatter,
 } from "../../project-setup/service";
 import { getColeoDir } from "../../config";
+import { LocalWorkspaceAccess } from "../../workspace";
 import { updateInfrastructureHealth } from "../../db/transactions";
 import type { WorkspaceAccess, WorkspaceTextFile } from "../../workspace";
 import { HttpError } from "../middleware";
@@ -174,25 +176,37 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 	const getWorkspace = (): WorkspaceAccess => options.workspace ?? getServerWorkspaceAccess();
 	const formatter = options.formatter ?? formatPlanWithConfiguredModel;
 	const coleoDir = options.coleoDir ?? getColeoDir();
+	// .coleo is a virtual mount of the server's configured runtime directory.
+	// It need not live inside the (possibly remote) project workspace.
+	const runtimeWorkspace = new LocalWorkspaceAccess(coleoDir);
+	const fileWorkspace = (path: string): { workspace: WorkspaceAccess; path: string } =>
+		path.startsWith(".coleo/")
+			? { workspace: runtimeWorkspace, path: path.slice(".coleo/".length) }
+			: { workspace: getWorkspace(), path };
 	const brainTemplates = new BrainTemplateManager(coleoDir, () => {});
 
 	app.get("/", async (c) => {
 		const workspace = getWorkspace();
 		const db = c.get("db");
 		await brainTemplates.ensureTemplatesExist();
-		const [candidates, canonical, projectDocuments, templateFiles, workspaceTree, toolbarPaths] = await Promise.all([
+		const [candidates, canonical, projectDocuments, templateFiles, workspaceTree, toolbarPaths, runtimeFiles] = await Promise.all([
 			discoverProjectPlans(workspace),
 			workspace.readText(CANONICAL_PLAN_PATH),
 			listProjectPlanDocuments(workspace),
 			listSetupTemplateFiles(coleoDir),
 			listProjectTreePaths(workspace),
 			listWorkbenchToolbarProjectionPaths(coleoDir),
+			fg(["**/*.{md,markdown,txt,toml,jinja}"], {
+				cwd: runtimeWorkspace.root, dot: true, onlyFiles: true, followSymbolicLinks: false,
+				ignore: ["**/.git/**", "**/node_modules/**"],
+			}),
 		]);
 		const parsed = canonical ? await parsePlanFile(CANONICAL_PLAN_PATH, workspace) : null;
 		const tasks = taskCount(db);
 		const canonicalTaskCount = parsed?.tasks.length ?? 0;
 		const projectTree = Array.from(new Set([
-			...workspaceTree,
+			...workspaceTree.filter((path) => path !== ".coleo" && !path.startsWith(".coleo/")),
+			...runtimeFiles.map((path) => `.coleo/${path}`),
 			...templateFiles.map((file) => file.path),
 			...toolbarPaths,
 		])).sort();
@@ -214,7 +228,6 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 	});
 
 	app.get("/file", async (c) => {
-		const workspace = getWorkspace();
 		const rawPath = c.req.query("path");
 		if (!rawPath) throw HttpError.badRequest("path is required");
 		if (isWorkbenchToolbarProjectionPath(rawPath)) {
@@ -233,9 +246,10 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
           size: metadata.size, modifiedAt: metadata.mtime.toISOString() } });
       }
 			const path = validateEditableDocumentPath(rawPath);
-			const file = await workspace.readText(path);
+			const target = fileWorkspace(path);
+			const file = await target.workspace.readText(target.path);
 			if (!file) throw HttpError.notFound("File not found in the project workspace");
-			return c.json({ file });
+			return c.json({ file: { ...file, path } });
 		} catch (error) {
 			if (error instanceof HttpError) throw error;
 			throw badRequestFrom(error, "Unable to read the file");
@@ -243,7 +257,6 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 	});
 
 	app.put("/file", async (c) => {
-		const workspace = getWorkspace();
 		const body = await c.req.json<{
 			path?: unknown;
 			content?: unknown;
@@ -280,10 +293,11 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 			const path = body.kind === "document"
 				? validateEditableDocumentPath(body.path)
 				: validateEditablePlanPath(body.path);
-			const file = await workspace.writeText(path, body.content, {
+			const target = fileWorkspace(path);
+			const file = await target.workspace.writeText(target.path, body.content, {
 				expectedHash: body.expectedHash as string | null | undefined,
 			});
-			return c.json({ file });
+			return c.json({ file: { ...file, path } });
 		} catch (error) {
 			throw badRequestFrom(error, "Unable to save the plan file");
 		}
