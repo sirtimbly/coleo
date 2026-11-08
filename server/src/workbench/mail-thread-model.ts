@@ -1,4 +1,5 @@
 import { compareMessagingPositions } from "./messaging-query";
+import { implicitMailThread } from "./mail-subject-groups";
 
 import type { MessagingMailbox } from "./messaging-query";
 import type { ResourceHierarchy, ResourceHierarchyNode } from "./resource-hierarchy";
@@ -60,6 +61,8 @@ function references(value: string | undefined): string[] {
 }
 
 function explicitThread(message: MailThreadMessageInput): string | undefined {
+  const implicit = implicitMailThread(message.subject);
+  if (implicit) return implicit;
 	return ["x-coleo-thread-id", "x-coleo-task-id", "x-coleo-bug-id", "x-coleo-request-id"]
 		.map((key) => header(message, key)).find(Boolean);
 }
@@ -198,6 +201,7 @@ export function buildMailThreadDefinitions(
 			mailboxMessageCount: group.filter((message) => message.locations.some((location) => location.mailbox === mailbox)).length,
 			unreadCount, lastMessageAt, hierarchy: { schemaVersion: 1, rootIds: [rootId], nodes, complete: true }, diagnostics,
 			aliases: [...new Set(group.flatMap((message) => [message.rfcId, message.parentReference,
+				...(implicitMailThread(message.message.subject) ? ["x-coleo-thread-id", "x-coleo-task-id", "x-coleo-bug-id", "x-coleo-request-id"].map(key => header(message.message, key)) : []),
 				message.message.subject.replace(/^(?:(?:re|fwd?):\s*)+/i, "").trim()]).filter((value): value is string => !!value))],
 		});
 	}

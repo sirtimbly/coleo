@@ -7,6 +7,7 @@ export interface MailThreadMessageDetail {
 	readonly subject: string;
 	readonly timestamp: string;
 	readonly body: string;
+	readonly catchupId?: string;
 }
 
 export interface MailThreadDetail {

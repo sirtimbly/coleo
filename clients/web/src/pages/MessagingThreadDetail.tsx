@@ -6,6 +6,7 @@ import { Archive, Mail, Reply, X } from "lucide-react";
 import { api, useMessage } from "@/lib";
 import { presentMessage } from "@/adaptive-cards/presenters";
 import { DeferredAdaptiveCardView } from "@/adaptive-cards/AdaptiveCardView";
+import { CatchupMessageBody } from "@/components/CatchupMessageBody";
 import { WorkbenchEmptyState, WorkbenchHeader } from "@/design-system/WorkbenchSurface";
 import { useLiveProjections } from "@/workbench/live-projections";
 import { indexResourceHierarchy, visibleHierarchyRows } from "../../../../server/src/workbench/resource-hierarchy";
@@ -67,8 +68,11 @@ export function MessagingThreadDetail({ threadId, mailbox, routePath }: {
 				if (!message) return null;
 				const sent = !row.node.data.locations.some((location) => location.mailbox === "inbox");
 				return <article key={row.node.id} className="border-l-2 border-accent/50 pl-3" style={{ marginLeft: `${(row.depth - 1) * 24}px` }} data-thread-depth={row.depth - 1}>
-					<DeferredAdaptiveCardView envelope={presentMessage({ id: message.id, from: message.from, subject: thread.subject,
-						preview: message.body, timestamp: message.timestamp, sent })} allCardsDefault="detail" />
+					{message.catchupId ? <div className="border border-border bg-surface p-4">
+						<p className="mb-2 text-xs text-muted-foreground">{message.from} · {new Date(message.timestamp).toLocaleString()}</p>
+						<CatchupMessageBody body={message.body} />
+					</div> : <DeferredAdaptiveCardView envelope={presentMessage({ id: message.id, from: message.from, subject: thread.subject,
+						preview: message.body, timestamp: message.timestamp, sent })} allCardsDefault="detail" />}
 					<Button size="sm" variant="ghost" onPress={() => reply(message)}><Reply className="h-3.5 w-3.5" />Reply</Button>
 				</article>;
 			})}

@@ -71,7 +71,8 @@ export async function loadMailThreadDetail(coleoDir: string, mailbox: MessagingM
 		const location = node.data.locations.find((entry) => entry.mailbox === mailbox) ?? node.data.locations[0]!;
 		const message = byLocation.get(`${location.mailbox}:${location.messageId}`)!;
 		return { id: node.id, from: message.from, to: message.headers.to ?? "", subject: message.subject,
-			timestamp: message.timestamp, body: message.body };
+			timestamp: message.timestamp, body: message.body,
+			...(message.headers["x-coleo-catchup-id"] ? { catchupId: message.headers["x-coleo-catchup-id"] } : {}) };
 	});
 	return { schemaVersion: 1, thread, messages };
 }
