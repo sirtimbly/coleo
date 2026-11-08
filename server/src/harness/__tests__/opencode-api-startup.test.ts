@@ -33,16 +33,16 @@ describe("OpenCode spawn failure cleanup", () => {
         fetch(request) {
           const path = new URL(request.url).pathname;
           const mode = process.env.TEST_STARTUP_MODE;
-          if (path === "/global/health") {
+          if (path === "/api/info") {
             if (mode === "health-hang") return new Promise(() => {});
             return Response.json({ healthy: true, version: "test" });
           }
           if (request.method === "POST") {
             if (mode === "session-hang") return new Promise(() => {});
-            return Response.json(mode === "missing-session" ? {} : { id: "test-session" });
+            return Response.json({ data: mode === "missing-session" ? {} : { id: "test-session" } });
           }
           if (mode === "prune-hang") return new Promise(() => {});
-          return Response.json([]);
+          return Response.json({data: [], cursor: {}});
         },
       });
     `);
@@ -54,7 +54,7 @@ describe("OpenCode spawn failure cleanup", () => {
     constants.SESSION_CREATE_TIMEOUT_MS = 80;
     constants.SESSION_PRUNE_TIMEOUT_MS = 80;
     harness = new OpenCodeApiHarness();
-    internals().waitForServer = (url, _timeout, child) => waitForOpenCodeServer(url, 3000, child);
+    internals().waitForServer = (url, _timeout, child) => waitForOpenCodeServer(url, 3000, child, 2);
   });
 
   afterEach(async () => {
@@ -94,7 +94,7 @@ describe("OpenCode spawn failure cleanup", () => {
       await harness.spawn(config("healthy"));
       expect(internals().sessions.size).toBe(1);
       const runtimeConfig = JSON.parse(await readFile(join(directory, "pid.config"), "utf8"));
-      expect(runtimeConfig.mcp.coleo.environment.COLEO_ARM_ID).toBe("startup-test");
+      expect(runtimeConfig.mcp.servers.coleo.environment.COLEO_ARM_ID).toBe("startup-test");
     }, 15000);
   }
 

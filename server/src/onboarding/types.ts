@@ -9,6 +9,7 @@ export interface RepositoryCheckoutCommit {
 export interface RepositoryOnboardingStatus {
   ready: boolean;
   projectDir: string;
+  workspace?: { accepted: boolean; repositories: string[]; scanLimited: boolean; directories?: string[]; directoryCount?: number };
   repository: {
     checkedOut: boolean;
     remoteUrl: string | null;
@@ -21,13 +22,15 @@ export interface RepositoryOnboardingStatus {
   ssh: {
     configured: boolean;
     publicKey: string | null;
+    agentAvailable?: boolean;
   };
 }
 
 export type RepositoryOnboardingOperation =
   | { type: "status" }
   | { type: "generate_ssh_key" }
-  | { type: "clone"; repositoryUrl: string; branch?: string };
+  | { type: "use_workspace" }
+  | { type: "clone"; repositoryUrl: string; branch?: string; authentication?: "existing" | "managed"; destination?: string };
 
 export function isRepositoryUrl(value: string): boolean {
   return /^(?:https?:\/\/|ssh:\/\/)[^\s]+$/.test(value)
@@ -51,7 +54,7 @@ export function parseRepositoryOnboardingOperation(value: unknown): RepositoryOn
   }
 
   const input = value as Record<string, unknown>;
-  if (input.type === "status" || input.type === "generate_ssh_key") {
+  if (input.type === "status" || input.type === "generate_ssh_key" || input.type === "use_workspace") {
     return { type: input.type };
   }
   if (input.type !== "clone") {
@@ -65,6 +68,13 @@ export function parseRepositoryOnboardingOperation(value: unknown): RepositoryOn
   }
 
   const branch = input.branch?.trim() || "";
+  if (input.authentication !== undefined && !["existing", "managed"].includes(String(input.authentication))) {
+    throw new Error("Choose existing or managed Git authentication");
+  }
+  if (input.destination !== undefined && (typeof input.destination !== "string"
+    || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(input.destination))) {
+    throw new Error("Destination must be a single folder name inside the workspace");
+  }
   if (branch && !isGitRef(branch)) {
     throw new Error("Enter a valid branch, tag, or commit name");
   }
@@ -73,5 +83,7 @@ export function parseRepositoryOnboardingOperation(value: unknown): RepositoryOn
     type: "clone",
     repositoryUrl: input.repositoryUrl.trim(),
     branch: branch || undefined,
+    authentication: input.authentication as "existing" | "managed" | undefined,
+    destination: input.destination as string | undefined,
   };
 }

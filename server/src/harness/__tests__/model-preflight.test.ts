@@ -1,88 +1,71 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
-import * as sdk from "@opencode-ai/sdk/v2";
+import { OpenCode } from "@opencode/client";
 import { existsSync } from "node:fs";
+import * as startup from "../opencode-v2-server";
 import { ModelCheckError } from "../model-check-error";
 import { verifySpawnModel } from "../model-preflight";
 
 const restore: Array<() => void> = [];
 afterEach(() => { for (const fn of restore.splice(0)) fn(); });
 
-function mockProbe(result: unknown, providers: Array<{ id: string; models: Record<string, object> }> = [{ id: "openai", models: { "working-model": {}, "unavailable-model": {}, model: {} } }]) {
+function mockProbe(error?: string, text = "OK") {
   let closed = false;
-  let deleted = false;
-  let aborted = false;
-  let permissions: unknown;
   let directory = "";
-  let prompt: unknown;
-  let configuration: unknown;
-  const server = spyOn(sdk, "createOpencodeServer").mockImplementation(async (options) => {
-    configuration = options?.config;
-    return { url: "http://localhost:1", close() { closed = true; } };
+  let created: Record<string, unknown> = {};
+  const paths: string[] = [];
+  const http = Bun.serve({ port: 0, async fetch(request) {
+    const path = new URL(request.url).pathname;
+    paths.push(`${request.method} ${path}`);
+    if (path.endsWith("/wait") || request.method === "DELETE") return new Response(null, { status: 204 });
+    if (path === "/api/model") return Response.json({ data: [{ providerID: "opencode", id: "working-model", enabled: true }] });
+    if (path === "/api/session" && request.method === "POST") {
+      created = await request.json() as Record<string, unknown>;
+      return Response.json({ data: { id: "probe" } });
+    }
+    if (path === "/api/session/probe/message") return Response.json({ data: [{ id: "message", type: "assistant", time: { created: 1, completed: 2 },
+      content: [{ type: "text", text }], ...(error ? { error: { type: "api", message: error } } : {}) }], cursor: {} });
+    return Response.json({ data: {} });
+  } });
+  const mock = spyOn(startup, "startModelCheckServer").mockImplementation(async path => {
+    directory = path;
+    return { client: OpenCode.make({ baseUrl: http.url.origin }), close: async () => { closed = true; } };
   });
-  const client = spyOn(sdk, "createOpencodeClient").mockReturnValue({
-    provider: { list: async () => ({ data: { all: providers, connected: providers.map((entry) => entry.id) } }) },
-    session: {
-      create: async (options: { directory: string; permission: unknown }) => {
-        directory = options.directory;
-        permissions = options.permission;
-        return { data: { id: "probe" } };
-      },
-      prompt: async (options: unknown) => { prompt = options; return result; },
-      abort: async () => { aborted = true; },
-      delete: async () => { deleted = true; },
-    },
-  } as unknown as sdk.OpencodeClient);
-  restore.push(() => server.mockRestore(), () => client.mockRestore());
-  return { inspect: () => ({ closed, deleted, aborted, directory, prompt, configuration, permissions }) };
+  restore.push(() => mock.mockRestore(), () => { void http.stop(true); });
+  return { inspect: () => ({ closed, directory, created, paths }) };
 }
 
-describe("spawn model access check", () => {
-  it("explains a removed provider and suggests a connected provider with the same model", async () => {
-    const probe = mockProbe({}, [{ id: "kimi-code-plan-global", models: { "kimi-for-coding": {} } }]);
-    await expect(verifySpawnModel("opencode-api", "kimi-for-coding", "kimi-for-coding"))
-      .rejects.toThrow("Available selections for this model: kimi-code-plan-global/kimi-for-coding");
-    expect(probe.inspect().prompt).toBeUndefined();
-    expect(probe.inspect().closed).toBe(true);
-  });
-
-  it("explains a model missing from the current provider catalog", async () => {
-    const probe = mockProbe({});
-    await expect(verifySpawnModel("opencode-api", "openai", "removed-model"))
-      .rejects.toThrow('Model "removed-model" is not available');
-    expect(probe.inspect().prompt).toBeUndefined();
-    expect(probe.inspect().closed).toBe(true);
-  });
-  it("checks native generation without approving tools, then aborts and cleans up", async () => {
-    const probe = mockProbe({ data: { info: {}, parts: [{ type: "text", text: "OK" }] } });
-    await verifySpawnModel("opencode", "openai", "working-model");
+describe("native V2 model preflight", () => {
+  it("checks generation and cleans only its temporary session and directory", async () => {
+    const probe = mockProbe();
+    await verifySpawnModel("opencode-api", "opencode", "working-model");
     const state = probe.inspect();
-    expect(state.prompt).toMatchObject({
-      model: { providerID: "openai", modelID: "working-model" }, agent: "build",
-    });
-    expect(state.prompt).not.toHaveProperty("tools");
-    expect(state.prompt).not.toHaveProperty("system");
-    expect(state.configuration).not.toHaveProperty("agent");
-    expect(state.configuration).toHaveProperty("permission", "ask");
-    expect(state.permissions).toEqual([{ permission: "*", pattern: "*", action: "ask" }]);
-    expect(state.aborted).toBe(true);
-    expect(state.configuration).toMatchObject({ mcp: { coleo: { enabled: false } } });
+    expect(state.created).toMatchObject({ agent: "build", model: { providerID: "opencode", id: "working-model" },
+      permissions: [{ action: "*", resource: "*", effect: "ask" }] });
+    expect(state.paths).toContain("POST /api/session/probe/prompt");
+    expect(state.paths).toContain("POST /api/session/probe/interrupt");
+    expect(state.paths).toContain("DELETE /api/session/probe");
     expect(state.closed).toBe(true);
-    expect(state.deleted).toBe(true);
     expect(existsSync(state.directory)).toBe(false);
   });
-
-  it("rejects provider errors inside successful HTTP responses and cleans up", async () => {
-    const probe = mockProbe({ data: { info: { error: { name: "APIError", data: { message: "Model is not supported for this account" } } }, parts: [] } });
-    await expect(verifySpawnModel("opencode-api", "openai", "unavailable-model"))
-      .rejects.toBeInstanceOf(ModelCheckError);
+  it("rejects a model absent from the native catalog before creating a session", async () => {
+    const probe = mockProbe();
+    await expect(verifySpawnModel("opencode-api", "opencode", "missing-model")).rejects.toThrow("not enabled");
+    expect(probe.inspect().created).toEqual({});
     expect(probe.inspect().closed).toBe(true);
-    expect(probe.inspect().deleted).toBe(true);
-    expect(existsSync(probe.inspect().directory)).toBe(false);
   });
-
+  it("surfaces expired provider keys from successful HTTP message responses", async () => {
+    const probe = mockProbe("This API key has expired");
+    await expect(verifySpawnModel("opencode-api", "opencode", "working-model")).rejects.toThrow("This API key has expired");
+    expect(probe.inspect().closed).toBe(true);
+  });
   it("does not accept an empty response as proof of model access", async () => {
-    mockProbe({ data: { info: {}, parts: [] } });
-    await expect(verifySpawnModel("opencode-tui", "openai", "model"))
-      .rejects.toThrow("did not return a text response");
+    mockProbe(undefined, "");
+    await expect(verifySpawnModel("opencode-api", "opencode", "working-model")).rejects.toThrow("did not return a text response");
+  });
+  it("does not mislabel a startup failure as a provider-login problem", async () => {
+    const mock = spyOn(startup, "startModelCheckServer").mockRejectedValue(new Error("OpenCode V2 could not start"));
+    restore.push(() => mock.mockRestore());
+    try { await verifySpawnModel("opencode-api", "opencode", "working-model"); throw new Error("Expected failure"); }
+    catch (error) { expect(error).not.toBeInstanceOf(ModelCheckError); expect(String(error)).toContain("could not start"); }
   });
 });

@@ -120,6 +120,8 @@ export function createOnboardingRoutes(options: OnboardingRouteOptions = {}) {
     }
   });
 
+  app.post("/workspace", async (c) => c.json(await repositoryService.execute({ type: "use_workspace" })));
+
   app.post("/clone", async (c) => {
     const body = await c.req.json<{
       repositoryUrl?: unknown;

@@ -108,4 +108,4 @@ That combination is what makes sustained, synchronous agent work possible withou
 - [Architecture Overview](/architecture/overview) — How the Brain, arms, Garden, Observatory, and communication layers fit together.
 - [Task Workflow](/guides/task-workflow) — How plans become tasks and evolve through execution.
 - [Harness Contract](/architecture/harness-contract) — How Coleo remains portable across coding-agent runtimes.
-- [Distributed Architecture](/architecture/distributed) — How the control plane coordinates work across self-hosted machines.
+- [Server and clients](/architecture/client-server-separation) — How the control plane connects to clients and Arm Hosts.

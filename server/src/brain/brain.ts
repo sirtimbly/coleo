@@ -9054,7 +9054,8 @@ ${conflictList}
 		}>("/api/brain/internal/infrastructure-health");
 		const existing = current?.components?.find((component) => component.component === "brain_model_api");
 		const serializedIssue = issue ? serializeBrainModelAccessIssue(issue) : undefined;
-		if (existing && existing.healthy === (issue === null) && existing.error === serializedIssue) return;
+		// Refresh every observation, but notify only when the issue changes.
+		const repeated = issue && existing && !existing.healthy && existing.error === serializedIssue;
 		const result = await this.apiRequest<{
 			result?: { success?: boolean; error?: string };
 		}>("/api/brain/internal/infrastructure-health", {
@@ -9078,7 +9079,7 @@ ${conflictList}
 			return;
 		}
 
-		if (issue) {
+		if (issue && !repeated) {
 			this.log(`Brain plan evaluation blocked: ${issue.message}`);
 			void this.logActivity("brain", "model_access_blocked", undefined, {
 				code: issue.code,
@@ -9095,12 +9096,13 @@ ${conflictList}
 			components?: Array<{ component: string; healthy: boolean; error?: string }>;
 		}>("/api/brain/internal/infrastructure-health");
 		const existing = current?.components?.find((component) => component.component === "brain_planning_gate");
+		let repeated = false;
 		if (existing && !existing.healthy && existing.error) {
 			try {
 				const parsed = JSON.parse(existing.error) as { detail?: unknown };
-				if (parsed.detail === detail) return false;
+				repeated = parsed.detail === detail;
 			} catch {
-				if (existing.error === detail) return false;
+				repeated = existing.error === detail;
 			}
 		}
 		const result = await this.apiRequest<{
@@ -9119,15 +9121,11 @@ ${conflictList}
 		if (!result?.result?.success) {
 			this.log(`Failed to persist planning gate state: ${result?.result?.error || "API unavailable"}`);
 		}
-		return true;
+		return !repeated;
 	}
 
 	private async reportPlanningGateReady(): Promise<void> {
-		const current = await this.apiRequest<{
-			components?: Array<{ component: string; healthy: boolean }>;
-		}>("/api/brain/internal/infrastructure-health");
-		const existing = current?.components?.find((component) => component.component === "brain_planning_gate");
-		if (existing?.healthy) return;
+		// Refresh the observation timestamp after each successful planning evaluation.
 		const result = await this.apiRequest<{
 			result?: { success?: boolean; error?: string };
 		}>("/api/brain/internal/infrastructure-health", {
@@ -9555,7 +9553,7 @@ ${conflictList}
 			}
 			const shouldNotify = await this.reportPlanningGate(err);
 			const modelAccessIssue = getBrainModelAccessIssue(err);
-			if (modelAccessIssue && shouldNotify) await this.reportBrainModelAccess(modelAccessIssue);
+			if (modelAccessIssue) await this.reportBrainModelAccess(modelAccessIssue);
 			if (!shouldNotify) {
 				const detail = err instanceof Error ? err.message : String(err);
 				const planningState = currentPlanHash || "missing-plan";

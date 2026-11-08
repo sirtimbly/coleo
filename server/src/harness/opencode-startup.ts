@@ -1,4 +1,5 @@
 import type { Subprocess } from "bun";
+import { openCodeHeaders } from "./opencode-v2-client";
 
 /** Abort the request as well as bounding the wait, including response-body reads. */
 export async function withStartupTimeout<T>(
@@ -26,6 +27,8 @@ export async function waitForOpenCodeServer(
   serverUrl: string,
   timeoutMs: number,
   serverProcess?: Pick<Subprocess, "exitCode">,
+  apiVersion: 1 | 2 = 1,
+  headers: Record<string, string> = openCodeHeaders(),
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastError = "server did not report healthy";
@@ -35,13 +38,13 @@ export async function waitForOpenCodeServer(
     }
     try {
       const healthy = await withStartupTimeout(async (signal) => {
-        const response = await fetch(`${serverUrl}/global/health`, { signal });
+        const response = await fetch(`${serverUrl}${apiVersion === 2 ? "/api/info" : "/global/health"}`, { signal, headers });
         if (!response.ok) {
           await response.body?.cancel();
           throw new Error(`Health check returned HTTP ${response.status}`);
         }
         const data = await response.json() as { healthy?: boolean; version?: string };
-        if (data.healthy) {
+        if (apiVersion === 2 ? typeof data.version === "string" : data.healthy) {
           console.log(`[harness-api] Server ready (version ${data.version})`);
           return true;
         }

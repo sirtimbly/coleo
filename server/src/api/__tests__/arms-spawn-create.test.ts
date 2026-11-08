@@ -237,7 +237,8 @@ describe("arms spawn route auto-creation", () => {
 
   afterEach(async () => {
     getArmClientSpy?.mockRestore();
-    serverModule.setArmClient({} as never);
+    // Leave the fresh-process state; a leaked mock breaks unrelated route code.
+    serverModule.setArmClient(null);
     db.close();
     if (originalColeoDir === undefined) {
       delete process.env.COLEO_DIR;

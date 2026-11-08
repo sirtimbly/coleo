@@ -1,5 +1,5 @@
 import { randomBytes } from "crypto";
-import { createServer } from "net";
+import { createServer, createConnection } from "net";
 
 import { createProjectKey } from "../project-scope";
 
@@ -143,7 +143,17 @@ async function resolvePort(
   throw new Error(`No available local port found near ${start}`);
 }
 
-function isPortAvailable(port: number, host: string): Promise<boolean> {
+export async function isPortAvailable(port: number, host: string): Promise<boolean> {
+  // On macOS a loopback bind can succeed alongside an existing wildcard
+  // listener. Check reachability as well so we never select that listener's port.
+  const occupied = await new Promise<boolean>((resolve) => {
+    const socket = createConnection({ port, host: host === "0.0.0.0" ? "127.0.0.1" : host === "::" ? "::1" : host });
+    const finish = (value: boolean) => { socket.destroy(); resolve(value); };
+    socket.once("connect", () => finish(true));
+    socket.once("error", () => finish(false));
+    socket.setTimeout(500, () => finish(true));
+  });
+  if (occupied) return false;
   return new Promise((resolve) => {
     const server = createServer();
     server.unref();

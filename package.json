@@ -11,7 +11,8 @@
 	"bin": {
 		"coleo": "dist/index.js",
 		"coleo-server": "dist/server.js",
-		"coleo-agent": "dist/agent.js"
+		"coleo-agent": "dist/agent.js",
+		"coleo-ops": "dist/ops.js"
 	},
 	"files": [
 		"dist",
@@ -47,7 +48,7 @@
 		"setup:web": "bun install --filter web --frozen-lockfile",
 		"setup:all": "bun install --frozen-lockfile",
 		"versions:check": "bun run server/src/scripts/check-versions.ts",
-		"build": "bun run versions:check && rm -rf dist && mkdir -p dist/brain && cp -r server/src/brain/templates dist/brain/templates && bun build server/src/cli/index.ts server/src/cli/server.ts server/src/cli/agent.ts --outdir dist --target bun && chmod +x dist/index.js dist/server.js dist/agent.js",
+		"build": "bun run versions:check && rm -rf dist && mkdir -p dist/brain && cp -r server/src/brain/templates dist/brain/templates && bun build server/src/cli/index.ts server/src/cli/server.ts server/src/cli/agent.ts server/src/cli/ops.ts --outdir dist --target bun && chmod +x dist/index.js dist/server.js dist/agent.js dist/ops.js",
 		"build:with-web": "bun run build && bun run web:build",
 		"prepublishOnly": "bun run build",
 		"pack:check": "bun run build && bun pm pack --dry-run",
@@ -110,8 +111,10 @@
 	},
 	"dependencies": {
 		"@hono/node-server": "^2.0.12",
+		"@inquirer/prompts": "^8.7.5",
 		"@modelcontextprotocol/sdk": "^1.25.2",
 		"@opencode-ai/sdk": "^1.1.36",
+		"@opencode/client": "^2.2.6",
 		"@opentui/core": "0.1.107",
 		"@qdrant/js-client-rest": "^1.16.2",
 		"@tribe-x/imap-server": "^0.0.25",

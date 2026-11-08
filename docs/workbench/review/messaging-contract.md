@@ -196,8 +196,8 @@ remains available as the initial composition fixture.
 
 ## Interactive HTML report
 
-<a href="/workbench-report.html" target="_blank" rel="noopener">Open the interactive workbench report</a>.
-The self-contained file is `docs/public/workbench-report.html`; it also opens
+<a href="../../research/workbench-report.html" target="_blank" rel="noopener">Open the repository-only interactive workbench report</a>.
+The self-contained file is `docs/research/workbench-report.html`; it also opens
 directly from disk without a server, external assets, or a running Coleo API.
 
 ```sh

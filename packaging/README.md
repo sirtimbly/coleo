@@ -56,7 +56,10 @@ dependencies are installed explicitly before its build.
 Version/runtime integration inputs:
 
 - Root `package.json` bins must map `coleo` → `dist/index.js`, `coleo-server` →
-  `dist/server.js`, `coleo-agent` → `dist/agent.js`; build includes all three plus templates.
+  `dist/server.js`, `coleo-agent` → `dist/agent.js`, `coleo-ops` → `dist/ops.js`;
+  build includes all four plus templates. The `ops` installation role shares the
+  operator payload but owns only the `coleo-ops` command. Setup delegates component
+  acquisition to the installer and leaves lifecycle commands with their owners.
 - Root `pyproject.toml` distribution remains `coleo-inbox`, with `coleo-client`
   and `coleo-inbox` entry points and the optional `tui` extra. Its numeric version
   and lock must match the release train before building.

@@ -6,6 +6,8 @@ export interface OpenCodeEvent {
 }
 
 export interface EventStreamOptions {
+  apiVersion?: 1 | 2;
+  headers?: Record<string, string>;
   serverUrl: string;
   armId: string;
   sessionId: string;
