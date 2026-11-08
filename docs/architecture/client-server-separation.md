@@ -249,8 +249,16 @@ the available operations and options.
 Client requests operate on the selected server's data. For example,
 `coleo-client tasks sync` reads plans from the server's configured workspace.
 That workspace is selected by `COLEO_PROJECT_DIR`, then `COLEO_REMOTE_WORKDIR`,
-then the server process's working directory. A configured remote Arm Host can
+then `COLEO_AGENT_WORKDIR` (populated from the operator's saved `workspace` setting
+or workspace flag), then the server process's working directory. A configured remote Arm Host can
 provide workspace access.
+
+The web Config screen uses that workspace for project files. Its `.coleo/` paths
+refer to the server's runtime directory selected by `--dir` / `COLEO_DIR`, even
+when that directory is outside the project or the project lives on a remote host.
+Listing, opening, and saving these files all use the same runtime directory.
+For example, when launching outside `ge/`, set `COLEO_PROJECT_DIR=/path/to/ge`
+and `COLEO_DIR=/path/to/ge/.coleo` to select that project's files and runtime.
 
 ## Connect the macOS client
 

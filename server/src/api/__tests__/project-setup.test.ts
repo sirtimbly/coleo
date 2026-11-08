@@ -124,6 +124,43 @@ describe("project setup routes", () => {
 		release?.();
 	});
 
+	it("lists, reads, and saves the configured runtime independently of the project and checkout", async () => {
+		const environment = { ...process.env };
+		const project = new LocalWorkspaceAccess(join(root, "ge"));
+		const runtime = new LocalWorkspaceAccess(join(root, "runtime"));
+		try {
+			process.env.COLEO_PROJECT_DIR = project.root;
+			process.env.COLEO_DIR = runtime.root;
+			delete process.env.COLEO_REMOTE_ARMS_ONLY;
+			await project.writeText("project.md", "GE project");
+			await project.writeText(".coleo/arms/example.toml", "wrong project copy");
+			await project.writeText(".coleo/foreign.md", "must not appear");
+			await runtime.writeText("arms/example.toml", "configured runtime");
+			await runtime.writeText("notes.md", "runtime notes");
+			app.route("/configured", createProjectSetupRoutes());
+			const status = await app.request("/configured");
+			expect(status.status).toBe(200);
+			const listing = await status.json();
+			expect(listing.projectTree).toContain("project.md");
+			expect(listing.projectTree).toContain(".coleo/notes.md");
+			expect(listing.projectTree).not.toContain(".coleo/foreign.md");
+			for (const [path, content] of [["project.md", "GE project"], [".coleo/arms/example.toml", "configured runtime"]]) {
+				const response = await app.request(`/configured/file?path=${path}`);
+				expect(response.status).toBe(200);
+				const { file } = await response.json();
+				expect(file.content).toBe(content);
+				const save = await app.request("/configured/file", {
+					method: "PUT", headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ path, content: `${content} edited`, expectedHash: file.contentHash, kind: "document" }),
+				});
+				expect(save.status).toBe(200);
+				expect((await save.json()).file.path).toBe(path);
+			}
+			expect((await runtime.readText("arms/example.toml"))?.content).toBe("configured runtime edited");
+			expect((await project.readText(".coleo/arms/example.toml"))?.content).toBe("wrong project copy");
+		} finally { process.env = environment; }
+	});
+
 	it("does not prepare or regenerate while the Brain owns evaluation", async () => {
 		const release = await acquirePlanEvaluation(join(root, ".coleo"));
 		try {
